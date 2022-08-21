@@ -32,7 +32,7 @@ msgcount = 0
 
 if CBstate.SCARA:
     debugrobot = False
-    axistorow8 = 65
+    axistorow8 = 35
     gripperfloatheight = 40
     grippergrabheight = -15
     gripperfloatheight = 20
@@ -145,7 +145,7 @@ def scaraviastraight(xmm, adjymmint, zmm):
         print (gstring)
         sp.write(gstring.encode())
         receivemsg(sp)
-        input("press enter")
+        #input("press enter")
 
 def movearmcoord (xmm, ymm, zmm):  # zmm is height
     adjymmint = int(ymm)+axistorow8
@@ -176,7 +176,7 @@ def movearmcoord (xmm, ymm, zmm):  # zmm is height
     sp.write(gstring.encode())
     receivemsg(sp)
     #receivemsg(sp) ####
-    input("press enter")
+    #input("press enter")
 
 def opengripper(amount):
     adjamount = amount
@@ -266,7 +266,7 @@ def takepiece (xmm, ymm, targetpiece):
     speaker("Take piece.")
     movearmcoord (xmm, ymm, gripperfloatheight)
     pickuppiece(xmm,ymm, targetpiece)
-    gravex = (xmtrans[graveyard[0]] * squaresize)-10
+    gravex = (xmtrans[graveyard[0]] * squaresize)-20
     gravey = (8-int(graveyard[1])) * squaresize
     movearmcoord (gravex, gravey, gripperfloatheight)
     droppiece(gravex, gravey)
