@@ -173,7 +173,7 @@ def test_pick_drop_release_at_grip_height_servo_only():
     twitch the arm at the unclamp instant (2026-10-21)."""
     events = []
     real = (RD.moveXY, RD.set_gripper, RD.openjaws, RD.closejaws)
-    RD.moveXY = lambda y: events.append(("descend", y))
+    RD.moveXY = lambda y, speeds=None: events.append(("descend", y))
     RD.set_gripper = lambda w: events.append(("jaw", w))
     RD.openjaws = lambda: events.append(("openjaws",))
     RD.closejaws = lambda p: events.append(("closejaws",))
@@ -219,6 +219,43 @@ def test_set_gripper_waits_for_the_travel():
             IK._last_pulses[4] = prev
 
 
+def test_cruise_runs_at_travel_speed():
+    """Cruise moves run at the +50% travel profile (2026-10-22): the movearm
+    steps, the lift-to-cruise and the park folds. The DESCENT onto a piece
+    keeps the pick profile, and the park's final descent onto the droop keeps
+    its own speed."""
+    captured = []
+    real = (RD.movemotors, RD.set_gripper, RD.idleall, RD.sp)
+    RD.movemotors = lambda **k: captured.append(
+        (k.get("speeds"), k.get("compensate", True)))
+    RD.set_gripper = lambda w: None
+    RD.idleall = lambda: None
+    RD.sp = FakeSp()
+    try:
+        RD.targetXYZGWAWR = (6.0, 4.0, 90.0, 60, -90, 90)
+        RD.movearm(6.0, 90.0)
+        assert captured and all(s == RD.SPEED_TRAVEL for s, _ in captured), \
+            captured
+
+        captured.clear()
+        RD._lift_clear(6.0, 90.0, 4.0)         # lift = cruise, not pick
+        assert captured and all(s == RD.SPEED_TRAVEL for s, _ in captured), \
+            captured
+
+        captured.clear()
+        RD.moveXY(5.0)                          # the pick/drop DESCENT
+        assert captured == [(RD.SPEED_PICK, True)], captured
+
+        captured.clear()
+        RD.targetXYZGWAWR = (6.0, 4.0, 90.0, RD.grip_open_width(), -90, 90)
+        RD.park()
+        assert [s for s, _ in captured][:3] == [RD.SPEED_TRAVEL] * 3, captured
+        assert captured[3][0] != RD.SPEED_TRAVEL and captured[3][1] is False, \
+            captured
+    finally:
+        RD.movemotors, RD.set_gripper, RD.idleall, RD.sp = real
+
+
 def main():
     test_sag_identity_when_empty()
     test_sag_piecewise_linear_and_clamped()
@@ -229,7 +266,8 @@ def main():
     test_arm_joints_move_together_with_tracking_wrist()
     test_pick_drop_release_at_grip_height_servo_only()
     test_set_gripper_waits_for_the_travel()
-    print("PASS: sag curve + IK seam + park/pick/drop order")
+    test_cruise_runs_at_travel_speed()
+    print("PASS: sag curve + IK seam + park/pick/drop order + cruise speeds")
 
 
 if __name__ == "__main__":

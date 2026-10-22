@@ -217,18 +217,13 @@ def al5_moveMotors(motors_SEWBZWrG, speed_SEWBZWrG, serial,
            (3, pulseWrist, speedWrist),
            (1, pulseShoulder, speedShoulder)]
     light = [(4, pulseG, speedG), (5, pulseWR, speedWR)]
-    if CBstate.AL5D_move_all_at_once:
-        run_group(light + arm, " (all at once)")   # gripper+wristrot+arm, one move
-    else:
-        run_group([light[0]])                       # gripper
-        run_group([light[1]])                       # wrist rotation
-        # The three arm joints ALWAYS move together now (2026-10-21). Staging
-        # them (elbow+wrist first, then shoulder alone) left the gripper
-        # tilting through the final approach: the held piece swung into
-        # perpendicular at board level and dragged. Power phasing is retired -
-        # the 6V/4A+ supply handles the group (the old pair_elbow_wrist /
-        # pair_travel_joints flags no longer change the grouping).
-        run_group(arm, " (arm together)")
+    # Gripper + wrist rotation + arm move as ONE group (2026-10-22): the old
+    # per-group staging only limited current spikes on the weak 6V/3A brick,
+    # and the light groups added two dead pauses per move. The base still
+    # moves LAST - its sweep is the one that can hit pieces. (The old
+    # pair_elbow_wrist / pair_travel_joints / move_all_at_once flags no longer
+    # change the grouping; they stay accepted for API compatibility.)
+    run_group(light + arm, " (arm together)")
 
     run_group([(0, pulseZ, speedZ)])                # base rotation last, alone
     return

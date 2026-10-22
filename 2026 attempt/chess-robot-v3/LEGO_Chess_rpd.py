@@ -589,21 +589,22 @@ def grip_width(piece="p"):
 
 
 
-def moveXYZGWA(X, Y, Z, G, WA):
+def moveXYZGWA(X, Y, Z, G, WA, speeds=None):
     global targetXYZGWAWR
     targetXYZGWAWR = (float(X), float(Y), float(Z),
                       float(G), float(WA), targetXYZGWAWR[5])
-    movemotors()
+    movemotors(speeds=speeds)
 
 
-def moveXY(toheight):
+def moveXY(toheight, speeds=SPEED_PICK):
+    """Vertical move to a height. The pick/drop DESCENT runs at SPEED_PICK
+    (calm onto a piece); a lift-to-cruise passes SPEED_TRAVEL - a lift is
+    cruise, not a pick (2026-10-22)."""
     global targetXYZGWAWR
     targetXYZGWAWR = (targetXYZGWAWR[0], float(toheight),
                       targetXYZGWAWR[2], targetXYZGWAWR[3],
                       -90, targetXYZGWAWR[5])
-    movemotors(slow=True, speeds=SPEED_PICK, pick_lean=True)  # pick/drop: elbow
-                                              # +wrist pair + reach-scaled wrist lean
-                                              # lean); moderate pick-descent speed
+    movemotors(slow=True, speeds=speeds, pick_lean=True)
 
 
 def movearm(X, Z, edge_square=None):
@@ -635,17 +636,17 @@ def movearm(X, Z, edge_square=None):
     targetXYZGWAWR = (targetXYZGWAWR[0], cur,
                       targetXYZGWAWR[2], targetXYZGWAWR[3],
                       -90, targetXYZGWAWR[5])
-    movemotors()
+    movemotors(speeds=SPEED_TRAVEL)
 
     # Step 2: rotate base to Z, reach unchanged (radius unchanged -> stays safe)
     targetXYZGWAWR = (targetXYZGWAWR[0], cur, float(Z),
                       targetXYZGWAWR[3], -90, targetXYZGWAWR[5])
-    movemotors()
+    movemotors(speeds=SPEED_TRAVEL)
 
     # Step 3: extend reach to X at the height this reach can hold at cruise
     targetXYZGWAWR = (float(X), cruise_for_reach(float(X)), float(Z),
                       targetXYZGWAWR[3], -90, targetXYZGWAWR[5])
-    movemotors()
+    movemotors(speeds=SPEED_TRAVEL)
 
 
 def _lift_clear(X, Z, from_height):
@@ -657,10 +658,10 @@ def _lift_clear(X, Z, from_height):
     between the pick pose and this lifted pose never exceeds the annulus."""
     safe_reach = reach_at_height(CRUISE_HEIGHT)
     if X <= safe_reach:
-        moveXY(CRUISE_HEIGHT)
+        moveXY(CRUISE_HEIGHT, speeds=SPEED_TRAVEL)   # a lift is cruise, not a pick
     else:
         moveXYZGWA(safe_reach, CRUISE_HEIGHT, Z,
-                   targetXYZGWAWR[3], -90)
+                   targetXYZGWAWR[3], -90, speeds=SPEED_TRAVEL)
 
 
 def edge_outward_pose(squarename):
@@ -721,7 +722,7 @@ def takepiece(X, Z, targetpiece, source_square=None):
         Xgraveyard = armlength("h9") + 0.5
         Zgraveyard = armangle("h9")
     movearm(Xgraveyard, Zgraveyard)
-    time.sleep(1.5)
+    time.sleep(0.5)      # was 1.5: the wrist tracking keeps the piece still now
     droppiece(targetpiece, Xgraveyard)
 
 def iscastling(sourcesquarename):
@@ -869,18 +870,18 @@ def park():
     #    the open width is still holding.
     if targetXYZGWAWR[3] > jaw + 1:
         set_gripper(jaw)
-    # 1. lift to cruise height, reach + base unchanged
+    # 1. lift to cruise height, reach + base unchanged (cruise speed)
     targetXYZGWAWR = (targetXYZGWAWR[0], CRUISE_HEIGHT, targetXYZGWAWR[2],
                       jaw, -90, targetXYZGWAWR[5])
-    movemotors()
+    movemotors(speeds=SPEED_TRAVEL)
     # 2. retract reach to the park reach, base still at the target square
     targetXYZGWAWR = (park_reach, CRUISE_HEIGHT, targetXYZGWAWR[2],
                       jaw, -90, targetXYZGWAWR[5])
-    movemotors()
+    movemotors(speeds=SPEED_TRAVEL)
     # 3. rotate the base to the side, arm retracted at cruise height
     targetXYZGWAWR = (park_reach, CRUISE_HEIGHT, 10.0,
                       jaw, -90, targetXYZGWAWR[5])
-    movemotors()
+    movemotors(speeds=SPEED_TRAVEL)
     # 4. lower onto the rest height, then release. uncompensated: the rest
     #    pose IS the unpowered droop - adding sag comp here would lift the arm
     #    off it and it would sag again at idleall.
