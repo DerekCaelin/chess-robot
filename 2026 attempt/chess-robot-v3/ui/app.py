@@ -5080,8 +5080,11 @@ class AnalysisHomeScreen(kit.Screen):
         self.app.release_awake("analysis")
 
     def request_back(self):
+        # back on the analysis HOME goes to the APP home - app.back() would
+        # pop into whatever screen opened this one (often the move screen),
+        # because the move screen navigates here via show() (2026-10-22)
         self._cleanup()
-        self.app.back()
+        self.app.show(HomeScreen)
 
 
 class AnalysisMoveScreen(kit.Screen):
