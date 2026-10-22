@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import shutil
+import threading
 
 import chess
 import chess.pgn
@@ -161,6 +162,69 @@ def auto_advance_seconds(words, sound_len):
     if sound_len and sound_len > 0:
         return sound_len + 2.0
     return max(5.0, min(10.0, (words or 1) / 2.5))
+
+
+# ── background generation (pre-warming) ──────────────────────────────────────
+# One run per (game, voice): started explicitly by the Analysis home OR
+# opportunistically during idle time (menus, the player's turn), so the audio
+# is ready by the time the player opens the analysis. A run's progress is
+# shared state, so any screen can show it - and nobody starts a second run
+# over the top of a live one (two writers on the same wav would corrupt it).
+
+_LOCK = threading.Lock()
+_RUNS = {}
+
+
+def generate_async(pack, voice, depth=13):
+    """Start (or join) the staged generation for this game+voice. Returns the
+    shared state dict: {done, total, state, error, alive}."""
+    key = (pack.hash, voice)
+    with _LOCK:
+        st = _RUNS.get(key)
+        if st is not None and st.get("alive"):
+            return st
+        st = {"done": 0, "total": max(1, pack.move_count()),
+              "state": "text", "error": None, "alive": True}
+        _RUNS[key] = st
+
+    def run():
+        try:
+            pack.generate(
+                voice, depth=depth,
+                on_progress=lambda d, n, s: st.update(done=d, total=n,
+                                                      state=s))
+        except Exception as e:
+            st["error"] = str(e)
+        finally:
+            st["alive"] = False
+
+    threading.Thread(target=run, daemon=True).start()
+    return st
+
+
+def generation_state(pack, voice):
+    return _RUNS.get((pack.hash, voice))
+
+
+def prewarm(voice=None):
+    """Idle-time generation: if a last finished game has ungenerated work for
+    the selected voice, quietly do it in the background. Returns the state or
+    None when there is nothing to do."""
+    try:
+        from chessapp import settings
+        voice = voice or settings.get("analysis.voice", "none")
+        if voice not in ("espeak", "piper"):
+            return None
+        pack = load_pack()
+        if pack is None:
+            return None
+        # already complete?
+        n = pack.move_count()
+        if n and all(pack.ready(i + 1, voice) for i in range(n)):
+            return None
+        return generate_async(pack, voice)
+    except Exception:
+        return None
 
 
 def load_pack():

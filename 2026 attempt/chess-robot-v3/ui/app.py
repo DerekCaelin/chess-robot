@@ -122,6 +122,9 @@ class App:
         self.root.update_idletasks()
         self.root.update()
         self._kill_splash()
+        # idle-time work: generate the last game's analysis audio in the
+        # background so it is ready before anyone opens it (2026-10-22)
+        self.root.after(3000, lambda: AP.prewarm())
 
     def _kill_splash(self):
         """Close the boot-splash process kiosk.sh started in the background."""
@@ -387,6 +390,10 @@ class HomeScreen(kit.Screen):
         kit.big_button(row2, "Analysis", lambda: app.show(AnalysisHomeScreen),
                        bg=kit.CARD_HI, fg=kit.FG, width=12,
                        height=2).pack(side="left", padx=8)
+
+    def on_show(self):
+        # sitting in menus is idle time: pre-generate the analysis audio
+        AP.prewarm()
 
     def _play(self):
         saved = game_state.load()
@@ -4988,19 +4995,14 @@ class AnalysisHomeScreen(kit.Screen):
 
     # generation ------------------------------------------------------------
     def _start_generation(self):
+        # join the shared run - the same one idle-time pre-warming uses. Only
+        # when no run for THIS voice is live do we cancel an older voice's run
+        # (its finished files are kept) and start fresh.
         voice = self._voice_key()
-
-        def run():
-            try:
-                self.gpack.generate(
-                    voice, on_progress=lambda d, n, st:
-                    self.q.put(("p", d, n, st, voice)))
-                self.q.put(("done", voice))
-            except Exception as e:
-                self.q.put(("err", str(e), voice))
-
-        self.worker = threading.Thread(target=run, daemon=True)
-        self.worker.start()
+        st = AP.generation_state(self.gpack, voice)
+        if st is None or not st.get("alive"):
+            self.gpack.cancel()
+            AP.generate_async(self.gpack, voice)
 
     def _draw_prog(self, frac):
         w = max(2, int(220 * max(0.0, min(1.0, frac))))
@@ -5016,45 +5018,37 @@ class AnalysisHomeScreen(kit.Screen):
             pass
 
     def _poll(self):
-        busy = False
-        try:
-            while True:
-                ev = self.q.get_nowait()
-                if len(ev) > 1 and ev[-1] != self._voice_key():
-                    continue          # an older run for a different voice
-                if ev[0] == "p":
-                    d, n, stage = ev[1], ev[2], ev[3]
-                    if stage == "text":
-                        self.prog_lbl.configure(text="Text ready")
-                        self._draw_prog(0.0)
-                        self._enable_begin()      # text is all Begin needs
-                    else:
-                        self.prog_lbl.configure(
-                            text="Text ready... generating %s"
-                                 % self._voice_key())
-                        self._draw_prog(d / float(max(1, n)))
-                    busy = True
-                elif ev[0] == "done":
-                    self.prog_lbl.configure(text="Ready")
-                    self.dots_lbl.configure(text="")
-                    self._draw_prog(1.0)
-                    self._enable_begin()
-                elif ev[0] == "err":
-                    self.prog_lbl.configure(
-                        text="Analysis failed: %s" % ev[1])
-                    self._enable_begin()
-        except queue.Empty:
-            pass
-        alive = self.worker is not None and self.worker.is_alive()
+        voice = self._voice_key()
+        st = AP.generation_state(self.gpack, voice) if self.gpack else None
+        if st is not None:
+            if st.get("state") == "audio":
+                self.prog_lbl.configure(
+                    text="Text ready... generating %s voice (%d/%d)"
+                         % (voice, st.get("done", 0), st.get("total", 0)))
+                self._draw_prog(st.get("done", 0)
+                                / float(max(1, st.get("total", 1))))
+            elif st.get("error"):
+                self.prog_lbl.configure(
+                    text="Analysis failed: %s" % st["error"])
+                self._draw_prog(1.0)
+            elif st.get("state") == "text":
+                self.prog_lbl.configure(text="Text ready")
+                self._draw_prog(0.0)
+            else:
+                self.prog_lbl.configure(text="Generating text...")
+                self._draw_prog(0.0)
+            self._enable_begin()      # text is all Begin needs
+        alive = bool(st and st.get("alive"))
         if alive:
             self.app.hold_awake("analysis")   # generation must not blank the
-            busy = True                       # panel while the player waits
-            if self._voice_key() != "none":
+            if voice != "none":               # panel while the player waits
                 self._dots = (self._dots % 3) + 1
                 self.dots_lbl.configure(text="." * self._dots)
         else:
             self.dots_lbl.configure(text="")
-        if not alive and not busy:
+            if st is not None and not st.get("error"):
+                self.prog_lbl.configure(text="Ready")
+                self._draw_prog(1.0)
             self.app.release_awake("analysis")
         if self.winfo_exists() and not self.stop:
             self.after(150, self._poll)
@@ -5790,6 +5784,8 @@ class GameScreen(kit.Screen):
                     self.turn_lbl.configure(
                         text="YOUR MOVE" if ev[1] == "you"
                         else self._robot_move_txt())
+                    if ev[1] == "you":
+                        AP.prewarm()   # the player's turn is idle time
                 elif kind == "board":
                     try:
                         self.board.draw(self.game.board(),
