@@ -61,7 +61,7 @@ def _merge_wavs(paths, out, pause=0.35):
 def synth_piper(text, out, model=PIPER_MODEL):
     """Synthesize with Piper, one sentence at a time, then join."""
     if not os.path.exists(model):
-        raise SystemExit("missing voice model: %s" % model)
+        raise RuntimeError("missing voice model: %s" % model)
     parts = []
     with tempfile.TemporaryDirectory() as td:
         for i, s in enumerate(sentences(text)):
@@ -71,7 +71,7 @@ def synth_piper(text, out, model=PIPER_MODEL):
                                input=s, text=True, capture_output=True,
                                preexec_fn=lambda: os.nice(10))
             if r.returncode != 0 or not os.path.exists(wav):
-                raise SystemExit("piper failed on %r: %s" % (s, r.stderr[-400:]))
+                raise RuntimeError("piper failed on %r: %s" % (s, r.stderr[-400:]))
             parts.append(wav)
         _merge_wavs(parts, out)
     return out
@@ -82,12 +82,12 @@ def synth_espeak(text, out, voice=ESPEAK_VOICE, speed=155):
     whole track: espeak inserts the sentence pauses itself, and splitting it
     into per-sentence files was producing a burst of static at every seam."""
     if shutil.which("espeak") is None:
-        raise SystemExit("espeak not installed")
+        raise RuntimeError("espeak not installed")
     r = subprocess.run(["espeak", "-v", voice, "-s", str(speed),
                         "-w", out, text], capture_output=True,
                        preexec_fn=lambda: os.nice(10))
     if r.returncode != 0 or not os.path.exists(out):
-        raise SystemExit("espeak failed: %s" % r.stderr[-400:])
+        raise RuntimeError("espeak failed: %s" % r.stderr[-400:])
     return out
 
 
@@ -142,7 +142,7 @@ def main(argv=None):
         print("synthesizing %s -> %s" % (tag, out))
         try:
             speak_text(text, eng, out, model=PIPER_MODELS[a.model])
-        except SystemExit as e:
+        except Exception as e:
             print("  SKIPPED:", e)
             continue
         w = wave.open(out, "rb")

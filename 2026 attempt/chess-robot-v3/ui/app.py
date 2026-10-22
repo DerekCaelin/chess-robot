@@ -307,12 +307,14 @@ class App:
     # ── router ───────────────────────────────────────────────────────────────
 
     def _present(self, cls, **kw):
+        # Build FIRST: a constructor failure used to leave a blank screen
+        # because the old screen was already destroyed (2026-10-22).
+        s = cls(app=self, **kw)
         if self.current is not None:
             try:
                 self.current.destroy()
             except Exception:
                 pass
-        s = cls(app=self, **kw)
         s.pack(fill="both", expand=True)
         self.current = s
         s.on_show()
@@ -4896,6 +4898,7 @@ class AnalysisHomeScreen(kit.Screen):
         self.q = queue.Queue()
         self.stop = False
         self.worker = None
+        self._dots = 0
         self.gpack = AP.load_pack()
         if self.gpack is None:
             tk.Label(self.body, text="No finished game yet. Finish a game "
@@ -4947,6 +4950,11 @@ class AnalysisHomeScreen(kit.Screen):
                                  font=("DejaVu Sans", 13), bg=kit.BG,
                                  fg=kit.ACCENT, justify="left", anchor="w")
         self.prog_lbl.pack(anchor="w", pady=(10, 0))
+        # the animated '...' progress signifier sits above the loading bar
+        self.dots_lbl = tk.Label(right, text="", font=("DejaVu Sans", 13),
+                                 bg=kit.BG, fg=kit.ACCENT, justify="left",
+                                 anchor="w")
+        self.dots_lbl.pack(anchor="w")
         self.prog_bar = tk.Canvas(right, width=220, height=16, bg="#181b21",
                                   highlightthickness=0)
         self.prog_bar.pack(anchor="w", pady=(4, 0))
@@ -4973,22 +4981,23 @@ class AnalysisHomeScreen(kit.Screen):
 
     def _voice_changed(self, _=None):
         settings.set("analysis.voice", self._voice_key())
+        # halt the old voice's run (its finished files are kept) and start
+        # the new one
+        self.gpack.cancel()
         self._start_generation()
 
     # generation ------------------------------------------------------------
     def _start_generation(self):
-        if self.worker is not None and self.worker.is_alive():
-            return
         voice = self._voice_key()
 
         def run():
             try:
                 self.gpack.generate(
-                    voice,
-                    on_progress=lambda d, n, st: self.q.put(("p", d, n, st)))
-                self.q.put(("done",))
+                    voice, on_progress=lambda d, n, st:
+                    self.q.put(("p", d, n, st, voice)))
+                self.q.put(("done", voice))
             except Exception as e:
-                self.q.put(("err", str(e)))
+                self.q.put(("err", str(e), voice))
 
         self.worker = threading.Thread(target=run, daemon=True)
         self.worker.start()
@@ -5011,6 +5020,8 @@ class AnalysisHomeScreen(kit.Screen):
         try:
             while True:
                 ev = self.q.get_nowait()
+                if len(ev) > 1 and ev[-1] != self._voice_key():
+                    continue          # an older run for a different voice
                 if ev[0] == "p":
                     d, n, stage = ev[1], ev[2], ev[3]
                     if stage == "text":
@@ -5018,11 +5029,14 @@ class AnalysisHomeScreen(kit.Screen):
                         self._draw_prog(0.0)
                         self._enable_begin()      # text is all Begin needs
                     else:
-                        self.prog_lbl.configure(text="Voice: %d/%d" % (d, n))
+                        self.prog_lbl.configure(
+                            text="Text ready... generating %s"
+                                 % self._voice_key())
                         self._draw_prog(d / float(max(1, n)))
                     busy = True
                 elif ev[0] == "done":
                     self.prog_lbl.configure(text="Ready")
+                    self.dots_lbl.configure(text="")
                     self._draw_prog(1.0)
                     self._enable_begin()
                 elif ev[0] == "err":
@@ -5035,7 +5049,12 @@ class AnalysisHomeScreen(kit.Screen):
         if alive:
             self.app.hold_awake("analysis")   # generation must not blank the
             busy = True                       # panel while the player waits
-        elif not busy:
+            if self._voice_key() != "none":
+                self._dots = (self._dots % 3) + 1
+                self.dots_lbl.configure(text="." * self._dots)
+        else:
+            self.dots_lbl.configure(text="")
+        if not alive and not busy:
             self.app.release_awake("analysis")
         if self.winfo_exists() and not self.stop:
             self.after(150, self._poll)

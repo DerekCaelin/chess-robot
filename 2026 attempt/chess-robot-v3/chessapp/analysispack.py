@@ -14,6 +14,7 @@ import chess
 import chess.pgn
 
 from chessapp import analysis as AN
+from chessapp import audio
 from chessapp import game_state
 from chessapp import narrative as NR
 from chessapp import voice as VO
@@ -67,6 +68,12 @@ class AnalysisPack:
         self.dir = os.path.join(CACHE, self.hash)
         self.moves = []
         self.analysis = None
+        self._run_id = 0
+
+    def cancel(self):
+        """Stop the current generation run. Files already written are kept -
+        switching voices never throws away finished work."""
+        self._run_id += 1
 
     def text_path(self):
         return os.path.join(self.dir, "text.json")
@@ -89,7 +96,9 @@ class AnalysisPack:
         return b
 
     def generate(self, voice="none", on_progress=None, depth=13):
-        """Staged background generation. on_progress(done, total, stage)."""
+        """Staged background generation. on_progress(done, total, stage).
+        Cancellable between moves; one bad move never kills the run."""
+        token = self._run_id          # cancel() invalidates this run
         os.makedirs(self.dir, exist_ok=True)
         if not self.has_text():
             g = game_from_state(self.game)
@@ -106,13 +115,23 @@ class AnalysisPack:
         if voice in ("espeak", "piper"):
             total = max(1, len(self.moves))
             for i, m in enumerate(self.moves):
+                if self._run_id != token:
+                    break
                 out = self.wav_path(m["ply"], voice)
                 if not os.path.exists(out):
-                    if voice == "espeak":
-                        VO.synth_espeak(m["speech"], out)
-                    else:
-                        VO.synth_piper(m["speech"], out,
-                                       model=VO.PIPER_MODELS["alba"])
+                    speech = (m.get("speech") or "").strip()
+                    if not speech:
+                        continue
+                    try:
+                        if voice == "espeak":
+                            VO.synth_espeak(speech, out)
+                        else:
+                            VO.synth_piper(speech, out,
+                                           model=VO.PIPER_MODELS["alba"])
+                    except Exception as e:
+                        # one bad line must not stop the rest of the game
+                        print("voice: move %d failed: %s" % (m["ply"], e))
+                        continue
                 if on_progress:
                     on_progress(i + 1, total, "audio")
         return self.moves
@@ -133,7 +152,7 @@ class AnalysisPack:
     def sound_len(self, ply, voice):
         if voice == "none":
             return 0.0
-        return VO.wav_duration(self.wav_path(ply, voice))
+        return audio.wav_duration(self.wav_path(ply, voice))
 
 
 def auto_advance_seconds(words, sound_len):
