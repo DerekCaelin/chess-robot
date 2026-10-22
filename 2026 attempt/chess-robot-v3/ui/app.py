@@ -3308,19 +3308,20 @@ class RadscaleScreen(kit.Screen):
 
 
 class CornerCalibScreen(kit.Screen):
-    """Mode B 'arm frame' calibration: the player centres a pawn on each corner
+    """Mode B 'arm frame' calibration: the player centres a pawn on each grid
     square and jogs the open jaws onto it AT GRIP HEIGHT (the height a real pick
-    grips a pawn at), so the arm's real (reach, angle) at the four board corners
-    is measured exactly where the grip happens. Measuring at a hover fed the fit
-    perspective-shifted values (2026-10-20: perceived reach rode on gripper
-    height, and the fit came back with ~3 in of phantom reach).
-    fit_corner_frame() solves the pivot + scale + offset + angle offset, which
-    fully absorbs board position/orientation/size. The fit is planar (X/Z only)
-    - Y just sets the height a sample is taken at.
-    Order A8 -> H8 -> H1 -> A1 (near row first, then the far rank)."""
+    grips a pawn at), so the arm's real (reach, angle) is measured exactly where
+    the grip happens. The measurement set is the 3x3 lattice - corners, edge
+    midpoints and the centre (2026-10-22): corners alone left interior squares
+    like d4 riding the CHORD through a curved (flexing) arm response - dead on
+    at the corners, too far at the middle. fit_corner_frame() solves the pivot +
+    scale + offset + angle offset (absorbing board position/orientation/size)
+    and the per-square corrections then reproduce every measured square
+    exactly. The fit is planar (X/Z only) - Y just sets the height a sample is
+    taken at. Sweep: A8 D8 H8 -> H4 D4 A4 -> A1 D1 H1."""
 
-    ORDER = ("a8", "h8", "h1", "a1")
-    LABELS = {"a8": "A8", "h8": "H8", "h1": "H1", "a1": "A1"}
+    ORDER = ("a8", "d8", "h8", "h4", "d4", "a4", "a1", "d1", "h1")
+    LABELS = dict((sq, sq.upper()) for sq in ORDER)
     X_LO, X_HI = 4.5, 14.66
     Z_LO, Z_HI = 20.0, 160.0
     Y_LO, Y_HI = 1.6, 7.5
@@ -3532,8 +3533,8 @@ class CornerCalibScreen(kit.Screen):
             pass
         self.instr_lbl.configure(
             text="Centre a pawn on %s. The jaws are at grip height - jog "
-                 "until the pawn is centred between them, then Grab (%d/4)."
-                 % (lbl, self.sidx + 1))
+                 "until the pawn is centred between them, then Grab (%d/%d)."
+                 % (lbl, self.sidx + 1, len(self.ORDER)))
         self.val_lbl.configure(text="%s\nreach %.2f\nangle %.1f\ntip %.2f\n"
                                "%d/4 grabbed"
                                % (lbl, self.cur[0], self.cur[2],
@@ -3634,11 +3635,11 @@ class CornerCalibScreen(kit.Screen):
 
     def _roundtrip_text(self):
         """The automatic calibration check: what the RUNTIME will command at
-        each corner (frame + corrections) vs the pose measured there. PASS =
-        predicted == measured. Also shows the per-corner correction (the drift
-        the bare frame would have left) and the grip-height delta."""
+        each measured square (frame + corrections) vs the pose measured there.
+        PASS = predicted == measured. The corrections show how much the bare
+        frame was bent at each square (the drift it would have left)."""
         corr = dict((c[0], (c[1], c[2])) for c in self.corr_out)
-        names, dr, da, dt, verd = [], [], [], [], []
+        names, dr, da, dt, bad = [], [], [], [], []
         for s in self.samples:
             Xp, Zp = ap.frame_predict(self.frame_out, s["square"])
             c_reach, c_ang = corr[s["square"]]
@@ -3649,22 +3650,17 @@ class CornerCalibScreen(kit.Screen):
             dr.append(c_reach)
             da.append(c_ang)
             dt.append(RD.grip_y("p", Xp) - s["Y"])
-            verd.append("PASS" if abs(er) <= 0.02 and abs(ea) <= 0.05
-                        else "FAIL")
-
-        def row(lbl, vals, fmt, stars=False):
-            cells = []
-            for i, (n, v) in enumerate(zip(names, vals)):
-                mark = ("*" if not self.samples[i].get("auto_h", True)
-                        and stars else "")
-                cells.append(fmt % (n + mark, v))
-            return lbl + "  " + "  ".join(cells)
+            if not (abs(er) <= 0.02 and abs(ea) <= 0.05):
+                bad.append(self.LABELS[s["square"]])
+        w = max(range(len(dt)), key=lambda i: abs(dt[i]))
+        star = "" if self.samples[w].get("auto_h", True) else "*"
         return "\n".join([
-            "round-trip:  " + "  ".join("%s %s" % (n, v)
-                                        for n, v in zip(names, verd)),
+            "round-trip: " + ("all %d PASS" % len(names) if not bad
+                              else "FAIL " + " ".join(bad)),
             "corr in/deg:  " + "  ".join("%s %+.2f/%+.1f" % (n, r, a)
                                          for n, r, a in zip(names, dr, da)),
-            row("tip in (*=hand):", dt, "%s %+.2f", stars=True)])
+            "tip in (*=hand): worst %+.2f at %s%s"
+            % (dt[w], names[w], star)])
 
     def _fail_text(self, f):
         """Failure reason + WHICH corner disagrees (per-corner reach/angle

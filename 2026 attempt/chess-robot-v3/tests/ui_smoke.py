@@ -4,6 +4,7 @@
 # button once hidden below the Direct-input list).
 #
 # Run headless on the desktop (needs a display):  python tests/ui_smoke.py
+import math
 import os
 import sys
 import time
@@ -139,12 +140,16 @@ def main():
                     fn()
             if hasattr(scr, "_roundtrip_text"):     # corner: longest runtime text
                 scr._log_run = lambda *a, **k: None
-                scr.samples = [{"square": s,
-                                "X": 6.3 + 6.6 * (s in ("h1", "a1")),
-                                "Z": {"a8": 132.0, "h8": 38.0,
-                                      "h1": 68.0, "a1": 105.0}[s],
-                                "Y": 6.0, "auto_h": s != "h8"}
-                               for s in ("a8", "h8", "h1", "a1")]
+                scr.samples = []
+                for s in ("a8", "d8", "h8", "h4", "d4", "a4", "a1", "d1",
+                          "h1"):
+                    bx, by = A.ap.corner_units(s)
+                    dx, dy = bx - 4.0, by + 2.3
+                    scr.samples.append({
+                        "square": s,
+                        "X": 1.1 * math.hypot(dx, dy) + 1.2 + 0.05 * bx,
+                        "Z": 86.0 - 57.295779 * math.atan2(dx, dy),
+                        "Y": 6.0, "auto_h": s != "h8"})
                 fit = A.ap.fit_corner_frame(scr.samples)
                 scr.frame_out = {"px": round(fit["px"], 3),
                                  "py": round(fit["py"], 3),

@@ -343,11 +343,22 @@ def ik_Y(X, Y):
 
 
 # Per-corner corrections for the mode-B frame (see CBstate.AL5D_corner_res):
-# the 5-parameter frame cannot hit four measured corners exactly, so the
-# leftover residual is stored per corner and added back - the model then
-# reproduces the calibrated corners EXACTLY (the automatic calibration check:
-# predicted A1/A8/H1/H8 == measured) and blends between them.
+# the 5-parameter frame cannot hit measured squares exactly, so the leftover
+# residual is stored per square and added back - the model then reproduces the
+# calibration EXACTLY at every measured point (the automatic calibration
+# check: predicted == measured) and blends between them. The measurement set
+# is the 3x3 lattice (2026-10-22): corners + edge midpoints + centre - the
+# corners alone left interior squares like d4 on the wrong end of the chord
+# through a curved (flexing) arm response.
 corner_res = {}
+
+# The 3x3 measurement lattice in board units: columns a, d, h (bx 0.5/3.5/7.5),
+# rows rank 8, rank 4, rank 1 (by 0.5/4.5/7.5).
+GRID_XS = (0.5, 3.5, 7.5)
+GRID_YS = (0.5, 4.5, 7.5)
+GRID9 = (("a8", "d8", "h8"),
+         ("a4", "d4", "h4"),
+         ("a1", "d1", "h1"))
 
 
 def set_corner_res(points):
@@ -362,10 +373,37 @@ def set_corner_res(points):
     corner_res = d
 
 
+def _lattice_locate(t, stops):
+    """(index, fraction) of t within the (non-uniform) lattice stops."""
+    if t <= stops[0]:
+        return 0, 0.0
+    if t >= stops[-1]:
+        return len(stops) - 2, 1.0
+    for i in range(1, len(stops)):
+        if t <= stops[i]:
+            span = stops[i] - stops[i - 1]
+            return i - 1, ((t - stops[i - 1]) / span if span else 0.0)
+    return len(stops) - 2, 1.0
+
+
 def corner_corr(bx, by):
-    """(reach, angle) correction at a board point, blended bilinearly from the
-    four calibrated corners. At a corner it is exactly that corner's stored
-    correction; between corners it interpolates smoothly."""
+    """(reach, angle) correction at a board point. With the full 3x3 lattice
+    measured it blends bilinearly over the grid - EXACT at every measured
+    square (including interior ones like d4) and smooth between. Falls back to
+    the four-corner blend for older 4-corner data."""
+    if all(sq in corner_res for row in GRID9 for sq in row):
+        i, s = _lattice_locate(float(bx), GRID_XS)
+        j, t = _lattice_locate(float(by), GRID_YS)
+
+        def node(ii, jj):
+            return corner_res[GRID9[jj][ii]]
+        (r00, a00), (r10, a10) = node(i, j), node(i + 1, j)
+        (r01, a01), (r11, a11) = node(i, j + 1), node(i + 1, j + 1)
+        dr = ((1 - s) * ((1 - t) * r00 + t * r01)
+              + s * ((1 - t) * r10 + t * r11))
+        da = ((1 - s) * ((1 - t) * a00 + t * a01)
+              + s * ((1 - t) * a10 + t * a11))
+        return dr, da
     if len(corner_res) < 4:
         return 0.0, 0.0
     u = min(1.0, max(0.0, (float(bx) - 0.5) / 7.0))

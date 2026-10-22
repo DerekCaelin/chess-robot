@@ -14,6 +14,7 @@ import arm_probe as ap  # noqa: E402
 
 RTOD = 57.295779
 SQUARES = ("a8", "h8", "h1", "a1")
+GRID_SQ = ("a8", "d8", "h8", "h4", "d4", "a4", "a1", "d1", "h1")
 
 
 def _old_len(sq):
@@ -30,10 +31,10 @@ def _old_ang(sq):
     return RD.Gfudge + 90 + RTOD * math.atan(x / (y + RD.axistorow0))
 
 
-def _frame_recs(px, py, m, c, a0, sign=1, dreach=None):
-    """Corner measurements generated from the frame model itself."""
+def _frame_recs(px, py, m, c, a0, sign=1, dreach=None, squares=None):
+    """Measurements generated from the frame model itself."""
     recs = []
-    for i, sq in enumerate(SQUARES):
+    for i, sq in enumerate(squares or SQUARES):
         bx, by = ap.corner_units(sq)
         dx, dy = bx - px, by - py
         x = m * math.hypot(dx, dy) + c
@@ -194,6 +195,59 @@ def test_mode_b_round_trip_exact():
         RD.corner_res = old_res
 
 
+def test_grid_round_trip_exact():
+    """THE mid-board fix (2026-10-22): the arm's radial response is CURVED
+    (flex grows with extension), so a linear frame anchored at the corners
+    overshoots the middle - the chord sits above the curve, and d4 (the
+    deepest interior square) ate the whole error. With the 3x3 measurement
+    grid the runtime reproduces EVERY measured square exactly, and interior
+    squares carry their OWN correction instead of the corners' average."""
+    px, py, m, c, a0 = 4.0, -2.26, 1.11, 1.37, 84.8
+
+    def bend(bx, by):
+        d = math.hypot(bx - px, by - py)
+        return 0.05 * (d - 7.0) ** 2            # a curve no line can hold
+
+    recs = []
+    for sq in GRID_SQ:
+        bx, by = ap.corner_units(sq)
+        dx, dy = bx - px, by - py
+        recs.append({"square": sq,
+                     "X": m * math.hypot(dx, dy) + c + bend(bx, by),
+                     "Z": a0 - RTOD * math.atan2(dx, dy)})
+    f = ap.fit_corner_frame(recs)
+    assert f.get("ok"), f
+    fr = {"px": round(f["px"], 3), "py": round(f["py"], 3),
+          "scale": round(f["scale"], 4), "offset": round(f["offset"], 3),
+          "a0": round(f["a0"], 2), "sign": int(f["sign"])}
+    corr = []
+    for s in recs:
+        Xp, Zp = ap.frame_predict(fr, s["square"])
+        dz = (s["Z"] - Zp + 180.0) % 360.0 - 180.0
+        corr.append([s["square"], round(s["X"] - Xp, 3), round(dz, 2)])
+    old = (RD.calib_mode, RD.frame_px, RD.frame_py, RD.frame_scale,
+           RD.frame_offset, RD.frame_a0, RD.frame_sign)
+    old_res = dict(RD.corner_res)
+    RD.calib_mode = "B"
+    RD.frame_px, RD.frame_py = fr["px"], fr["py"]
+    RD.frame_scale, RD.frame_offset = fr["scale"], fr["offset"]
+    RD.frame_a0, RD.frame_sign = fr["a0"], fr["sign"]
+    RD.set_corner_res(corr)
+    try:
+        for s in recs:
+            Xr, Zr = RD.planar_to_arm(*RD.board_sq_center(s["square"]))
+            assert abs(Xr - s["X"]) < 0.02, (s["square"], Xr, s["X"])
+            assert abs((Zr - s["Z"] + 180.0) % 360.0 - 180.0) < 0.05
+        # the interior square gets its OWN correction at its lattice node
+        dr, _ = RD.corner_corr(3.5, 4.5)
+        want = dict((c[0], c[1]) for c in corr)["d4"]
+        assert abs(dr - want) < 1e-9, (dr, want)
+    finally:
+        (RD.calib_mode, RD.frame_px, RD.frame_py, RD.frame_scale,
+         RD.frame_offset, RD.frame_a0, RD.frame_sign) = old
+        RD.corner_res = old_res
+
+
 def main():
     test_mode_a_preserves_parametric()
     test_corner_frame_recovers_exact()
@@ -204,6 +258,7 @@ def main():
     test_corner_frame_rejects_high_residual()
     test_mode_b_round_trip()
     test_mode_b_round_trip_exact()
+    test_grid_round_trip_exact()
     print("PASS: corner-frame fit + board-unit seam")
 
 
