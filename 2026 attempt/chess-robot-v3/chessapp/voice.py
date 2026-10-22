@@ -68,7 +68,8 @@ def synth_piper(text, out, model=PIPER_MODEL):
             wav = os.path.join(td, "p%03d.wav" % i)
             r = subprocess.run([sys.executable, "-m", "piper", "-m", model,
                                 "-f", wav],
-                               input=s, text=True, capture_output=True)
+                               input=s, text=True, capture_output=True,
+                               preexec_fn=lambda: os.nice(10))
             if r.returncode != 0 or not os.path.exists(wav):
                 raise SystemExit("piper failed on %r: %s" % (s, r.stderr[-400:]))
             parts.append(wav)
@@ -83,7 +84,8 @@ def synth_espeak(text, out, voice=ESPEAK_VOICE, speed=155):
     if shutil.which("espeak") is None:
         raise SystemExit("espeak not installed")
     r = subprocess.run(["espeak", "-v", voice, "-s", str(speed),
-                        "-w", out, text], capture_output=True)
+                        "-w", out, text], capture_output=True,
+                       preexec_fn=lambda: os.nice(10))
     if r.returncode != 0 or not os.path.exists(out):
         raise SystemExit("espeak failed: %s" % r.stderr[-400:])
     return out

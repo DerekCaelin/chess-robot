@@ -108,6 +108,7 @@ class App:
         self._tools = []           # keep ToolRun refs alive
         self._display_asleep = False
         self._last_input = time.time()
+        self._busy_reasons = set()   # work that must keep the panel alive
         self._IDLE_SECS = 120      # blank the panel after 2 min idle
         self._setup_powerbtn()
         self.root.bind("<Escape>", lambda e: self.back())
@@ -265,9 +266,20 @@ class App:
             self._display_asleep = False
             self._display_on()
 
+    def hold_awake(self, tag):
+        """Keep the panel on while long work runs (analysis generation takes
+        minutes and touches nothing - the idle blank used to black the screen
+        in the middle of it)."""
+        self._busy_reasons.add(tag)
+        self._on_input()
+
+    def release_awake(self, tag):
+        self._busy_reasons.discard(tag)
+        self._last_input = time.time()
+
     def _idle_check(self):
-        if not self._display_asleep and \
-                (time.time() - self._last_input) > self._IDLE_SECS:
+        if (not self._display_asleep and not self._busy_reasons
+                and (time.time() - self._last_input) > self._IDLE_SECS):
             self._display_asleep = True
             self._display_off()
         self.root.after(5000, self._idle_check)
@@ -4854,6 +4866,22 @@ class ArmSagScreen(kit.Screen):
 
 # ── analysis ─────────────────────────────────────────────────────────────────
 
+def proceed_without_voice(app, on_wait, on_text):
+    """The player wants to advance but the sound file is still cooking."""
+    m = kit.Modal(app, "Proceed without voice?")
+    tk.Label(m.body, text="The voice file is still being generated. View "
+             "text only or wait for the sound file.", font=kit.F_BODY,
+             bg=kit.CARD, fg=kit.FG, wraplength=420,
+             justify="left").pack(pady=(0, 10))
+    row = tk.Frame(m.body, bg=kit.CARD)
+    row.pack()
+    kit.big_button(row, "Wait", lambda: (m.close(), on_wait()),
+                   bg=kit.CARD_HI, fg=kit.FG, width=14,
+                   height=2).pack(side="left", padx=8)
+    kit.big_button(row, "Text only", lambda: (m.close(), on_text()),
+                   bg=kit.GREEN, fg="#1b1e24", width=14,
+                   height=2).pack(side="left", padx=8)
+
 class AnalysisHomeScreen(kit.Screen):
     """Analysis of the LAST FINISHED game: the final position, the date and
     winner, the run options and Begin. Per-move text and audio are generated
@@ -4915,14 +4943,19 @@ class AnalysisHomeScreen(kit.Screen):
         menu.configure(font=kit.F_BODY, bg=kit.CARD_HI, fg=kit.FG,
                        highlightthickness=0, width=14)
         menu.pack(side="left")
-        self.prog_lbl = tk.Label(right, text="", font=kit.F_SMALL,
-                                 bg=kit.BG, fg=kit.FG_DIM, justify="left",
-                                 anchor="w")
+        self.prog_lbl = tk.Label(right, text="Generating text...",
+                                 font=("DejaVu Sans", 13), bg=kit.BG,
+                                 fg=kit.ACCENT, justify="left", anchor="w")
         self.prog_lbl.pack(anchor="w", pady=(10, 0))
+        self.prog_bar = tk.Canvas(right, width=220, height=16, bg="#181b21",
+                                  highlightthickness=0)
+        self.prog_bar.pack(anchor="w", pady=(4, 0))
+        self._draw_prog(0.0)
 
-        kit.big_button(self.body, "Begin", self._begin, bg=kit.GREEN,
-                       fg="#1b1e24", height=2,
-                       width=16).pack(side="bottom", pady=(12, 4))
+        self.begin_btn = kit.big_button(self.body, "Begin", self._begin,
+                                        bg=kit.GREEN, fg="#1b1e24",
+                                        height=2, width=16, disabled=True)
+        self.begin_btn.pack(side="bottom", pady=(12, 4))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._start_generation()
         self._poll()
@@ -4960,32 +4993,75 @@ class AnalysisHomeScreen(kit.Screen):
         self.worker = threading.Thread(target=run, daemon=True)
         self.worker.start()
 
+    def _draw_prog(self, frac):
+        w = max(2, int(220 * max(0.0, min(1.0, frac))))
+        self.prog_bar.delete("all")
+        self.prog_bar.create_rectangle(0, 0, w, 16, fill=kit.ACCENT,
+                                       outline="")
+
+    def _enable_begin(self):
+        try:
+            self.begin_btn.configure(state="normal", bg=kit.GREEN,
+                                     fg="#1b1e24")
+        except tk.TclError:
+            pass
+
     def _poll(self):
+        busy = False
         try:
             while True:
                 ev = self.q.get_nowait()
                 if ev[0] == "p":
-                    what = "text" if ev[3] == "text" else "voice"
-                    self.prog_lbl.configure(
-                        text="Generating %s: %d/%d" % (what, ev[1], ev[2]))
+                    d, n, stage = ev[1], ev[2], ev[3]
+                    if stage == "text":
+                        self.prog_lbl.configure(text="Text ready")
+                        self._draw_prog(0.0)
+                        self._enable_begin()      # text is all Begin needs
+                    else:
+                        self.prog_lbl.configure(text="Voice: %d/%d" % (d, n))
+                        self._draw_prog(d / float(max(1, n)))
+                    busy = True
                 elif ev[0] == "done":
                     self.prog_lbl.configure(text="Ready")
+                    self._draw_prog(1.0)
+                    self._enable_begin()
                 elif ev[0] == "err":
-                    self.prog_lbl.configure(text="Analysis failed: %s" % ev[1])
+                    self.prog_lbl.configure(
+                        text="Analysis failed: %s" % ev[1])
+                    self._enable_begin()
         except queue.Empty:
             pass
+        alive = self.worker is not None and self.worker.is_alive()
+        if alive:
+            self.app.hold_awake("analysis")   # generation must not blank the
+            busy = True                       # panel while the player waits
+        elif not busy:
+            self.app.release_awake("analysis")
         if self.winfo_exists() and not self.stop:
             self.after(150, self._poll)
 
     def _begin(self):
+        voice = self._voice_key()
+        first = self.gpack.moves[0] if self.gpack.moves else None
+        if first and voice != "none" and \
+                not self.gpack.ready(first["ply"], voice):
+            proceed_without_voice(
+                self.app, on_wait=lambda: None,
+                on_text=lambda: self._open(0))
+            return
+        self._open(0)
+
+    def _open(self, idx):
         self.stop = True
-        self.app.show(AnalysisMoveScreen, pack=self.gpack, idx=0)
+        self.app.release_awake("analysis")
+        self.app.show(AnalysisMoveScreen, pack=self.gpack, idx=idx)
 
     def _cleanup(self):
         self.stop = True
+        self.app.release_awake("analysis")
 
     def request_back(self):
-        self.stop = True
+        self._cleanup()
         self.app.back()
 
 
@@ -5093,7 +5169,7 @@ class AnalysisMoveScreen(kit.Screen):
         self._draw_bar(0.0)
 
     def _refresh_next(self):
-        ok = self.idx < len(self.gpack.moves) - 1 and self._sound_ready()
+        ok = self.idx < len(self.gpack.moves) - 1
         self.next_btn.configure(state="normal" if ok else "disabled",
                                 bg=kit.CARD_HI if ok else kit.CARD,
                                 fg=kit.FG if ok else kit.FG_DIM)
@@ -5168,10 +5244,19 @@ class AnalysisMoveScreen(kit.Screen):
         if self.winfo_exists():
             self.after(400, self._pending_tick)
 
-    def _advance(self):
+    def _advance(self, force=False):
         if self.idx >= len(self.gpack.moves) - 1:
             return
-        self.idx += 1
+        nxt = self.idx + 1
+        if (not force and self.voice != "none"
+                and not self.gpack.ready(self.gpack.moves[nxt]["ply"],
+                                         self.voice)):
+            # the player may look ahead without waiting for the sound
+            proceed_without_voice(
+                self.app, on_wait=lambda: None,
+                on_text=lambda: self._advance(force=True))
+            return
+        self.idx = nxt
         self._show()
         if self._playing:
             self._play()
@@ -5189,7 +5274,7 @@ class AnalysisMoveScreen(kit.Screen):
             self._start_timer()
 
     def _next(self):
-        if self.idx >= len(self.gpack.moves) - 1 or not self._sound_ready():
+        if self.idx >= len(self.gpack.moves) - 1:
             return
         self._advance()
 
@@ -5200,6 +5285,11 @@ class AnalysisMoveScreen(kit.Screen):
             frac = (time.time() - self._t0) / d if d > 0 else 0.0
             self._draw_bar(frac if frac < 1.0 else 1.0)
         self._refresh_next()
+        # a still-cooking voice file must not let the panel fall asleep
+        if self.voice != "none" and not self._sound_ready():
+            self.app.hold_awake("analysis-move")
+        else:
+            self.app.release_awake("analysis-move")
         if self.winfo_exists() and not self.stop:
             self.after(200, self._poll)
 
@@ -5207,6 +5297,7 @@ class AnalysisMoveScreen(kit.Screen):
         self.stop = True
         self._stop_timer()
         audio.stop_wav()
+        self.app.release_awake("analysis-move")
 
     def _finish_to_home(self):
         self._cleanup()

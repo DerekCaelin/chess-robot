@@ -41,7 +41,10 @@ class Engine:
         self.multipv = multipv
         self.p = subprocess.Popen(
             [self.path], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            text=True, bufsize=1)
+            text=True, bufsize=1,
+            # low priority: analysis runs for minutes and must never make
+            # the touchscreen feel dead (2026-10-22)
+            preexec_fn=lambda: os.nice(10))
         self._put("uci")
         self._wait("uciok")
         self._put("setoption name MultiPV value %d" % multipv)
