@@ -8,6 +8,8 @@
 from ChessBoard import ChessBoard
 import subprocess, sys
 import CBstate
+import numpy
+import pyttsx3
 chessboard = ChessBoard()
 import robotmove as RD
 import playermove_rpd as RDpm

@@ -1,0 +1,563 @@
+# board_autodetect.py
+#
+# Automatic chessboard detection for the chess robot.
+#
+# Public API:
+#   detect_board(img) -> {"A1":(x,y), "H1":(x,y), "A8":(x,y), "H8":(x,y)}
+#                        coordinates normalised to [0,1] relative to the image,
+#                        or None if the board could not be detected.
+#
+# Detection cascade (first success wins):
+#   1. findChessboardCorners  — the empty board is a clean 8x8 checkerboard,
+#      giving sub-pixel internal corners.
+#   2. Middle-band 7x3        — the starting position leaves ranks 3-6 empty,
+#      a clean 8x4 checkerboard strip.
+#   3. Partial windows        — piece shadows and glare frequently break the
+#      full band, so we accept any clean sub-window (>=3x3 internal corners)
+#      found under contrast-normalised pre-processing, resolve where it sits
+#      on the board lattice by scoring full-board square parity, and anchor a
+#      second window on the same lattice to remove the sliding ambiguity.
+#
+# There is deliberately NO outline/Hough fallback: those experiments returned
+# garbage corners and produced the calibration "jumps"; an honest None is
+# safer, and the live tool holds its last good detection meanwhile.
+#
+# Orientation is recovered automatically from the piece colours:
+#   - the board edge holding the light (white) pieces is rank 1,
+#   - on that edge the dark corner is a1 (h1 is light).
+# When the board is empty the piece signal is absent, so the result has a
+# possible 180-degree ambiguity (a1<->h8).  That is expected; the calibration
+# flow asks the user for a single A1 click in that case.
+
+import cv2
+import numpy as np
+
+
+# ---------------------------------------------------------------------------
+# Geometry helpers
+# ---------------------------------------------------------------------------
+
+def _order_clockwise(pts):
+    """Return the 4 points ordered counter-clockwise around their centroid."""
+    pts = np.asarray(pts, dtype=np.float32).reshape(-1, 2)
+    centroid = pts.mean(axis=0)
+    angles = np.arctan2(pts[:, 1] - centroid[1], pts[:, 0] - centroid[0])
+    return pts[np.argsort(angles)]
+
+
+def _outer_from_homography(internal, ideal_x, ideal_y):
+    """Fit a perspective homography from the internal corner grid to its known
+    grid-line coordinates, then map the four outer corners through it.
+
+    internal : (rows*cols, 2) row-major internal corners
+    ideal_x  : grid-line x-coordinates of the internal corners (columns)
+    ideal_y  : grid-line y-coordinates of the internal corners (rows)
+
+    The board's grid lines run 0..8, so the outer corners of the playing area
+    are at (0,0), (8,0), (8,8), (0,8).  Fitting across every internal corner
+    (instead of extrapolating from the four extremes) averages out per-corner
+    noise — which matters most for the dark squares, whose outer edges have low
+    contrast against the table.
+    """
+    rows = len(ideal_y)
+    cols = len(ideal_x)
+    grid = np.asarray(internal, dtype=np.float32).reshape(rows, cols, 2)
+    dst = grid.reshape(-1, 2)
+    src = np.float32([[x, y] for y in ideal_y for x in ideal_x])
+    H, _ = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
+    if H is None:
+        return None
+    outer_ideal = np.float32([[0, 0], [8, 0], [8, 8], [0, 8]]).reshape(-1, 1, 2)
+    outers = cv2.perspectiveTransform(outer_ideal, H).reshape(-1, 2)
+    return _order_clockwise(outers)
+
+
+def _find_internal(img, pattern):
+    """findChessboardCorners for `pattern`, refined with cornerSubPix.
+
+    findChessboardCorners often fails on large squares at full resolution (its
+    adaptive-threshold block is a fixed size), so we retry on progressively
+    downscaled images and map the resulting corners back to full resolution,
+    where they are refined to sub-pixel accuracy.
+    """
+    grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = grey.shape
+    for scale in (1.0, 0.75, 0.5, 0.35):
+        g = grey if scale >= 1.0 else cv2.resize(
+            grey, (int(w * scale), int(h * scale)),
+            interpolation=cv2.INTER_AREA)
+        found, corners = cv2.findChessboardCorners(
+            g, pattern,
+            cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE)
+        if not found:
+            continue
+        corners = corners.reshape(-1, 2)
+        if scale < 1.0:
+            corners = corners / scale
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+        corners = cv2.cornerSubPix(grey, corners, (11, 11), (-1, -1), criteria)
+        return corners.astype(np.float32)
+    return None
+
+
+def _detect_chessboard(img):
+    """Full empty board: 7x7 internal corners -> 4 outer corners."""
+    internal = _find_internal(img, (7, 7))
+    if internal is None:
+        return None
+    return _outer_from_homography(internal, list(range(1, 8)), list(range(1, 8)))
+
+
+def _detect_middle_band(img):
+    """Pieces on ranks 1-2 and 7-8 leave the middle four ranks empty, so an
+    8x4 sub-board is still a clean checkerboard: 7x3 internal corners.
+    The empty band sits on grid lines y=3,4,5."""
+    internal = _find_internal(img, (7, 3))
+    if internal is None:
+        return None
+    return _outer_from_homography(internal, list(range(1, 8)), [3, 4, 5])
+
+
+def _detect_quad(img):
+    raise NotImplementedError(
+        "outline/Hough fallbacks removed: they returned garbage corners and "
+        "caused calibration jumps. Use detect_corners(); it falls back to the "
+        "partial-window lattice solver instead.")
+
+
+# ---------------------------------------------------------------------------
+# Partial-window lattice solver
+#
+# When pieces stand on the board, findChessboardCorners frequently finds only
+# a *sub-window* of the internal corner lattice (piece shadows straddle grid
+# lines).  The classic middle-band path throws those away because it demands
+# the full (7,3) grid line band.  Here we accept any window and resolve its
+# integer offset on the 7x7 internal lattice:
+#
+#   * hypothesis = (window -> lattice orientation, x-shift, y-shift),
+#   * each hypothesis defines a full-board homography (ideal 0..8 grid ->
+#     pixels), scored by how well the 64 warped squares reproduce *a*
+#     checkerboard parity (off-board cells dilute the score),
+#   * because an integer slide of the lattice keeps parity valid, the score
+#     alone cannot distinguish offsets of 2; a *second* window found elsewhere
+#     on the board resolves it — only the true offset maps all windows'
+#     corners onto near-integer lattice points inside the 1..7 grid at once.
+# ---------------------------------------------------------------------------
+
+_PATTERNS = [(7, 7), (7, 6), (7, 5), (7, 4), (7, 3), (6, 5), (6, 4), (6, 3),
+             (5, 5), (5, 4), (5, 3), (4, 4), (4, 3), (3, 3)]
+
+PARITY_FLOOR = 0.70    # min checkerboard agreement to accept a hypothesis
+EDGE_WEIGHT = 0.5      # weight of the (normalised) board-edge evidence
+ANCHOR_DIST = 0.30     # max (in squares) other windows' corners may sit off
+                       # the chosen lattice
+MIN_WINDOWS = 2        # a lone window cannot resolve even-square slides
+MIN_MERGED = 12        # min distinct lattice corners for a trustworthy fit
+
+
+def _prep_variants(grey):
+    """Contrast variants for the window search.  Background-division (pixel /
+    heavily-blurred pixel) cancels lighting gradients that otherwise break the
+    adaptive threshold used by findChessboardCorners."""
+    yield "raw", grey
+    yield "histeq", cv2.equalizeHist(grey)
+    g = grey.astype(np.float32)
+    sig = max(101.0, float(min(grey.shape) / 2))
+    bg = cv2.GaussianBlur(g, (0, 0), sig)
+    yield "bgdiv", np.clip(g / (bg + 1e-6) * 128.0, 0, 255).astype(np.uint8)
+
+
+def _detect_windows(img, max_windows=6):
+    """Collect distinct internal-corner windows at full resolution.
+
+    Returns a list of (pts (N,2) float32, (w, h)) sorted by size descending.
+    Stops early once one large window plus an anchor window are found."""
+    grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = grey.shape
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    windows = {}
+
+    for prep_name, gg in _prep_variants(grey):
+        for scale in (1.0, 0.75, 0.5):
+            g = gg if scale >= 1.0 else cv2.resize(
+                gg, (int(w * scale), int(h * scale)),
+                interpolation=cv2.INTER_AREA)
+            for pat in _PATTERNS:
+                if prep_name == "raw" and pat in ((7, 7), (7, 3)):
+                    continue          # stage-1 already tried these
+                found, corners = cv2.findChessboardCorners(
+                    g, pat,
+                    cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE)
+                if not found:
+                    continue
+                pts = corners.reshape(-1, 2).astype(np.float32) / scale
+                # Sub-pixel accuracy wants the search window scaled to the
+                # square size: a fixed (11,11) is tuned for small squares and
+                # underfits 80px+ squares (the board fills more of the frame).
+                pw = pat[0]
+                if pw > 1:
+                    sp = np.median(np.linalg.norm(
+                        pts[1:pw] - pts[:pw - 1], axis=1))
+                    win = int(np.clip(sp / 4.0, 5, 25)) | 1
+                else:
+                    win = 11
+                pts = cv2.cornerSubPix(grey, pts, (win, win), (-1, -1), criteria)
+                x1, y1 = pts.min(axis=0)
+                x2, y2 = pts.max(axis=0)
+                key = (int(x1 // 8), int(y1 // 8), int(x2 // 8), int(y2 // 8))
+                windows.setdefault(key, (pts, pat))
+            best = max((p[0].shape[0] for p in windows.values()), default=0)
+            if best >= 15 and len(windows) >= 2:
+                return sorted(windows.values(), key=lambda t: -t[0].shape[0])
+    out = sorted(windows.values(), key=lambda t: -t[0].shape[0])
+    return out[:max_windows]
+
+
+def _orientations(pw, ph):
+    """Yield (ideal Nx2 array, 2x2 linear part) for the 8 dihedral mappings of
+    a pw x ph window lattice, ideal min-coordinate normalised to 1."""
+    src = np.float64([[x, y] for y in range(ph) for x in range(pw)])
+    mats = []
+    for flip in (False, True):
+        for turns in range(4):
+            L = np.eye(2)
+            if flip:
+                L = np.array([[-1.0, 0.0], [0.0, 1.0]])
+            for _ in range(turns):
+                L = np.array([[0.0, -1.0], [1.0, 0.0]]) @ L
+            mats.append(L)
+    seen = set()
+    for L in mats:
+        ideal = src @ L.T
+        ideal -= ideal.min(axis=0)
+        ideal += 1.0
+        sig = np.round(ideal, 3).tobytes()
+        if sig in seen:
+            continue
+        seen.add(sig)
+        yield ideal, L
+
+
+def _ideal_to_pixel(ideal, offset, Linv, Hl):
+    """Compose ideal-grid -> window-local -> pixel homography (3x3)."""
+    shift = np.array([1.0, 1.0]) + np.asarray(offset, dtype=np.float64)
+    A = np.eye(3)
+    A[:2, :2] = Linv
+    A[:2, 2] = -(Linv @ shift)
+    return Hl @ A
+
+
+def _parity_score(grey, H_full):
+    """Fraction (0..1) of the 64 squares consistent with a checkerboard under
+    this full-board homography.  Polarity-free (max of the two parities): the
+    board's a1 convention is unknown to us, and the labelling orientation is
+    settled later by _orient/A1-click.  Cells falling outside the image count
+    as mismatches, so hypotheses sliding the lattice off the board score lower
+    — an integer slide of a full square leaves the sampled pattern still
+    checkerboard-consistent, only shifted onto part of the table."""
+    size = 160
+    S = np.array([[size / 8.0, 0, 0], [0, size / 8.0, 0], [0, 0, 1]])
+    # warpPerspective takes src->dst; here source=pixels, dest=square grid:
+    # pixel -> ideal (inv H_full) -> grid*unit (S).
+    M = S @ np.linalg.inv(H_full)
+    board = cv2.warpPerspective(grey, M, (size, size))
+    inside = cv2.warpPerspective(np.full_like(grey, 255), M, (size, size))
+    cells = cv2.resize(board, (8, 8), interpolation=cv2.INTER_AREA)
+    cover = cv2.resize(inside, (8, 8), interpolation=cv2.INTER_AREA) / 255.0
+    rr, cc = np.mgrid[0:8, 0:8]
+    odd = ((rr + cc) % 2) == 1
+    inb = cover > 0.9
+    if not np.any(inb):
+        return 0.0
+    med = float(np.median(cells[inb]))
+    m_odd = int(((cells < med) == odd)[inb].sum())
+    n = int(inb.sum())
+    return float(max(m_odd, n - m_odd) / 64.0)
+
+
+def _edge_score(grey, H_full):
+    """Weakest board-edge transition (grey levels) across the four lattice
+    sides, or None if too few sides are measurable inside the frame.
+
+    Checkerboard parity cannot tell the true lattice placement from one slid
+    by whole squares (a slid lattice is still a perfect checkerboard where it
+    overlaps the board).  Edges can: the true placement shows a board/table
+    transition on every side; a slid lattice leaves some side looking out onto
+    uniform table on both strips (no transition) or onto continuing
+    checkerboard (strong transition).  Taking the minimum across sides
+    therefore rewards the true placement and penalises slides."""
+    pad, cell, size = 24, 20, 208
+    S = np.array([[cell, 0, pad], [0, cell, pad], [0, 0, 1]], np.float64)
+    M = S @ np.linalg.inv(H_full)
+    b = cv2.warpPerspective(grey, M, (size, size)).astype(np.float64)
+    m = cv2.warpPerspective(np.full_like(grey, 255), M, (size, size))
+    m = m.astype(np.float64) / 255.0
+
+    def strip_mean(y1, y2, x1, x2):
+        y1, y2 = max(0, y1), min(size, y2)
+        x1, x2 = max(0, x1), min(size, x2)
+        if y2 <= y1 or x2 <= x1 or m[y1:y2, x1:x2].mean() < 0.95:
+            return None
+        return float(b[y1:y2, x1:x2].mean())
+
+    lo, hi = pad, pad + 8 * cell
+    sides = {}
+    for i in range(8):
+        for side, (ia, ib, oa, ob) in enumerate((
+                (lo + 4, lo + 16, lo - 16, lo - 4),        # top
+                (hi - 16, hi - 4, hi + 4, hi + 16),        # bottom
+        )):
+            inn = strip_mean(ia, ib, pad + cell * i, pad + cell * (i + 1))
+            out = strip_mean(oa, ob, pad + cell * i, pad + cell * (i + 1))
+            if inn is not None and out is not None:
+                sides.setdefault(side, []).append(abs(inn - out))
+        for side, (ia, ib, oa, ob) in enumerate((
+                (lo + 4, lo + 16, lo - 16, lo - 4),        # left
+                (hi - 16, hi - 4, hi + 4, hi + 16),        # right
+        )):
+            inn = strip_mean(pad + cell * i, pad + cell * (i + 1), ia, ib)
+            out = strip_mean(pad + cell * i, pad + cell * (i + 1), oa, ob)
+            if inn is not None and out is not None:
+                sides.setdefault(2 + side, []).append(abs(inn - out))
+    stats = [float(np.median(v)) for v in sides.values() if len(v) >= 4]
+    return min(stats) if stats else None
+
+
+def _lattice_residual(H_full, pts):
+    """Worst distance (in squares) of the window's corners to integer lattice
+    points under H_full, rejecting corners outside the internal grid."""
+    ideal = cv2.perspectiveTransform(
+        pts.reshape(-1, 1, 2).astype(np.float64),
+        np.linalg.inv(H_full)).reshape(-1, 2)
+    bad = (ideal < 0.5).any(1) | (ideal > 7.5).any(1)
+    if np.any(bad):
+        return 99.0
+    d = np.abs(ideal - np.round(ideal)).max(axis=1)
+    return float(np.percentile(d, 90))
+
+
+def _resolve_windows(img, windows):
+    """Fit one full-board homography to the detected windows and return the
+    ordered outer corners, or None.  See the section comment above."""
+    if not windows:
+        return None
+    grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    w, h = grey.shape[1], grey.shape[0]
+
+    # Candidate homographies per window, best score first.
+    per_window = []
+    for pts, (pw, ph) in windows:
+        grid = pts.reshape(ph, pw, 2).astype(np.float64)
+        Hl, inl = cv2.findHomography(
+            np.float64([[x, y] for y in range(ph) for x in range(pw)]),
+            grid.reshape(-1, 2), cv2.RANSAC, 3.0)
+        if Hl is None or int(inl.ravel().sum()) < 6:
+            continue
+        cands = []
+        for ideal, L in _orientations(pw, ph):
+            Linv = np.linalg.inv(L)
+            xext = int(ideal[:, 0].max())
+            yext = int(ideal[:, 1].max())
+            base = ideal - ideal.min(axis=0) + 1.0
+            for s in range(0, 8 - xext):
+                for t in range(0, 8 - yext):
+                    H = _ideal_to_pixel(base, (s, t), Linv, Hl)
+                    outer = cv2.perspectiveTransform(
+                        np.float32([[0, 0], [8, 0], [8, 8], [0, 8]])
+                        .reshape(-1, 1, 2), H).reshape(-1, 2)
+                    if not _valid(outer, w, h):
+                        continue
+                    sc = _parity_score(grey, H)
+                    if sc >= PARITY_FLOOR:
+                        cands.append((sc, H))
+        if cands:
+            cands.sort(key=lambda r: -r[0])
+            # Parity alone admits whole-square slides; refine the strongest
+            # parity candidates with the edge evidence (costlier metric).
+            refined = []
+            for sc, H in cands[:24]:
+                e = _edge_score(grey, H)
+                if e is not None:
+                    sc += EDGE_WEIGHT * min(e, 255.0) / 255.0
+                refined.append((sc, H))
+            refined.sort(key=lambda r: -r[0])
+            per_window.append((pts, refined[:8]))
+    if len(per_window) < MIN_WINDOWS:
+        # With one window only, even-square slides are unresolvable (the
+        # lattice can be shifted by whole squares and still fit it).  Return
+        # None — a missed detection is safe; a half-board error is not.
+        return None
+
+    per_window.sort(key=lambda t: -t[1][0][0])
+    anchor_pts, anchor_cands = per_window[0]
+    others = [p for p, _ in per_window[1:]]
+
+    winner = None
+    for sc, H in anchor_cands:
+        if all(_lattice_residual(H, pts) <= ANCHOR_DIST for pts in others):
+            winner = H
+            break
+    if winner is None:
+        return None
+
+    # Merge: snap every window's corners onto the winning lattice, then fit a
+    # single RANSAC homography over all matched internal corners.
+    merged = {}
+    for pts, _ in per_window:
+        ideal = cv2.perspectiveTransform(
+            pts.reshape(-1, 1, 2).astype(np.float64),
+            np.linalg.inv(winner)).reshape(-1, 2)
+        for (gx, gy), p in zip(ideal, pts):
+            key = (int(round(gx)), int(round(gy)))
+            if not (1 <= key[0] <= 7 and 1 <= key[1] <= 7):
+                continue
+            if abs(gx - key[0]) > 0.35 or abs(gy - key[1]) > 0.35:
+                continue
+            merged.setdefault(key, []).append(p)
+    src, dst = [], []
+    for (gx, gy), ps in merged.items():
+        src.append([gx, gy])
+        dst.append(np.mean(ps, axis=0))
+    if len(src) < MIN_MERGED:
+        return None
+    Hfit, _ = cv2.findHomography(np.float64(src), np.asarray(dst, np.float64),
+                                 cv2.RANSAC, 3.0)
+    if Hfit is None:
+        return None
+    outer = cv2.perspectiveTransform(
+        np.float32([[0, 0], [8, 0], [8, 8], [0, 8]]).reshape(-1, 1, 2),
+        Hfit).reshape(-1, 2)
+    outer = _order_clockwise(outer)
+    return outer if _valid(outer, w, h) else None
+
+
+def detect_corners(img):
+    """Return the 4 board corners (ordered, pixel coords) or None."""
+    h, w = img.shape[:2]
+    # Stage 1: classic full-band paths (fast, exact when they work).
+    for fn in (_detect_chessboard, _detect_middle_band):
+        try:
+            corners = fn(img)
+        except Exception:
+            corners = None
+        if corners is not None and _valid(corners, w, h):
+            return corners
+    # Stage 2: partial-window lattice solver (shadows / glare / big squares).
+    try:
+        corners = _resolve_windows(img, _detect_windows(img))
+    except Exception:
+        corners = None
+    if corners is not None and _valid(corners, w, h):
+        return corners
+    return None
+
+
+def _valid(corners, w, h):
+    """Reject obviously bogus corners (out of frame or degenerate)."""
+    for x, y in corners:
+        if not (-0.25 * w <= x <= 1.25 * w and -0.25 * h <= y <= 1.25 * h):
+            return False
+    area = cv2.contourArea(np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2))
+    return area > 0.005 * w * h
+
+
+# ---------------------------------------------------------------------------
+# Orientation
+# ---------------------------------------------------------------------------
+
+def _warp_labeling(img, a1, h1, a8, h8, d=400):
+    """Warp the board so a8->top-left, h8->top-right, h1->bottom-right,
+    a1->bottom-left.  Row 0 is then rank 8 (black) and row 7 is rank 1."""
+    src = np.float32([a8, h8, h1, a1])
+    dst = np.float32([[0, 0], [d, 0], [d, d], [0, d]])
+    m = cv2.getPerspectiveTransform(src, dst)
+    return cv2.warpPerspective(img, m, (d, d))
+
+
+def _score_warp(warped):
+    """Score a candidate orientation.
+
+    Two independent signals:
+
+    1. Pieces: white pieces (bright) sit on ranks 1-2, black pieces (dark) on
+       ranks 7-8, so the bottom band should be brighter than the top band.
+    2. Squares: the middle four ranks are empty, and a1 (bottom-left) is dark,
+       so dark squares satisfy (row+col) odd.  Reflection flips this parity.
+
+    The piece term disambiguates rank 1 vs rank 8; the parity term disambiguates
+    the a-file vs the h-file.  (On an empty board there are no pieces, so the
+    two 180-degree-rotated orientations tie — that is the expected ambiguity.)
+    """
+    d = warped.shape[0]
+    grey = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+    sq = d // 8
+
+    def sqmean(r, c):
+        r1 = r * sq + sq // 4
+        r2 = (r + 1) * sq - sq // 4
+        c1 = c * sq + sq // 4
+        c2 = (c + 1) * sq - sq // 4
+        return float(np.mean(grey[r1:r2, c1:c2]))
+
+    white_band = float(np.mean(grey[6 * sq:8 * sq, :]))
+    black_band = float(np.mean(grey[0:2 * sq, :]))
+    piece_score = white_band - black_band
+
+    vals = [sqmean(r, c) for r in range(2, 6) for c in range(8)]
+    med = float(np.median(vals))
+    parity = 0
+    for r in range(2, 6):
+        for c in range(8):
+            dark = sqmean(r, c) < med
+            expected_dark = ((r + c) % 2) == 1
+            parity += 1 if dark == expected_dark else -1
+
+    return piece_score + 2.0 * parity
+
+
+def _orient(img, corners):
+    """Assign A1/H1/A8/H8 to the 4 cyclic corners using the best of the 8
+    possible labelings (4 rotations x mirror)."""
+    best = None
+    best_score = -np.inf
+    for rev in (False, True):
+        seq = [corners[0], corners[3], corners[2], corners[1]] if rev else list(corners)
+        for i in range(4):
+            rot = seq[i:] + seq[:i]
+            a1, h1, h8, a8 = rot[0], rot[1], rot[2], rot[3]
+            warped = _warp_labeling(img, a1, h1, a8, h8)
+            score = _score_warp(warped)
+            if score > best_score:
+                best_score = score
+                best = {"A1": tuple(a1), "H1": tuple(h1),
+                        "A8": tuple(a8), "H8": tuple(h8)}
+    return best
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def detect_board(img):
+    """Detect the board and return labelled corners normalised to [0,1]."""
+    corners = detect_corners(img)
+    if corners is None:
+        return None
+    labelled = _orient(img, corners)
+    h, w = img.shape[:2]
+    return {k: (float(x) / w, float(y) / h) for k, (x, y) in labelled.items()}
+
+
+if __name__ == "__main__":
+    import sys
+    path = sys.argv[1] if len(sys.argv) > 1 else "images/1.jpg"
+    img = cv2.imread(path)
+    if img is None:
+        print("cannot read", path)
+        sys.exit(1)
+    result = detect_board(img)
+    if result is None:
+        print("detection failed")
+        sys.exit(1)
+    for k in ("A1", "H1", "A8", "H8"):
+        print("%s %.4f %.4f" % (k, result[k][0], result[k][1]))

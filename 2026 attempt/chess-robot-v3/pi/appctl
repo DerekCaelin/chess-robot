@@ -1,0 +1,13 @@
+#!/bin/bash
+# appctl start|stop|restart|status - manage the UI over ssh during
+# development (the on-device autostart is boot.sh; this just pokes the mode
+# file / kills the app so boot.sh's loop relaunches or exits).
+DIR="$HOME/chess/chess-robot-v3"
+MODE="$DIR/data/.chess_mode"
+case "$1" in
+    restart) echo ui > "$MODE"; pkill -f 'python3 .*ui/app.py' ;;
+    stop)    echo terminal > "$MODE"; pkill -f 'python3 .*ui/app.py' ;;
+    start)   echo ui > "$MODE"; [ -z "$DISPLAY" ] && exec "$DIR/pi/boot.sh" ;;
+    status)  pgrep -af 'ui/app.py' || echo "not running (mode=$(cat "$MODE" 2>/dev/null || echo ui))" ;;
+    *)       echo "usage: appctl {start|stop|restart|status}"; exit 1 ;;
+esac

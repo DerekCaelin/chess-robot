@@ -29,7 +29,7 @@ else:
     #mydir = "/media/sf_GitHub/chess-robot/version2/images/"
     mydir = "images/"
     cameraportno = 0
-    serialport = '/dev/ttyACM0'
+    serialport = '/dev/ttyUSB0'
     #serialport = '/dev/ttyS0'
     #serialport = '/dev/rfcomm0'
     

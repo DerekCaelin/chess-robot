@@ -5,9 +5,10 @@
 
 # initiate chessboard
 from stockfish import Stockfish
-from ChessBoard import ChessBoard
-import subprocess, time
+
 import CBstate
+from ChessBoard import ChessBoard
+
 chessboard = ChessBoard()
 import robotmove as RD
 import playermove_rpd as RDpm
@@ -29,8 +30,8 @@ Stockfish 14 Windows, stockfish module 3.24.0
 
 Debug Log File  :  
 Contempt  :  0
-Min Split Depth  :  0
-Ponder  :  false
+Min Split Depth  :  0y
+Ponder  :  falsey
 MultiPV  :  1
 Skill Level  :  20
 Move Overhead  :  10
@@ -39,7 +40,7 @@ Slow Mover  :  100
 UCI_Chess960  :  false
 UCI_LimitStrength  :  false
 UCI_Elo  :  1350
-Threads  :  4
+Threads  :  4y
 Hash  :  1024
 '''
 # depth 15

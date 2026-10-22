@@ -1,0 +1,16 @@
+#cloud-config
+hostname: chesspi
+manage_etc_hosts: true
+ssh_pwauth: true
+users:
+  - name: pi
+    groups: [sudo]
+    shell: /bin/bash
+    plain_text_passwd: 'chess1234'
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEOMWwKrx00UmCfBy7hexJBX6/nmNoXWJuhZq0daDhSm derek@Tranquility->chesspi
+runcmd:
+  - systemctl enable --now ssh
+  - echo 'pi ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-chesssetup
+  - chmod 440 /etc/sudoers.d/90-chesssetup
