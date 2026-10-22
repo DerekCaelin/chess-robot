@@ -37,6 +37,50 @@ def apply_volume():
     _engine = None               # rebuild with new rate/volume next speak()
 
 
+_player = None
+
+
+def wav_duration(path):
+    import wave
+    try:
+        w = wave.open(path, "rb")
+        d = w.getnframes() / float(w.getframerate() or 1)
+        w.close()
+        return d
+    except Exception:
+        return 0.0
+
+
+def play_wav(path):
+    """Play a wav file (the analysis voices). Returns True when started."""
+    global _player
+    stop_wav()
+    try:
+        _player = subprocess.Popen(["aplay", "-q", path],
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL)
+        return True
+    except Exception:
+        _player = None
+        return False
+
+
+def stop_wav():
+    """Stop playback (the 'pause' key stops and resets)."""
+    global _player
+    if _player is not None:
+        try:
+            _player.terminate()
+            _player.wait(timeout=1)
+        except Exception:
+            pass
+        _player = None
+
+
+def wav_playing():
+    return _player is not None and _player.poll() is None
+
+
 def speak(text):
     from chessapp import settings
     if settings.get("audio.muted", False) or not text:

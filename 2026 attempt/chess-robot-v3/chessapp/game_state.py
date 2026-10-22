@@ -46,6 +46,32 @@ def load():
     return None
 
 
+LAST_PATH = os.path.join(ROOT, "data", "last_game.json")
+
+
+def save_last(data=None):
+    """Snapshot the finished game for the Analysis module. The analysis works
+    off THIS file, so starting a new game never destroys it."""
+    data = data or load()
+    if not data or not data.get("moves"):
+        return None
+    os.makedirs(os.path.dirname(LAST_PATH), exist_ok=True)
+    with open(LAST_PATH, "w") as f:
+        json.dump(data, f, indent=1)
+    return data
+
+
+def load_last():
+    try:
+        with open(LAST_PATH) as f:
+            data = json.load(f)
+        if isinstance(data.get("moves"), list) and data["moves"]:
+            return data
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def clear():
     try:
         os.remove(PATH)

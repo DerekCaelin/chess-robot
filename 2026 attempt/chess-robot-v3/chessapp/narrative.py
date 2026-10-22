@@ -787,8 +787,8 @@ def build_events(analysis, teller):
         "opening": _opening_name(analysis),
         "opening_cap": _sent_case(_opening_name(analysis)),
     }
-    events.append({"kind": "intro", "pack": teller.pick("intro", 2),
-                   "slots": dict(slots)})
+    events.append({"kind": "intro", "ply": 0,
+                   "pack": teller.pick("intro", 2), "slots": dict(slots)})
 
     quiet_map = {}
     covered = set()
@@ -843,20 +843,22 @@ def build_events(analysis, teller):
 
         # opening callout at the move that defines it
         for op in opening_map.get(e["ply"], []):
-            events.append({"kind": "opening", "move": e,
+            events.append({"kind": "opening", "move": e, "ply": e["ply"],
                            "pack": teller.pick("opening", 1),
                            "slots": dict(s, opening=op,
                                          opening_cap=_sent_case(op))})
 
         # high-level analysis at the phase transitions
         for ph in phase_map.get(e["ply"], []):
-            events.append({"kind": "phase", "move": None, "pack": (),
+            events.append({"kind": "phase", "move": None, "ply": e["ply"],
+                           "pack": (),
                            "extras": [_phase_note(teller, ph, s)],
                            "slots": s})
 
         if e["ply"] in covered:
             if e["ply"] in quiet_map:      # one bridge per quiet stretch
                 events.append({"kind": "quiet", "move": None,
+                               "ply": e["ply"],
                                "pack": teller.pick("quiet", 1),
                                "slots": dict(s, n=quiet_map[e["ply"]])})
             continue
@@ -864,8 +866,8 @@ def build_events(analysis, teller):
         if (analysis["moves"][-1].get("mate_after") == 1
                 and e["ply"] == analysis["moves"][-1]["ply"]):
             # the mating move is the conclusion, not a move to review
-            events.append({"kind": "finish", "move": e, "pack": (),
-                           "slots": s})
+            events.append({"kind": "finish", "move": e, "ply": e["ply"],
+                           "pack": (), "slots": s})
             continue
 
         tier = {"brilliant": 3, "blunder": 3, "mistake": 2, "great": 2,
@@ -882,7 +884,8 @@ def build_events(analysis, teller):
                     0.3 if (e.get("capture") or e.get("check")) else 0.1):
                 ex = _fact_note(teller, facts, s)
                 if ex:
-                    events.append({"kind": "fact", "move": e, "pack": (),
+                    events.append({"kind": "fact", "move": e,
+                                   "ply": e["ply"], "pack": (),
                                    "extras": [ex], "slots": s})
             continue
 
@@ -938,7 +941,7 @@ def build_events(analysis, teller):
                           dict(ex[2], piece=ex[2].get("piece", "piece")))
             if ex:
                 extras.append(ex)
-        events.append({"kind": q, "move": e, "pack": pack,
+        events.append({"kind": q, "move": e, "ply": e["ply"], "pack": pack,
                        "extras": extras, "slots": s})
 
     turn_no = max(analysis["moves"],
@@ -961,7 +964,7 @@ def build_events(analysis, teller):
                          if last else ""),
     })
     notes = _closing_notes(analysis, teller, out_slots)
-    events.append({"kind": "outro",
+    events.append({"kind": "outro", "ply": None,
                    "pack": teller.pick("outro_%s%s"
                                        % (arc, "_mate" if mate_end else ""), 3),
                    "extras": [(n[0], n[0], {}) for n in notes],
@@ -969,54 +972,129 @@ def build_events(analysis, teller):
     return events
 
 
+def _slots_for(ev, style):
+    sd = dict(ev["slots"])
+    if "best_screen" in sd:
+        sd["best"] = (sd["best_screen"] if style == "screen"
+                      else sd["best_speech"])
+        sd["Best"] = (sd["best_screen"] if style == "screen"
+                      else sd["best_speech"].capitalize())
+    if "final_screen" in sd:
+        sd["final"] = (sd["final_screen"] if style == "screen"
+                       else sd["final_speech"])
+    if "move_screen" in sd:
+        sd["move"] = (sd["move_screen"] if style == "screen"
+                      else sd["move_speech"])
+    return sd
+
+
+def _body(ev, style):
+    sd = _slots_for(ev, style)
+    body = " ".join(t.format(**sd) for t in ev["pack"])
+    for pair in ev.get("extras", []):
+        ex = pair[0] if style == "screen" else pair[1]
+        body = (body + " " + ex.format(**pair[2])).strip()
+    return body
+
+
+def _head(ev, style):
+    """The move heading for one event ('' when the event has no move)."""
+    move = ev.get("move")
+    if move is None:
+        return ""
+    if ev["kind"] == "finish":
+        if style == "screen":
+            no, dots = move["no"], ("." if move["color"] == "white" else "...")
+            return "%d%s%s%s" % (no, dots, move["san"],
+                                 mark_for(move["quality"]))
+        spk = spoken_san(move["san"]).replace(", checkmate", "")
+        return spk.capitalize() + "!"
+    if style == "screen":
+        no, dots = move["no"], ("." if move["color"] == "white" else "...")
+        return "%d%s%s%s" % (no, dots, move["san"],
+                             mark_for(move["quality"]))
+    spk = spoken_san(move["san"]).capitalize()
+    if move["quality"] == "brilliant":
+        spk += "!"
+    return spk
+
+
 def render(events, analysis, style):
     """style: 'screen' (numbers + notation) or 'speech' (spoken, no numbers)."""
     lines = []
     for ev in events:
-        sd = dict(ev["slots"])
-        if "best_screen" in sd:
-            sd["best"] = (sd["best_screen"] if style == "screen"
-                          else sd["best_speech"])
-            sd["Best"] = (sd["best_screen"] if style == "screen"
-                          else sd["best_speech"].capitalize())
-        if "final_screen" in sd:
-            sd["final"] = (sd["final_screen"] if style == "screen"
-                           else sd["final_speech"])
-        if "move_screen" in sd:
-            sd["move"] = (sd["move_screen"] if style == "screen"
-                          else sd["move_speech"])
-        body = " ".join(t.format(**sd) for t in ev["pack"])
-        for pair in ev.get("extras", []):
-            ex = pair[0] if style == "screen" else pair[1]
-            body = (body + " " + ex.format(**pair[2])).strip()
-        move = ev.get("move")
-        if ev["kind"] in ("intro", "outro", "quiet", "opening", "phase"):
+        body = _body(ev, style)
+        head = _head(ev, style)
+        if not head:
             lines.append(body)
-            continue
-        if ev["kind"] == "finish":
-            # bare move: the conclusion that follows tells the story
-            if style == "screen":
-                no, dots = move["no"], ("." if move["color"] == "white"
-                                        else "...")
-                lines.append("%d%s%s%s" % (no, dots, move["san"],
-                                           mark_for(move["quality"])))
-            else:
-                spk = spoken_san(move["san"])
-                spk = spk.replace(", checkmate", "")   # the conclusion says it
-                lines.append(spk.capitalize() + "!")
-            continue
-        if style == "screen":
-            no, dots = move["no"], ("." if move["color"] == "white" else "...")
-            head = "%d%s%s%s" % (no, dots, move["san"],
-                                 mark_for(move["quality"]))
+        elif ev["kind"] == "finish":
+            lines.append(head)
+        elif style == "screen":
             lines.append("%-12s %s" % (head, body))
         else:
-            spk = spoken_san(move["san"]).capitalize()
-            if move["quality"] == "brilliant":
-                spk += "!"
-            sep = " " if spk.endswith("!") else ". "
-            lines.append(spk + sep + body)
+            sep = " " if head.endswith("!") else ". "
+            lines.append(head + sep + body if body else head)
     return "\n".join(lines)
+
+
+PIECE_GLYPH = {"k": "\u265a", "q": "\u265b", "r": "\u265c", "b": "\u265d",
+               "n": "\u265e", "p": "\u265f"}
+
+
+def glyph_of(san):
+    """The moving piece's glyph for the move line."""
+    if san.startswith("O"):
+        return PIECE_GLYPH["k"]
+    c = san[:1]
+    return PIECE_GLYPH.get(c.lower() if c.isupper() else "p", "")
+
+
+def per_move(analysis, seed=None):
+    """Per-move packages for the Analysis screens: the short text as segments
+    (icon / bold move / plain text) plus the spoken text for the audio."""
+    teller = Teller(seed)
+    events = build_events(analysis, teller)
+    by = {}
+    for ev in events:
+        if ev.get("ply") is not None:
+            by.setdefault(ev["ply"], []).append(ev)
+    out = []
+    for m in analysis["moves"]:
+        segs, spk = [], []
+        has_head = False
+        for ev in by.get(m["ply"], []):
+            body_s = _body(ev, "screen")
+            if ev["kind"] in ("intro", "outro", "quiet", "opening", "phase"):
+                if body_s:
+                    segs.append(("text", body_s))
+                line = render([ev], analysis, "speech")
+                if line:
+                    spk.append(line)
+                continue
+            head_s = _head(ev, "screen")
+            if head_s:
+                segs.append(("icon", glyph_of(m["san"])))
+                segs.append(("move", head_s))
+                has_head = True
+                if body_s:
+                    segs.append(("text", " " + body_s))
+            elif body_s:
+                segs.append(("text", body_s))
+            line = render([ev], analysis, "speech")
+            if line:
+                spk.append(line)
+        if not has_head:
+            # every move shows its line: icon + bold notation
+            segs.insert(0, ("move", "%d%s%s" % (m["no"],
+                                                "." if m["color"] == "white"
+                                                else "...", m["san"])))
+            segs.insert(0, ("icon", glyph_of(m["san"])))
+            spk.insert(0, spoken_san(m["san"]).capitalize() + ".")
+        speech = " ".join(spk)
+        out.append({"ply": m["ply"], "no": m["no"], "color": m["color"],
+                    "san": m["san"], "uci": m["uci"], "segments": segs,
+                    "speech": speech, "words": len(speech.split())})
+    return out
 
 
 def narrate(analysis, seed=None, style="both"):

@@ -63,8 +63,33 @@ def main():
             return False
     held = _cam_held()
 
+    # a synthetic analysis pack so the Analysis screens can be built without
+    # running the engine or a voice
+    from chessapp import analysispack as AP
+
+    def _fake_pack():
+        pk = AP.AnalysisPack({"moves": ["e2e4", "e7e5"],
+                              "player_color": "white", "level": 5,
+                              "started": "2026-10-22T10:00", "result": "*"})
+        pk.moves = [
+            {"ply": 1, "no": 1, "color": "white", "san": "e4", "uci": "e2e4",
+             "segments": [("icon", "\u265f"), ("move", "1.e4"),
+                          ("text", " A quiet start.")],
+             "speech": "Pawn to e4. A quiet start.", "words": 6},
+            {"ply": 2, "no": 1, "color": "black", "san": "e5", "uci": "e7e5",
+             "segments": [("icon", "\u265f"), ("move", "1...e5"),
+                          ("text", " Symmetrical.")],
+             "speech": "Pawn to e5. Symmetrical.", "words": 5}]
+        pk.generate = lambda *a, **k: pk.moves
+        return pk
+
+    _pack = _fake_pack()
+    _real_load = AP.load_pack
+    AP.load_pack = lambda: _pack
+
     checks = [
-        (A.HomeScreen, {}, ["\u25B6  PLAY", "Calibrate", "Settings"]),
+        (A.HomeScreen, {}, ["\u25B6  PLAY", "Calibrate", "Settings",
+                            "Analysis"]),
         (A.CalibrateScreen, {}, ["Camera", "Board",
                                  "Calibration settings", "Reset all to defaults"]),
         (A.DirectScreen, {}, ["Piece heights", "Manual corners",
@@ -88,6 +113,10 @@ def main():
                                    "\u2212", "\u25B2",
                                    "\u25BC", "\u25C0", "\u25B6"]),
         (A.ArmSagScreen, {}, ["Save", "\u25B2", "\u25BC"]),
+        # Analysis screens (a synthetic pack: no engine, no sound needed)
+        (A.AnalysisHomeScreen, {}, ["Begin"]),
+        (A.AnalysisMoveScreen, {"pack": _pack, "idx": 0}, ["\u25C0", "\u25B6"]),
+        (A.AnalysisMoveScreen, {"pack": _pack, "idx": 1}, ["Finish"]),
         (A.CalibCameraScreen, {}, ["Start", "Save", "Reset", "Manual"]),
         # (ManualCalibScreen below)
         (A.ManualCalibScreen, {}, ["Save", "OK", "Retry", "+", "\u2212"]),

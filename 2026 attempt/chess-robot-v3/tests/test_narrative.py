@@ -88,6 +88,21 @@ def test_facts_and_openings():
     assert "fork" in kinds, kinds
 
 
+def test_analysis_pack():
+    from chessapp import analysispack as AP
+    # the no-voice auto-advance scales with the text: 5 s floor, 10 s ceiling
+    assert AP.auto_advance_seconds(3, 0) == 5.0
+    assert abs(AP.auto_advance_seconds(25, 0) - 10.0) < 1e-9
+    assert 5.0 < AP.auto_advance_seconds(15, 0) < 10.0
+    # with sound: the sound plus 2 s
+    assert abs(AP.auto_advance_seconds(25, 12.0) - 14.0) < 1e-9
+    # a saved game becomes a game with the player's side marked
+    g = AP.game_from_state({"moves": ["e2e4", "e7e5"],
+                            "player_color": "white",
+                            "started": "2026-10-22T10:00", "result": "*"})
+    assert g.headers["White"] == "Player" and g.headers["Black"] == "Robot"
+
+
 def test_marks():
     assert mark_for("brilliant") == "!!"
     assert mark_for("blunder") == "??"
@@ -98,6 +113,7 @@ def main():
     test_spoken_san()
     test_renderings_and_variety()
     test_facts_and_openings()
+    test_analysis_pack()
     test_marks()
     print("PASS: narrative rendering + variety + facts")
 

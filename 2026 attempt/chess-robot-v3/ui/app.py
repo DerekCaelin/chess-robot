@@ -35,7 +35,8 @@ import numpy as np                               # noqa: E402
 from PIL import Image, ImageTk                   # noqa: E402
 import CBstate                                   # noqa: E402
 import camera                                    # noqa: E402
-from chessapp import game_state, audio, verify_log  # noqa: E402
+from chessapp import game_state, audio, verify_log
+from chessapp import analysispack as AP  # noqa: E402
 from chessapp.game_controller import ChessGame  # noqa: E402
 from ui import ui_kit as kit                     # noqa: E402
 from ui.toolrun import ToolRun, parse_fit       # noqa: E402
@@ -367,6 +368,9 @@ class HomeScreen(kit.Screen):
                        bg=kit.CARD_HI, fg=kit.FG, width=12,
                        height=2).pack(side="left", padx=8)
         kit.big_button(row2, "Settings", lambda: app.show(SettingsScreen),
+                       bg=kit.CARD_HI, fg=kit.FG, width=12,
+                       height=2).pack(side="left", padx=8)
+        kit.big_button(row2, "Analysis", lambda: app.show(AnalysisHomeScreen),
                        bg=kit.CARD_HI, fg=kit.FG, width=12,
                        height=2).pack(side="left", padx=8)
 
@@ -4848,6 +4852,371 @@ class ArmSagScreen(kit.Screen):
         self._finish()
 
 
+# ── analysis ─────────────────────────────────────────────────────────────────
+
+class AnalysisHomeScreen(kit.Screen):
+    """Analysis of the LAST FINISHED game: the final position, the date and
+    winner, the run options and Begin. Per-move text and audio are generated
+    in the background as soon as the page opens - text for every move first,
+    then one sound file per move starting with the first."""
+
+    VOICE_KEYS = ("none", "espeak", "piper")
+
+    def __init__(self, app):
+        super().__init__(app=app, title="Analysis")
+        self.app = app
+        self.q = queue.Queue()
+        self.stop = False
+        self.worker = None
+        self.gpack = AP.load_pack()
+        if self.gpack is None:
+            tk.Label(self.body, text="No finished game yet. Finish a game "
+                     "(checkmate or End) and come back.", font=kit.F_BODY,
+                     bg=kit.BG, fg=kit.FG_DIM, wraplength=520,
+                     justify="left").pack(pady=40)
+            return
+        row = tk.Frame(self.body, bg=kit.BG)
+        row.pack(pady=(4, 0))
+        left = tk.Frame(row, bg=kit.BG)
+        left.pack(side="left")
+        bv = kit.BoardView(left, px=224)
+        bv.pack()
+        bv.draw(self.gpack.board_after(self.gpack.move_count()).getBoard())
+        right = tk.Frame(row, bg=kit.BG)
+        right.pack(side="left", padx=(18, 0), anchor="n")
+        date = (self.gpack.game.get("started") or "")[:10]
+        res = AP.game_from_state(self.gpack.game).headers.get("Result", "*")
+        winner = ("White wins" if res == "1-0" else
+                  "Black wins" if res == "0-1" else
+                  "Draw" if res == "1/2-1/2" else "Unfinished")
+        tk.Label(right, text=date, font=("DejaVu Sans", 18, "bold"),
+                 bg=kit.BG, fg=kit.ACCENT).pack(anchor="w")
+        tk.Label(right, text=winner, font=kit.F_BODY, bg=kit.BG,
+                 fg=kit.FG).pack(anchor="w", pady=(2, 12))
+
+        self.adv_var = tk.BooleanVar(
+            value=bool(settings.get("analysis.auto_advance", True)))
+        tk.Checkbutton(right, text="Auto advance", variable=self.adv_var,
+                       command=self._save_adv, font=kit.F_BODY, bg=kit.BG,
+                       fg=kit.FG, selectcolor=kit.ACCENT,
+                       activebackground=kit.BG,
+                       activeforeground=kit.FG).pack(anchor="w", pady=(0, 6))
+        vrow = tk.Frame(right, bg=kit.BG)
+        vrow.pack(anchor="w")
+        tk.Label(vrow, text="Voice", font=kit.F_BODY, bg=kit.BG,
+                 fg=kit.FG).pack(side="left", padx=(0, 8))
+        cur = settings.get("analysis.voice", "none")
+        if cur not in self.VOICE_KEYS:
+            cur = "none"
+        self.voice_var = tk.StringVar(value=AP.VOICE_LABELS[cur])
+        menu = tk.OptionMenu(vrow, self.voice_var,
+                             *[AP.VOICE_LABELS[k] for k in self.VOICE_KEYS],
+                             command=self._voice_changed)
+        menu.configure(font=kit.F_BODY, bg=kit.CARD_HI, fg=kit.FG,
+                       highlightthickness=0, width=14)
+        menu.pack(side="left")
+        self.prog_lbl = tk.Label(right, text="", font=kit.F_SMALL,
+                                 bg=kit.BG, fg=kit.FG_DIM, justify="left",
+                                 anchor="w")
+        self.prog_lbl.pack(anchor="w", pady=(10, 0))
+
+        kit.big_button(self.body, "Begin", self._begin, bg=kit.GREEN,
+                       fg="#1b1e24", height=2,
+                       width=16).pack(side="bottom", pady=(12, 4))
+        self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
+        self._start_generation()
+        self._poll()
+
+    # options ---------------------------------------------------------------
+    def _voice_key(self):
+        label = self.voice_var.get()
+        for k, v in AP.VOICE_LABELS.items():
+            if v == label:
+                return k
+        return "none"
+
+    def _save_adv(self):
+        settings.set("analysis.auto_advance", bool(self.adv_var.get()))
+
+    def _voice_changed(self, _=None):
+        settings.set("analysis.voice", self._voice_key())
+        self._start_generation()
+
+    # generation ------------------------------------------------------------
+    def _start_generation(self):
+        if self.worker is not None and self.worker.is_alive():
+            return
+        voice = self._voice_key()
+
+        def run():
+            try:
+                self.gpack.generate(
+                    voice,
+                    on_progress=lambda d, n, st: self.q.put(("p", d, n, st)))
+                self.q.put(("done",))
+            except Exception as e:
+                self.q.put(("err", str(e)))
+
+        self.worker = threading.Thread(target=run, daemon=True)
+        self.worker.start()
+
+    def _poll(self):
+        try:
+            while True:
+                ev = self.q.get_nowait()
+                if ev[0] == "p":
+                    what = "text" if ev[3] == "text" else "voice"
+                    self.prog_lbl.configure(
+                        text="Generating %s: %d/%d" % (what, ev[1], ev[2]))
+                elif ev[0] == "done":
+                    self.prog_lbl.configure(text="Ready")
+                elif ev[0] == "err":
+                    self.prog_lbl.configure(text="Analysis failed: %s" % ev[1])
+        except queue.Empty:
+            pass
+        if self.winfo_exists() and not self.stop:
+            self.after(150, self._poll)
+
+    def _begin(self):
+        self.stop = True
+        self.app.show(AnalysisMoveScreen, pack=self.gpack, idx=0)
+
+    def _cleanup(self):
+        self.stop = True
+
+    def request_back(self):
+        self.stop = True
+        self.app.back()
+
+
+class AnalysisMoveScreen(kit.Screen):
+    """One move of the analysis: the board as of the move (origin and
+    destination highlighted), the move text, transport controls and the
+    playback progress. Auto advance = the sound + 2 s, or - with no voice -
+    scaled to the text (5-10 s). Back returns to the analysis home; the last
+    move offers Finish (the app home)."""
+
+    def __init__(self, app, pack, idx):
+        super().__init__(app=app, title="Analysis")
+        self.app = app
+        self.gpack = pack
+        self.idx = max(0, min(idx, len(pack.moves) - 1))
+        self.voice = settings.get("analysis.voice", "none")
+        self.adv = bool(settings.get("analysis.auto_advance", True))
+        self.stop = False
+        self._playing = False
+        self._timer = None
+        self._tick = None
+        self._t0 = 0.0
+
+        # thin playback progress along the top
+        self.bar = tk.Canvas(self.body, height=6, bg="#181b21",
+                             highlightthickness=0)
+        self.bar.pack(fill="x", pady=(0, 6))
+        self.bar.bind("<Configure>", lambda e: self._draw_bar(0.0))
+
+        row = tk.Frame(self.body, bg=kit.BG)
+        row.pack()
+        self.board = kit.BoardView(row, px=200)
+        self.board.pack()
+
+        nav = tk.Frame(self.body, bg=kit.BG)
+        nav.pack(pady=(8, 0))
+        self.back_btn = kit.big_button(nav, "\u25C0", self._prev,
+                                       bg=kit.CARD_HI, fg=kit.FG, width=5,
+                                       height=2, font=kit.F_BTN)
+        self.back_btn.pack(side="left", padx=6)
+        self.play_btn = kit.big_button(nav, "\u25B6", self._toggle,
+                                       bg=kit.GREEN, fg="#1b1e24", width=5,
+                                       height=2, font=kit.F_BTN)
+        self.play_btn.pack(side="left", padx=6)
+        self.next_btn = kit.big_button(nav, "\u25B6", self._next,
+                                       bg=kit.CARD_HI, fg=kit.FG, width=5,
+                                       height=2, font=kit.F_BTN)
+        self.next_btn.pack(side="left", padx=6)
+        self.finish_btn = kit.big_button(nav, "Finish", self._finish_to_home,
+                                         bg=kit.ACCENT, fg="#1b1e24",
+                                         width=8, height=2, font=kit.F_BTN)
+        # 'Generating voice...' is packed only while it is needed - the body
+        # is exactly full without it
+        self.gen_lbl = tk.Label(self.body, text="", font=kit.F_SMALL,
+                                bg=kit.BG, fg=kit.ACCENT, justify="center")
+        self.txt = tk.Text(self.body, height=3, width=52, bg="#181b21",
+                           fg=kit.FG, font=("DejaVu Sans", 14), relief="flat",
+                           wrap="word", padx=8, pady=6, highlightthickness=0,
+                           cursor="arrow")
+        self.txt.tag_config("move", font=("DejaVu Sans", 14, "bold"),
+                            foreground=kit.ACCENT)
+        self.txt.tag_config("icon", font=("DejaVu Sans", 15))
+        self.txt.pack(fill="x", pady=(6, 0))
+        self.txt.configure(state="disabled")
+
+        self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
+        self._show()
+        if self.adv:
+            self._start_timer()
+        self._poll()
+
+    # content ---------------------------------------------------------------
+    @property
+    def move(self):
+        return self.gpack.moves[self.idx]
+
+    def _show(self):
+        m = self.move
+        b = self.gpack.board_after(m["ply"])
+        u = m.get("uci") or ""
+        hl = None
+        if len(u) >= 4:
+            fc, fr = ord(u[0]) - 97, 8 - int(u[1])
+            tc, tr = ord(u[2]) - 97, 8 - int(u[3])
+            hl = (fr, fc, tr, tc)
+        self.board.draw(b.getBoard(), hl)
+        self.txt.configure(state="normal")
+        self.txt.delete("1.0", "end")
+        for kind, val in m["segments"]:
+            if kind == "icon":
+                self.txt.insert("end", val + " ", ("icon",))
+            elif kind == "move":
+                self.txt.insert("end", val, ("move",))
+            else:
+                self.txt.insert("end", val)
+        self.txt.configure(state="disabled")
+        self.back_btn.configure(state="normal" if self.idx > 0 else "disabled",
+                                bg=kit.CARD_HI if self.idx > 0 else kit.CARD,
+                                fg=kit.FG if self.idx > 0 else kit.FG_DIM)
+        last = self.idx >= len(self.gpack.moves) - 1
+        self.finish_btn.pack_forget()
+        if last:
+            self.finish_btn.pack(side="left", padx=6)
+        self._refresh_next()
+        self._draw_bar(0.0)
+
+    def _refresh_next(self):
+        ok = self.idx < len(self.gpack.moves) - 1 and self._sound_ready()
+        self.next_btn.configure(state="normal" if ok else "disabled",
+                                bg=kit.CARD_HI if ok else kit.CARD,
+                                fg=kit.FG if ok else kit.FG_DIM)
+
+    def _sound_ready(self):
+        return self.gpack.ready(self.move["ply"], self.voice)
+
+    def _draw_bar(self, frac):
+        w = max(2, int(self.bar.winfo_width() * max(0.0, min(1.0, frac))))
+        self.bar.delete("all")
+        self.bar.create_rectangle(0, 0, w, 6, fill=kit.ACCENT, outline="")
+
+    # transport -------------------------------------------------------------
+    def _toggle(self):
+        if self._playing:
+            self._pause()
+        else:
+            self._play()
+
+    def _play(self):
+        self._playing = True
+        self.play_btn.configure(text="\u23F8")
+        self._start_timer()
+        if self.voice != "none" and self._sound_ready():
+            audio.play_wav(self.gpack.wav_path(self.move["ply"], self.voice))
+            self._t0 = time.time()
+        self._refresh_next()
+
+    def _pause(self):
+        self._playing = False
+        self.play_btn.configure(text="\u25B6")
+        audio.stop_wav()
+        self._stop_timer()
+        self._draw_bar(0.0)
+
+    def _stop_timer(self):
+        if self._timer is not None:
+            try:
+                self.after_cancel(self._timer)
+            except Exception:
+                pass
+        self._timer = None
+
+    def _timer_len(self):
+        return AP.auto_advance_seconds(
+            self.move.get("words", 0),
+            self.gpack.sound_len(self.move["ply"], self.voice)
+            if self.voice != "none" else 0.0)
+
+    def _start_timer(self):
+        self._stop_timer()
+        self._timer = self.after(int(self._timer_len() * 1000), self._on_timer)
+
+    def _on_timer(self):
+        self._timer = None
+        if self.voice != "none" and not self._sound_ready():
+            self._pending_tick()
+            return
+        self._advance()
+
+    def _pending_tick(self):
+        """The auto-advance wants to move on but the voice is still cooking."""
+        if not self.gen_lbl.winfo_ismapped():
+            self.gen_lbl.pack(pady=(2, 0))
+            self.gen_lbl.pack_configure(before=self.txt)
+        self.gen_lbl.configure(text="Generating voice...")
+        if self._sound_ready():
+            self.gen_lbl.configure(text="")
+            self.gen_lbl.pack_forget()
+            self._advance()
+            return
+        if self.winfo_exists():
+            self.after(400, self._pending_tick)
+
+    def _advance(self):
+        if self.idx >= len(self.gpack.moves) - 1:
+            return
+        self.idx += 1
+        self._show()
+        if self._playing:
+            self._play()
+        elif self.adv:
+            self._start_timer()
+
+    def _prev(self):
+        if self.idx <= 0:
+            return
+        self.idx -= 1
+        self._show()
+        if self._playing:
+            self._play()
+        elif self.adv:
+            self._start_timer()
+
+    def _next(self):
+        if self.idx >= len(self.gpack.moves) - 1 or not self._sound_ready():
+            return
+        self._advance()
+
+    # progress / lifecycle --------------------------------------------------
+    def _poll(self):
+        if self._playing and self.voice != "none":
+            d = self.gpack.sound_len(self.move["ply"], self.voice)
+            frac = (time.time() - self._t0) / d if d > 0 else 0.0
+            self._draw_bar(frac if frac < 1.0 else 1.0)
+        self._refresh_next()
+        if self.winfo_exists() and not self.stop:
+            self.after(200, self._poll)
+
+    def _cleanup(self):
+        self.stop = True
+        self._stop_timer()
+        audio.stop_wav()
+
+    def _finish_to_home(self):
+        self._cleanup()
+        self.app.show(HomeScreen)
+
+    def request_back(self):
+        self._cleanup()
+        self.app.show(AnalysisHomeScreen)
+
+
 # ── direct input ─────────────────────────────────────────────────────────────
 
 class DirectScreen(kit.Screen):
@@ -5054,7 +5423,9 @@ class NewGameScreen(kit.Screen):
         def begin():
             # "New game" is the ONLY truly fresh path: clear any saved game up
             # front so GameScreen's auto-resume (see _worker) has nothing to
-            # resume and starts from the initial position.
+            # resume and starts from the initial position. The game being
+            # replaced is preserved as the last game for the Analysis module.
+            game_state.save_last()
             game_state.clear()
             self.app.show(GameScreen, resume=False)
         kit.confirm(self.app, "Begin?", msg, begin, yes_text="Begin")
@@ -5339,10 +5710,26 @@ class GameScreen(kit.Screen):
             self.after(150, self._poll)
 
     def _result_modal(self, headline):
+        """Game over: offer Home or Analysis - the finished game is preserved
+        for the analysis module either way."""
         m = kit.Modal(self.app, headline)
-        kit.big_button(m.body, "OK",
-                       lambda: (m.close(), self.app.show(HomeScreen)),
-                       bg=kit.GREEN, width=14, height=2).pack(pady=6)
+
+        def to_analysis():
+            m.close()
+            game_state.save_last()
+            self.app.show(AnalysisHomeScreen)
+
+        def to_home():
+            m.close()
+            game_state.save_last()
+            self.app.show(HomeScreen)
+
+        kit.big_button(m.body, "Home", to_home,
+                       bg=kit.CARD_HI, fg=kit.FG, width=14,
+                       height=2).pack(pady=6)
+        kit.big_button(m.body, "Analysis", to_analysis,
+                       bg=kit.GREEN, fg="#1b1e24", width=14,
+                       height=2).pack(pady=6)
 
     def _refresh_moves(self):
         self.moves_txt.configure(state="normal")
@@ -5488,10 +5875,7 @@ class GameScreen(kit.Screen):
             "new": lambda: kit.confirm(
                 self.app, "New game", "The current game will be lost.",
                 lambda: (self.abandon(), self.app.show(NewGameScreen))),
-            "end": lambda: kit.confirm(
-                self.app, "End game", "Abandon and clear the saved game?",
-                lambda: (game_state.clear(), self.abandon(),
-                         self.app.show(HomeScreen)), danger=True),
+            "end": lambda: self._end_modal(),
             "takeback": lambda: self._takeback(),
             "calib": lambda: kit.confirm(
                 self.app, "Calibration", "Pause the game to calibrate?",
@@ -5502,6 +5886,34 @@ class GameScreen(kit.Screen):
                     ("End game", "end"), ("Takeback", "takeback"),
                     ("Calibration settings", "calib")],
                    lambda v: handlers[v]())
+
+    def _end_modal(self):
+        """End game: Cancel / End, with 'See analysis?' beneath the buttons.
+        The game is saved for the analysis module before the in-progress
+        save is cleared."""
+        m = kit.Modal(self.app, "End game")
+        tk.Label(m.body, text="Abandon and clear the saved game?",
+                 font=kit.F_BODY, bg=kit.CARD, fg=kit.FG, wraplength=420,
+                 justify="left").pack(pady=(0, 10))
+        see = tk.BooleanVar(value=False)
+        row = tk.Frame(m.body, bg=kit.CARD)
+        row.pack()
+        kit.big_button(row, "Cancel", m.close, bg=kit.CARD_HI, fg=kit.FG,
+                       width=14, height=2).pack(side="left", padx=8)
+
+        def done():
+            m.close()
+            game_state.save_last()
+            game_state.clear()
+            self.abandon()
+            self.app.show(AnalysisHomeScreen if see.get() else HomeScreen)
+
+        kit.big_button(row, "End", done, bg=kit.RED, fg="#fff", width=14,
+                       height=2).pack(side="left", padx=8)
+        tk.Checkbutton(m.body, text="See analysis?", variable=see,
+                       font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
+                       selectcolor=kit.ACCENT, activebackground=kit.CARD,
+                       activeforeground=kit.FG).pack(anchor="w", pady=(10, 0))
 
     def _takeback(self):
         """Request a takeback: the worker thread does the undo + engine resync
