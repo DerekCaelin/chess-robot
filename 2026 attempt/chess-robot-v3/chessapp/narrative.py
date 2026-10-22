@@ -123,13 +123,13 @@ OPENINGS = [
 ]
 
 INTRO = [
-    ("{White} against {Black} - {event_year}.",),
+    ("{White} against {Black}, {event_year}.",),
     ("This is {White} versus {Black}, {event_year}.",),
-    ("{event_year}: {White} has White, {Black} is Black.",),
+    ("At {event_year}, {White} has White and {Black} is Black.",),
     ("A game between {White} and {Black}, {event_year}.",),
     ("On the board: {White} versus {Black}.",),
     ("This is {White} against {Black}.", "It opens as {opening}."),
-    ("{White} versus {Black} - {event_year}.", "{opening_cap}, so "
+    ("{White} versus {Black}, {event_year}.", "{opening_cap}, so "
      "anything can happen."),
     ("Here is {White} against {Black}.", "It opens as {opening}."),
 ]
@@ -139,7 +139,7 @@ QUIET = [
     ("Both sides spend {n} moves improving their position.",),
     ("{n} moves of careful development follow.",),
     ("Nothing critical happens for {n} moves.",),
-    ("A stretch of shuffling follows - {n} moves without a capture.",),
+    ("A stretch of shuffling follows: {n} moves without a capture.",),
     ("The players take {n} moves to rearrange their pieces.",),
     ("For {n} moves, it is a waiting game.",),
 ]
@@ -190,13 +190,13 @@ INACCURACY = [
     ("A small imprecision.",),
     ("Playable.", "{Color} could have played {best}, which would have "
      "{impact}."),
-    ("A slight loosening.", "{Best} was the accurate move - that would have "
-     "{impact}."),
+    ("A slight loosening.", "{Best} was the accurate move. That would "
+     "have {impact}."),
     ("This gives a little ground.", "{Best} was better: that would have "
      "{impact}."),
     ("Not the cleanest choice.", "{Color} could have gone with {best}, which "
      "would have {impact}."),
-    ("The position tolerates it.", "{best} was stronger - that would have "
+    ("The position tolerates it.", "{best} was stronger. That would have "
      "{impact}."),
     ("A quieter alternative was better.", "{Best} would have {impact}."),
 ]
@@ -204,15 +204,15 @@ INACCURACY = [
 MISTAKE = [
     ("A mistake under pressure.", "{Color} could have played {best}, which "
      "would have {impact}."),
-    ("This lets {opponent} in.", "The right move was {best} - that would have "
-     "{impact}."),
+    ("This lets {opponent} in.", "The right move was {best}. That would "
+     "have {impact}."),
     ("The initiative changes hands here.", "{Color} should have chosen "
      "{best}, which would have {impact}."),
     ("This gives up the advantage.", "Better was {best}; that would have "
      "{impact}."),
     ("An inaccuracy that costs real ground.", "With {best}, that would have "
      "{impact}."),
-    ("This is not the accurate move.", "{Best} was the way to go - that "
+    ("This is not the accurate move.", "{Best} was the way to go. That "
      "would have {impact}."),
     ("A step in the wrong direction.", "{Color} had {best}, which would have "
      "{impact}."),
@@ -225,7 +225,7 @@ BLUNDER = [
     ("The game turns here.", "With {best}, that would have {impact}."),
     ("This loses material.", "{Color} had {best}, which would have "
      "{impact}."),
-    ("The decisive mistake.", "{Best} was the move - it would have "
+    ("The decisive mistake.", "{Best} was the move. It would have "
      "{impact}.", "After this, {opponent} is in control."),
     ("A blunder in a difficult position.", "{Best} would have {impact}."),
     ("A costly mistake.", "{Color} had {best}, which would have {impact}."),
@@ -275,7 +275,7 @@ OUTRO_MATE = {
         ("Checkmate.", "{winner} closes out a strong game."),
         ("Checkmate.", "{winner} was in control from early on and never let "
          "it slip."),
-        ("A strong game by {winner} - the finish was never in doubt.",),
+        ("A strong game by {winner}. The finish was never in doubt.",),
         ("Checkmate.", "The advantage was never really in question."),
         ("{winner} finishes a commanding game with {final}, checkmate.",),
         ("Checkmate.", "{winner} closes out a strong game.", "The decisive "
@@ -358,7 +358,7 @@ FACT_PHRASES = {
     ],
     "fork": [
         ("Forks the {first} and the {second}.",
-         "A fork - the {piece} attacks the {first} and the {second} at the "
+         "A fork: the {piece} attacks the {first} and the {second} at the "
          "same time."),
     ],
     "pin": [
@@ -369,7 +369,7 @@ FACT_PHRASES = {
          "The {piece} on {square} finds itself pinned against the "
          "{target}."),
         ("Pins the {piece} down.",
-         "The {piece} on {square} is tied down - moving it would expose "
+         "The {piece} on {square} is tied down; moving it would expose "
          "the {target}."),
     ],
     "opens_line": [
@@ -408,8 +408,74 @@ OPENING_LINES = [
     ("{Color} enters {opening} with {move}.",),
     ("This is {opening}.",),
     ("The game enters {opening}.",),
-    ("{opening_cap} - {move} defines it.",),
+    ("{opening_cap} is on the board.",),
 ]
+
+# short verdicts - used when the recommended-line analysis follows and carries
+# the alternative itself
+VERDICT_SHORT = {
+    "inaccuracy": [("A small imprecision.",),
+                   ("Not the cleanest choice.",),
+                   ("A slight loosening.",)],
+    "mistake": [("A mistake under pressure.",),
+                ("This lets {opponent} in.",),
+                ("This gives up the advantage.",),
+                ("A step in the wrong direction.",),
+                ("An inaccuracy that costs real ground.",)],
+    "blunder": [("A serious error.",),
+                ("This loses material.",),
+                ("A costly mistake.",),
+                ("The game turns here.",),
+                ("A blunder in a difficult position.",)],
+}
+
+# the recommended line: lead-in phrasings
+LINE_LEAD = [
+    ("A better alternative would be",),
+    ("A better move would have been",),
+    ("The move was",),
+    ("{Color} could have played",),
+    ("Better was",),
+]
+
+# phase transitions
+PHASE_TO_MID = ["As the early game transitions to the mid game,",
+                "With development complete,", "The opening is over,",
+                "As the pieces come out,"]
+PHASE_TO_END = ["As the game enters the endgame,",
+                "With the material thinning out,", "The endgame arrives,"]
+PHASE_POS = {
+    "center": ["{color} controls the center",
+               "{color} has a firmer grip on the center",
+               "{color} dominates the central squares"],
+    "king_safety": ["{color}'s pawn shield provides strong protection for "
+                    "the king", "{color}'s king sits safely behind its pawns",
+                    "{color} has the safer king"],
+    "bishop_pair": ["{color} holds the bishop pair",
+                    "{color} has the two bishops"],
+    "rook_files": ["{color}'s rooks are active on open files",
+                   "{color} has the more active rooks"],
+    "space": ["{color} has more space to work with"],
+    "development": ["{color} has completed development"],
+    "outposts": ["{color}'s knights find good outposts"],
+    "passed": ["{color} has a passed pawn to work with"],
+}
+
+# closing notes
+HIGHLIGHT = ["{Winner} made good use of {pieces}.",
+             "{Winner}'s {pieces} did the talking.",
+             "The {pieces} carried {Winner}'s game."]
+HIGHLIGHT_MOTIF = ["{Winner}'s {motif} made the difference.",
+                   "The {motif} on move {n} set {Winner} on the way."]
+MISTAKE_HANG = ["{Loser} might have had more success without losing the "
+                "{piece} without gaining anything in return.",
+                "Losing the {piece} for nothing cost {Loser} the game."]
+MISTAKE_MOTIF = ["{Loser} could have obtained a better outcome if the "
+                 "{motif} had been spotted in time.",
+                 "The {motif} went unnoticed, and {Loser} paid for it."]
+MISTAKE_GENERIC = ["With a little more care on move {n}, {Loser} could have "
+                   "kept the game going.",
+                   "{Loser} will look again at move {n}."]
 
 TEMPLATES = {"intro": INTRO, "quiet": QUIET, "praise": PRAISE,
              "praise_quiet": PRAISE_QUIET, "great": GREAT,
@@ -418,7 +484,9 @@ TEMPLATES = {"intro": INTRO, "quiet": QUIET, "praise": PRAISE,
              "blunder_swing": BLUNDER_SWING,
              "turning_good": TURNING_GOOD, "turning_bad": TURNING_BAD,
              "decision": DECISION, "finish": FINISH,
-             "opening": OPENING_LINES}
+             "opening": OPENING_LINES, "line_lead": LINE_LEAD}
+for _k, _v in VERDICT_SHORT.items():
+    TEMPLATES["verdict_" + _k] = _v
 for _arc in OUTRO_MATE:
     TEMPLATES["outro_%s_mate" % _arc] = OUTRO_MATE[_arc]
     TEMPLATES["outro_%s" % _arc] = OUTRO_OTHER[_arc]
@@ -459,6 +527,180 @@ class Teller:
 
 
 # ── narrative assembly ───────────────────────────────────────────────────────
+
+PIECE_WORDS_S = {"N": "knight", "B": "bishop", "R": "rook", "Q": "queen",
+                 "K": "king"}
+
+
+def _piece_of_san(san):
+    return PIECE_WORDS_S.get(san[:1], "pawn")
+
+
+def _line_pair(teller, e, s):
+    """The recommended-line analysis: lead-in, the move series with its named
+    events, and what the line achieves. [a better alternative would be]
+    [move series] [impact]."""
+    bl = e.get("best_line") or {}
+    plies = bl.get("plies") or []
+    if len(plies) < 2:
+        return None
+    concl = bl.get("concl") or {}
+    lead = teller.pick("line_lead", 1)[0].format(**s)
+    scr, spk, marks = [], [], []
+    for i, pl in enumerate(plies):
+        w_scr, w_spk = pl["san"], spoken_san(pl["san"])
+        if pl.get("forced"):
+            w_scr += " (forced)"
+            if i:
+                w_spk = "the forced " + w_spk
+        for k in ("fork", "pin", "double_check"):
+            if k in pl.get("kinds", []):
+                marks.append(k.replace("_", " "))
+        scr.append(w_scr)
+        spk.append(w_spk)
+    scr_series = ", ".join(scr)
+    spk_series = spk[0] + (", followed by " + ", ".join(spk[1:])
+                           if len(spk) > 1 else "")
+    if marks:
+        note = marks[0]
+        scr_series += " (%s)" % note
+        spk_series += ", with a %s" % note
+    if concl.get("kind") == "mate":
+        end_scr = end_spk = "and that is checkmate"
+    elif concl.get("kind") == "wins":
+        what = concl.get("what") or "material"
+        bare = what.replace("the ", "").replace("a ", "")
+        mv = concl.get("move") or ""
+        tail = (" with %s" % mv) if mv else ""
+        tail_spk = (" with %s" % spoken_san(mv)) if mv else ""
+        if mv and teller.rng.random() < 0.5:
+            end_scr = "winning %s's %s%s" % (s["opponent"], bare, tail)
+            end_spk = "winning %s's %s%s" % (s["opponent"], bare, tail_spk)
+        else:
+            end_scr = "winning %s%s" % (what, tail)
+            end_spk = "winning %s%s" % (what, tail_spk)
+    else:
+        end_scr = end_spk = ""
+    def _assemble(lead_s, series_s, end_s):
+        return ("%s %s%s." % (lead_s, series_s, (", " + end_s) if end_s
+                              else "")).strip()
+    return (_assemble(lead, scr_series, end_scr),
+            _assemble(lead, spk_series, end_spk), {})
+
+
+def _phase_note(teller, ph, s):
+    """High-level analysis at a phase transition: material + engine read +
+    one or two measurable positional advantages."""
+    rep = ph.get("report") or {}
+    d = rep.get("material", 0)
+    lead = "White" if d > 0 else "Black"
+    if abs(d) <= 2:
+        core = "White and Black are fairly evenly matched"
+        if abs(d) >= 1:
+            core += ", with %s up a single pawn" % lead
+    elif abs(d) <= 4:
+        core = "%s is up the exchange" % lead
+    elif abs(d) <= 8:
+        core = "%s is up a piece" % lead
+    else:
+        core = "%s is up significant material" % lead
+    head = teller.phrase(PHASE_TO_MID if ph["to"] == "middlegame"
+                         else PHASE_TO_END)
+    obs = _positional_notes(teller, rep, s)
+    out = "%s %s." % (head, core)
+    if obs:
+        out += " " + obs[0]
+        if len(obs) > 1:
+            out += " " + obs[1]
+    return (out, out, {})
+
+
+def _positional_notes(teller, rep, s):
+    """1-3 measurable positional observations, strongest first."""
+    out = []
+    w, b = rep.get("center", (0, 0))
+    if abs(w - b) >= 3:
+        out.append((("center", "White" if w > b else "Black")))
+    ws, bs = rep.get("king_safety", (0, 0))
+    if abs(ws - bs) >= 2:
+        out.append(("king_safety", "White" if ws > bs else "Black"))
+    if rep.get("bishop_pair", (False, False))[0]:
+        out.append(("bishop_pair", "White"))
+    elif rep.get("bishop_pair", (False, False))[1]:
+        out.append(("bishop_pair", "Black"))
+    rw, rb = rep.get("rook_files", (0, 0))
+    if abs(rw - rb) >= 1 and max(rw, rb) >= 2:
+        out.append(("rook_files", "White" if rw > rb else "Black"))
+    sp = rep.get("space", (0, 0))
+    if abs(sp[0] - sp[1]) >= 25:
+        out.append(("space", "White" if sp[0] > sp[1] else "Black"))
+    out2 = []
+    for kind, color in out[:3]:
+        phrase = teller.phrase(PHASE_POS.get(kind, ["{color} is better"]))
+        out2.append(phrase.format(color=color) + ".")
+    return out2
+
+
+def _closing_notes(analysis, teller, s):
+    """Post-game synthesis: what went right for the winner (moves that matched
+    the best play, named events) and a constructive read of the loser's
+    mistakes."""
+    moves = analysis["moves"]
+    res = analysis["meta"].get("result")
+    winner = ("white" if res == "1-0" else "black" if res == "0-1" else None)
+    if not moves or winner is None:
+        return []
+    loser = "black" if winner == "white" else "white"
+    s = dict(s, Winner=winner.capitalize(), Loser=loser.capitalize())
+    notes = []
+
+    # highlights: pieces that made the winner's good moves / a named motif
+    pieces = {}
+    motif = None
+    for m in moves:
+        if m["color"] != winner:
+            continue
+        if m["quality"] in ("great", "brilliant", "best"):
+            pc = _piece_of_san(m["san"])
+            if pc != "pawn":
+                pieces[pc] = pieces.get(pc, 0) + 1
+        for f in m.get("facts", []):
+            if f.get("kind") in ("fork", "pin") and motif is None and \
+                    m["quality"] in ("great", "brilliant"):
+                motif = (f["kind"].replace("_", " "), m["no"])
+    if motif and teller.rng.random() < 0.5:
+        notes.append((teller.phrase(HIGHLIGHT_MOTIF)
+                      .format(motif=motif[0], n=motif[1], **s),) * 1)
+    top = [k for k, _ in sorted(pieces.items(),
+                                key=lambda kv: -kv[1])[:2]]
+    if top:
+        joined = " and ".join(top)
+        notes.append((teller.phrase(HIGHLIGHT).format(pieces=joined, **s),))
+
+    # the loser's mistakes, by cause
+    big = [m for m in moves if m["color"] == loser and m["loss_cp"] >= 180]
+    big.sort(key=lambda m: -m["loss_cp"])
+    if big:
+        m = big[0]
+        nxt = next((x for x in moves if x["ply"] == m["ply"] + 1), None)
+        cause = None
+        for f in (nxt or {}).get("facts", []):
+            if f.get("kind") == "capture" and f.get("value", 0) >= 3:
+                cause = ("hang", f.get("piece", "piece"))
+                break
+            if f.get("kind") in ("fork", "pin") and cause is None:
+                cause = ("motif", f["kind"].replace("_", " "))
+        if cause and cause[0] == "hang":
+            notes.append((teller.phrase(MISTAKE_HANG)
+                          .format(piece=cause[1], **s),))
+        elif cause and cause[0] == "motif":
+            notes.append((teller.phrase(MISTAKE_MOTIF)
+                          .format(motif=cause[1], **s),))
+        else:
+            notes.append((teller.phrase(MISTAKE_GENERIC)
+                          .format(n=m["no"], **s),))
+    return notes[:2]
+
 
 def _fact_note(teller, facts, slots):
     """One positional note (screen tpl, speech tpl, slots): the most
@@ -556,6 +798,10 @@ def build_events(analysis, teller):
     opening_map = {}
     for op in analysis.get("openings", []):
         opening_map.setdefault(op["ply"], []).append(op["name"])
+    phase_map = {}
+    for ph in analysis.get("phases", []):
+        phase_map.setdefault(ph["ply"], []).append(ph)
+    player = (analysis.get("meta") or {}).get("player")
 
     for e in analysis["moves"]:
         q = e["quality"]
@@ -602,6 +848,12 @@ def build_events(analysis, teller):
                            "slots": dict(s, opening=op,
                                          opening_cap=_sent_case(op))})
 
+        # high-level analysis at the phase transitions
+        for ph in phase_map.get(e["ply"], []):
+            events.append({"kind": "phase", "move": None, "pack": (),
+                           "extras": [_phase_note(teller, ph, s)],
+                           "slots": s})
+
         if e["ply"] in covered:
             if e["ply"] in quiet_map:      # one bridge per quiet stretch
                 events.append({"kind": "quiet", "move": None,
@@ -618,7 +870,9 @@ def build_events(analysis, teller):
 
         tier = {"brilliant": 3, "blunder": 3, "mistake": 2, "great": 2,
                 "inaccuracy": 2}.get(q, 1)
-        say = q in ("brilliant", "great", "inaccuracy", "mistake", "blunder")
+        # no verdict text on moves where nothing was at stake
+        say = q in ("brilliant", "great", "mistake", "blunder") or (
+            q == "inaccuracy" and e["loss_cp"] >= 70)
         if q in ("best", "good") and not e.get("forced"):
             if teller.rng.random() < 0.12:
                 say, tier = True, 1
@@ -639,13 +893,27 @@ def build_events(analysis, teller):
             cat = ("blunder_swing"
                    if s["swing"] >= 300 and s["eval_before"] != s["eval_after"]
                    else "blunder")
+        # the recommended-line analysis: [a better alternative would be]
+        # [move series] [impact] - mostly the player's own moves (5/6)
+        want_line = (q in ("inaccuracy", "mistake", "blunder")
+                     and e["loss_cp"] >= 120 and bool(e.get("best_line")))
+        if want_line:
+            p = (0.9 if (player and e["color"] == player) else
+                 0.18 if player else 0.8)
+            want_line = teller.rng.random() < p
+        line_pair = _line_pair(teller, e, s) if want_line else None
+
         if cat is None:
             cat = ("praise_quiet" if e["quiet"] else "praise")
-        pack = list(teller.pick(cat, TIER_LIMIT[tier]))
+        if line_pair:
+            pack = list(teller.pick("verdict_" + q, 1))
+        else:
+            pack = list(teller.pick(cat, TIER_LIMIT[tier]))
 
-        # one extra sentence for story beats (never on the finish itself)
-        beat = e["ply"] in analysis.get("turning_points", []) and \
-            q != "brilliant"
+        # one extra sentence for story beats (never on the finish itself,
+        # never when the recommended line already says plenty)
+        beat = (e["ply"] in analysis.get("turning_points", [])
+                and q != "brilliant" and not line_pair)
         if beat and teller.rng.random() < 0.6:
             good = s["gain"] >= 0          # from the MOVER's side
             pack += teller.pick("turning_good" if good else "turning_bad", 1)
@@ -656,9 +924,9 @@ def build_events(analysis, teller):
 
         # positional note - moderately often, more on important moves; never
         # pile onto a comment that already has plenty to say
-        extras = []
-        if facts and len(pack) <= 2 and teller.rng.random() < (
-                0.75 if tier >= 2 else 0.4):
+        extras = [line_pair] if line_pair else []
+        if (not line_pair and facts and len(pack) <= 2
+                and teller.rng.random() < (0.75 if tier >= 2 else 0.4)):
             ex = _fact_note(teller, facts, s)
             # a good move that deliberately hangs its own piece is a sacrifice
             if (ex and ex[2].get("kind") == "exposes"
@@ -692,9 +960,11 @@ def build_events(analysis, teller):
                           .replace(", checkmate", ""))
                          if last else ""),
     })
+    notes = _closing_notes(analysis, teller, out_slots)
     events.append({"kind": "outro",
                    "pack": teller.pick("outro_%s%s"
                                        % (arc, "_mate" if mate_end else ""), 3),
+                   "extras": [(n[0], n[0], {}) for n in notes],
                    "slots": out_slots})
     return events
 
@@ -720,7 +990,7 @@ def render(events, analysis, style):
             ex = pair[0] if style == "screen" else pair[1]
             body = (body + " " + ex.format(**pair[2])).strip()
         move = ev.get("move")
-        if ev["kind"] in ("intro", "outro", "quiet", "opening"):
+        if ev["kind"] in ("intro", "outro", "quiet", "opening", "phase"):
             lines.append(body)
             continue
         if ev["kind"] == "finish":

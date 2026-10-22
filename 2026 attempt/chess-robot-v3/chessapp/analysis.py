@@ -14,6 +14,7 @@ import chess
 import chess.pgn
 
 from chessapp import chessfacts as CF
+from chessapp import chesspos as CP
 from chessapp import openings as OP
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -148,29 +149,123 @@ def _eval_words(cp):
         "White" if cp > 0 else "Black")
 
 
-def _pv_impact(board, pv, mover, best_mate=None):
-    """What the recommended line ACHIEVES: play a few PV plies and measure the
-    material the mover gains. This is what 'a better move would have been X,
-    which would have won the queen' is built from."""
-    if best_mate is not None and best_mate > 0:
-        return {"kind": "wins", "what": "the game"}
+def _pv_line(board, pv, mover, mate=None):
+    """The recommended line as speakable data: up to 3 full moves (6 plies),
+    the named events along it, and where the gain lands - 'winning the queen
+    with bishop to b2' is built from this."""
     b = board.copy()
-    for u in (pv or [])[:4]:
+    plies = []
+    for u in (pv or [])[:6]:
         try:
-            b.push(chess.Move.from_uci(u))
+            mv = chess.Move.from_uci(u)
         except Exception:
             break
-    gain = (_material(b) - _material(board)) * (1 if mover == chess.WHITE
-                                                else -1)
-    if gain >= 8:
-        return {"kind": "wins", "what": "the queen"}
-    if gain >= 3:
-        return {"kind": "wins", "what": "the exchange"}
-    if gain >= 1:
-        return {"kind": "wins", "what": "a pawn"}
-    if gain <= -3:
-        return {"kind": "keeps", "what": ""}
+        san = b.san(mv)
+        kinds = [k for k, _ in CF.move_facts(b, mv)]
+        plies.append({"san": san,
+                      "color": "white" if b.turn == chess.WHITE else "black",
+                      "forced": b.legal_moves.count() == 1,
+                      "kinds": kinds, "capture": b.is_capture(mv),
+                      "check": b.gives_check(mv)})
+        b.push(mv)
+    total = (_material(b) - _material(board)) * (1 if mover == chess.WHITE
+                                                 else -1)
+    # where does the line's gain materialize?
+    run = board.copy()
+    cum, best_at, best_jump = 0.0, None, 0.0
+    for i, pl in enumerate(plies):
+        mv = chess.Move.from_uci((pv or [])[i])
+        before = _material(run)
+        run.push(mv)
+        swing = (_material(run) - before) * (1 if mover == chess.WHITE else -1)
+        cum += swing
+        if swing > best_jump:
+            best_jump, best_at = swing, i
+    concl = {"kind": "holds", "what": "", "at": None, "move": ""}
+    if mate is not None and mate > 0:
+        concl = {"kind": "mate", "what": "", "at": len(plies) - 1,
+                 "move": plies[-1]["san"] if plies else ""}
+    elif total >= 8:
+        concl = {"kind": "wins", "what": "the queen", "at": best_at,
+                 "move": plies[best_at]["san"] if best_at is not None else ""}
+    elif total >= 3:
+        concl = {"kind": "wins", "what": "the exchange", "at": best_at,
+                 "move": plies[best_at]["san"] if best_at is not None else ""}
+    elif total >= 1:
+        concl = {"kind": "wins", "what": "a pawn", "at": best_at,
+                 "move": plies[best_at]["san"] if best_at is not None else ""}
+    return {"plies": plies, "total": total, "concl": concl}
+
+
+def _pv_impact(board, pv, mover, best_mate=None):
+    """What the recommended line achieves (the short form)."""
+    line = _pv_line(board, pv, mover, best_mate)
+    c = line["concl"]
+    if c["kind"] == "wins":
+        return {"kind": "wins", "what": c["what"] or "material"}
     return {"kind": "keeps", "what": ""}
+
+
+def _impact_of(line):
+    """Short consequence form of a recommended line (for 'which would have..')."""
+    c = line["concl"]
+    if c["kind"] == "mate":
+        return {"kind": "wins", "what": "the game"}
+    if c["kind"] == "wins":
+        return {"kind": "wins", "what": c["what"] or "material"}
+    return {"kind": "keeps", "what": ""}
+
+
+def _player_side(headers):
+    """Which side the human plays, taken from the game itself: a robot/engine
+    name on one side means the other side is the player."""
+    w = (headers.get("White") or "").lower()
+    b = (headers.get("Black") or "").lower()
+    marks = ("robot", "engine", "stockfish", "computer", "pi", "al5")
+    w_bot = any(k in w for k in marks)
+    b_bot = any(k in b for k in marks)
+    if w_bot and not b_bot:
+        return "black"
+    if b_bot and not w_bot:
+        return "white"
+    return None
+
+
+def _phase_markers(board_start, entries):
+    """Opening -> middlegame -> endgame transition points, each with a
+    position report at the moment of the change."""
+    out = []
+    b = board_start.copy()
+    mid = False
+    for e in entries:
+        b.push(chess.Move.from_uci(e["uci"]))
+        if not mid and (e["ply"] >= 20
+                        or (_castled(b, chess.WHITE)
+                            and _castled(b, chess.BLACK))):
+            mid = True
+            out.append({"ply": e["ply"], "to": "middlegame",
+                        "report": CP.report(b)})
+        elif mid and _is_endgame(b):
+            out.append({"ply": e["ply"], "to": "endgame",
+                        "report": CP.report(b)})
+            break
+    return out
+
+
+def _castled(board, color):
+    """True when the king sits on its castled square."""
+    k = board.king(color)
+    return k in (chess.G1, chess.C1) if color == chess.WHITE else \
+        k in (chess.G8, chess.C8)
+
+
+def _is_endgame(board):
+    def n_types(*types):
+        return sum(1 for sq in chess.SQUARES
+                   if (lambda p: p is not None and p.piece_type in types)
+                   (board.piece_at(sq)))
+    return (n_types(chess.QUEEN) == 0
+            or n_types(chess.ROOK, chess.BISHOP, chess.KNIGHT) <= 3)
 
 
 def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
@@ -181,7 +276,9 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
     moves = list(game.mainline_moves())
 
     headers = game.headers
-    meta = {"white": headers.get("White", "White"),
+    board_start = board.copy()
+    meta = {"player": _player_side(headers),
+            "white": headers.get("White", "White"),
             "black": headers.get("Black", "Black"),
             "result": headers.get("Result", "*"),
             "date": headers.get("Date", ""),
@@ -215,6 +312,7 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
         facts = [dict(kind=k, **slots) for k, slots in CF.move_facts(board, mv)]
         mover_mate_before = best["mate"] if turn == chess.WHITE else (
             None if best.get("mate") is None else -best["mate"])
+        best_line = _pv_line(board, best.get("pv"), turn, mover_mate_before)
         ucis.append(mv.uci())
         m = OP.match_opening(ucis)
         if m and m[1] == len(ucis):
@@ -299,8 +397,8 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
             "mate_after": mate_after,
             "material_swing": mat_after - mat_before,
             "facts": facts,
-            "best_impact": _pv_impact(board, best.get("pv"), turn,
-                                      mover_mate_before),
+            "best_line": best_line,
+            "best_impact": _impact_of(best_line),
             "forced": bool(forced),
             "quiet": (not is_capture and not gives_check and loss <= 30
                       and quality in ("good", "best")),
@@ -333,7 +431,8 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
 
     out = {"meta": meta, "moves": entries, "turning_points": turning,
            "decision_points": decisions[:6], "quiet_runs": quiet,
-           "openings": openings, "eval_words": _eval_words}
+           "openings": openings, "phases": _phase_markers(board_start, entries),
+           "eval_words": _eval_words}
     if own:
         eng.close()
     return out

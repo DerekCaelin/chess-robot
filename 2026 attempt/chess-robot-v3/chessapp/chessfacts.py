@@ -131,7 +131,7 @@ def move_facts(board, move):
                                 {"piece": piece_name(t),
                                  "square": chess.square_name(sq)}))
         if targets:
-            facts.append(("threatens", max(targets)[1]))
+            facts.append(("threatens", max(targets, key=lambda tv: tv[0])[1]))
 
         # fork: the moved piece attacks two worthwhile pieces at once
         hits = [sq for sq in after.attacks(move.to_square)

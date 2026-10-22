@@ -31,15 +31,23 @@ def sentences(text):
 
 
 def _merge_wavs(paths, out, pause=0.35):
-    """Concatenate same-format wavs with a short pause between them."""
+    """Concatenate same-format wavs with silence between them. Refuses to
+    blend mismatched formats (that is where the static came from)."""
     first = wave.open(paths[0], "rb")
     params = first.getparams()
     rate = first.getframerate()
     frames = [first.readframes(first.getnframes())]
     first.close()
-    silence = b"\0" * int(rate * params.sampwidth * params.nchannels * pause)
+    fill = b"\x80" if params.sampwidth == 1 else b"\x00"   # 8-bit silence!
+    silence = fill * int(rate * params.sampwidth * params.nchannels * pause)
     for p in paths[1:]:
         w = wave.open(p, "rb")
+        wp = w.getparams()
+        if (wp.nchannels, wp.sampwidth, wp.framerate, wp.comptype) != \
+                (params.nchannels, params.sampwidth, params.framerate,
+                 params.comptype):
+            w.close()
+            raise SystemExit("wav format mismatch: %s" % p)
         frames.append(silence)
         frames.append(w.readframes(w.getnframes()))
         w.close()
@@ -69,20 +77,15 @@ def synth_piper(text, out, model=PIPER_MODEL):
 
 
 def synth_espeak(text, out, voice=ESPEAK_VOICE, speed=155):
-    """Synthesize with espeak (the small fallback engine)."""
+    """Synthesize with espeak (the small fallback engine). ONE pass for the
+    whole track: espeak inserts the sentence pauses itself, and splitting it
+    into per-sentence files was producing a burst of static at every seam."""
     if shutil.which("espeak") is None:
         raise SystemExit("espeak not installed")
-    parts = []
-    with tempfile.TemporaryDirectory() as td:
-        for i, s in enumerate(sentences(text)):
-            wav = os.path.join(td, "e%03d.wav" % i)
-            r = subprocess.run(["espeak", "-v", voice, "-s", str(speed),
-                                "-w", wav, s],
-                               capture_output=True)
-            if r.returncode != 0 or not os.path.exists(wav):
-                raise SystemExit("espeak failed on %r: %s" % (s, r.stderr[-400:]))
-            parts.append(wav)
-        _merge_wavs(parts, out, pause=0.25)
+    r = subprocess.run(["espeak", "-v", voice, "-s", str(speed),
+                        "-w", out, text], capture_output=True)
+    if r.returncode != 0 or not os.path.exists(out):
+        raise SystemExit("espeak failed: %s" % r.stderr[-400:])
     return out
 
 
