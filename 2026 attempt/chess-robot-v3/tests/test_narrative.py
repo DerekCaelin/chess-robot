@@ -109,12 +109,37 @@ def test_marks():
     assert mark_for("best") == ""
 
 
+def test_concept_notes():
+    import chessapp.narrative as N
+    teller = Teller(seed=7)
+    s = {"color": "white", "Color": "White"}
+    # the top mover clears its threshold; the quiet one stays quiet
+    e = {"concepts": {"center": 3, "material": 0, "space": 1, "structure": -2},
+         "uci": "e2e4", "best": "e2e4"}
+    note = N._concept_note(teller, e, s)
+    assert note is not None
+    assert note[2]["concept"] in ("center", "structure")
+    e2 = {"concepts": {"center": 1, "space": 1}, "uci": "e2e4", "best": "e2e4"}
+    assert N._concept_note(Teller(seed=7), e2, s) is None
+    # harvested human phrasing wins over the built-in banks when present
+    old = N._PHRASE_LIB
+    N._PHRASE_LIB = {"center": {"+": {"white": ["Human phrasing here."],
+                                      "any": []}}}
+    try:
+        e3 = {"concepts": {"center": 4}, "uci": "e2e4", "best": "e2e4"}
+        note = N._concept_note(Teller(seed=7), e3, s)
+        assert note[0] == "Human phrasing here.", note
+    finally:
+        N._PHRASE_LIB = old
+
+
 def main():
     test_spoken_san()
     test_renderings_and_variety()
     test_facts_and_openings()
     test_analysis_pack()
     test_marks()
+    test_concept_notes()
     print("PASS: narrative rendering + variety + facts")
 
 

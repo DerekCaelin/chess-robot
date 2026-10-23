@@ -26,6 +26,11 @@ VOICES = ("none", "espeak", "piper")
 VOICE_LABELS = {"none": "None (fastest)", "espeak": "espeak (fast)",
                 "piper": "piper (slow)"}
 
+# The stored analysis + commentary format. Bump when the engine fields or
+# the narrative output change shape/quality - a cached text.json with an
+# older format is regenerated (2026-10-22: two-pass eval, WDL, concepts).
+CACHE_FORMAT = 2
+
 
 def game_hash(game):
     return hashlib.sha1(json.dumps(game, sort_keys=True).encode()
@@ -83,7 +88,13 @@ class AnalysisPack:
         return os.path.join(self.dir, "m%03d_%s.wav" % (ply, voice))
 
     def has_text(self):
-        return os.path.exists(self.text_path())
+        if not os.path.exists(self.text_path()):
+            return False
+        try:
+            with open(self.text_path()) as f:
+                return json.load(f).get("format") == CACHE_FORMAT
+        except (OSError, ValueError):
+            return False
 
     def move_count(self):
         return len(self.game.get("moves", []))
@@ -96,7 +107,7 @@ class AnalysisPack:
             b.addTextMove(u)
         return b
 
-    def generate(self, voice="none", on_progress=None, depth=13):
+    def generate(self, voice="none", on_progress=None, depth=18):
         """Staged background generation. on_progress(done, total, stage).
         Cancellable between moves; one bad move never kills the run."""
         token = self._run_id          # cancel() invalidates this run
@@ -106,7 +117,8 @@ class AnalysisPack:
             self.analysis = AN.analyze_game(g, depth=depth)
             self.moves = NR.per_move(self.analysis)
             with open(self.text_path(), "w") as f:
-                json.dump({"moves": self.moves,
+                json.dump({"format": CACHE_FORMAT,
+                           "moves": self.moves,
                            "analysis": AN.analysis_to_jsonable(self.analysis)},
                           f, indent=1)
         else:
@@ -175,7 +187,7 @@ _LOCK = threading.Lock()
 _RUNS = {}
 
 
-def generate_async(pack, voice, depth=13):
+def generate_async(pack, voice, depth=18):
     """Start (or join) the staged generation for this game+voice. Returns the
     shared state dict: {done, total, state, error, alive}."""
     key = (pack.hash, voice)

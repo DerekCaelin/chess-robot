@@ -11,12 +11,31 @@
 # and big moments get 2-3.
 #
 #   python3 -m chessapp.narrative games/game_1233404.pgn [--seed N] [--style both]
+import json
 import os
 import random
 
 from chessapp import analysis as AN
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Harvested human phrasing (tools/harvest_phrases.py): commentary sentences
+# mined from annotated games, keyed by (concept, polarity, colour). The
+# narrator prefers them over its own banks - variety with a human voice.
+# Loaded once; missing/empty is fine (the built-in banks remain).
+_PHRASE_LIB = None
+
+
+def phrase_lib():
+    global _PHRASE_LIB
+    if _PHRASE_LIB is None:
+        try:
+            with open(os.path.join(os.path.dirname(__file__),
+                                   "phraselib.json")) as f:
+                _PHRASE_LIB = json.load(f)
+        except (OSError, ValueError):
+            _PHRASE_LIB = {}
+    return _PHRASE_LIB
 
 PIECE_WORDS = {"N": "knight", "B": "bishop", "R": "rook", "Q": "queen",
                "K": "king"}
@@ -524,6 +543,16 @@ class Teller:
             self.rng.shuffle(bag)
         return bag.pop()
 
+    def lib(self, key, pool):
+        """Shuffle-bag pick from a harvested human-phrasing bucket."""
+        if not pool:
+            return None
+        bag = self.bags.setdefault("lib:" + key, [])
+        if not bag:
+            bag.extend(pool)
+            self.rng.shuffle(bag)
+        return bag.pop()
+
     def phrase(self, bank):
         return self.rng.choice(bank)
 
@@ -827,8 +856,16 @@ def _concept_note(teller, e, s):
             top_k, top_d = k, d
     if not top_k:
         return None
-    pool = CONCEPT_NOTES[top_k][0 if top_d > 0 else 1]
-    text = teller.rng.choice(pool).format(Color=s["Color"])
+    # harvested human phrasing first (keyed by concept, polarity, colour),
+    # then the built-in banks
+    sign = "+" if top_d > 0 else "-"
+    mover = s["color"]
+    buckets = phrase_lib().get(top_k, {}).get(sign, {})
+    text = (teller.lib("%s/%s/%s" % (top_k, sign, mover), buckets.get(mover))
+            or teller.lib("%s/%s/any" % (top_k, sign), buckets.get("any")))
+    if not text:
+        pool = CONCEPT_NOTES[top_k][0 if top_d > 0 else 1]
+        text = teller.rng.choice(pool).format(Color=s["Color"])
     return (text, text, {"kind": "concept", "concept": top_k})
 
 
@@ -1209,7 +1246,14 @@ def per_move(analysis, seed=None):
     for m in analysis["moves"]:
         segs, spk = [], []
         has_head = False
-        for ev in by.get(m["ply"], []):
+        # the move's own comment renders first; intro prefaced, quiet/opening/
+        # phase transition notes trail it (2026-10-22)
+        evs = sorted(by.get(m["ply"], []),
+                     key=lambda e: (0 if e["kind"] == "intro" else
+                                    1 if e["kind"] not in
+                                    ("intro", "outro", "quiet", "opening",
+                                     "phase") else 2))
+        for ev in evs:
             body_s = _body(ev, "screen")
             if ev["kind"] in ("intro", "outro", "quiet", "opening", "phase"):
                 if body_s:
