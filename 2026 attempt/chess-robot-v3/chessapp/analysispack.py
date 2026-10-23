@@ -121,6 +121,15 @@ class AnalysisPack:
                            "moves": self.moves,
                            "analysis": AN.analysis_to_jsonable(self.analysis)},
                           f, indent=1)
+            # the spoken text changed with the re-analysis: old sounds would
+            # say something other than the screen now shows - drop them all
+            if os.path.isdir(self.dir):
+                for fn in os.listdir(self.dir):
+                    if fn.startswith("m") and fn.endswith(".wav"):
+                        try:
+                            os.remove(os.path.join(self.dir, fn))
+                        except OSError:
+                            pass
         else:
             self._load_text()
         if on_progress:
@@ -230,6 +239,9 @@ def prewarm(voice=None):
         pack = load_pack()
         if pack is None:
             return None
+        # stale analysis/commentary (old cache format) is work too
+        if not pack.has_text():
+            return generate_async(pack, voice)
         # already complete?
         n = pack.move_count()
         if n and all(pack.ready(i + 1, voice) for i in range(n)):
