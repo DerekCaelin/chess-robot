@@ -127,6 +127,51 @@ def main():
         fails.append("play button shows neither an icon nor a glyph")
 
     scr._cleanup()
+
+    # ---- analysis home: '#/# voice files loaded' + the bar retires --------
+    import re
+    settings.set("analysis.voice", "piper")
+    fake = _fake_pack()
+    _real_load, _real_gen = A.AP.load_pack, A.AP.generate_async
+    _real_state = A.AP.generation_state
+    A.AP.load_pack = lambda: fake
+    A.AP.generate_async = lambda *a, **k: None
+    state = {"alive": True, "state": "audio", "done": 1, "total": 2}
+    A.AP.generation_state = lambda *a, **k: dict(state)
+    app.show(A.AnalysisHomeScreen)
+    home = app.current
+    settle(root)
+    home._poll()
+    settle(root)
+    got = str(home.count_lbl.cget("text"))
+    if not re.match(r"^\d+/\d+ voice files loaded$", got):
+        fails.append("home: no voice-file count above the bar (got %r)" % got)
+    if not home._bar_on or not home.prog_bar.winfo_ismapped():
+        fails.append("home: loading bar hidden while generating")
+    state.update(alive=False, done=2)
+    home._poll()
+    settle(root)
+    if home._bar_on or home.prog_bar.winfo_ismapped():
+        fails.append("home: loading bar still up after the run finished")
+    got = str(home.count_lbl.cget("text"))
+    if not re.match(r"^\d+/\d+ voice files loaded$", got):
+        fails.append("home: count vanished with the bar (got %r)" % got)
+    # a fresh run (voice switch) brings the bar back
+    state.update(alive=True, state="audio")
+    home._poll()
+    settle(root)
+    if not home._bar_on or not home.prog_bar.winfo_ismapped():
+        fails.append("home: bar did not come back for a new run")
+    # with voice off there are no voice files - the count stays away
+    home.voice_var.set(A.AP.VOICE_LABELS["none"])
+    home._poll()
+    settle(root)
+    if str(home.count_lbl.cget("text")).strip():
+        fails.append("home: voice count shown with voice off")
+    A.AP.load_pack, A.AP.generate_async = _real_load, _real_gen
+    A.AP.generation_state = _real_state
+    settings.set("analysis.voice", "none")
+
     root.destroy()
 
     if fails:

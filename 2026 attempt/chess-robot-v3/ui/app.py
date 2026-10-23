@@ -4962,9 +4962,15 @@ class AnalysisHomeScreen(kit.Screen):
                                  bg=kit.BG, fg=kit.ACCENT, justify="left",
                                  anchor="w")
         self.dots_lbl.pack(anchor="w")
+        # '#/# voice files loaded' - the count sits right above the bar
+        self.count_lbl = tk.Label(right, text="", font=("DejaVu Sans", 13),
+                                  bg=kit.BG, fg=kit.FG, justify="left",
+                                  anchor="w")
+        self.count_lbl.pack(anchor="w", pady=(2, 0))
         self.prog_bar = tk.Canvas(right, width=220, height=16, bg="#181b21",
                                   highlightthickness=0)
         self.prog_bar.pack(anchor="w", pady=(4, 0))
+        self._bar_on = True
         self._draw_prog(0.0)
 
         self.begin_btn = kit.big_button(self.body, "Begin", self._begin,
@@ -5020,6 +5026,15 @@ class AnalysisHomeScreen(kit.Screen):
     def _poll(self):
         voice = self._voice_key()
         st = AP.generation_state(self.gpack, voice) if self.gpack else None
+        # '#/# voice files loaded' - the files that actually exist on disk
+        if self.gpack and voice != "none":
+            done = sum(1 for m in self.gpack.moves
+                       if self.gpack.ready(m["ply"], voice))
+            self.count_lbl.configure(
+                text="%d/%d voice files loaded"
+                     % (done, max(1, len(self.gpack.moves))))
+        else:
+            self.count_lbl.configure(text="")
         if st is not None:
             if st.get("state") == "audio":
                 self.prog_lbl.configure(
@@ -5039,6 +5054,15 @@ class AnalysisHomeScreen(kit.Screen):
                 self._draw_prog(0.0)
             self._enable_begin()      # text is all Begin needs
         alive = bool(st and st.get("alive"))
+        # the loading bar retires when the run is finished (2026-10-23) and
+        # comes back when a new run starts (a voice switch)
+        if alive != self._bar_on:
+            self._bar_on = alive
+            if alive:
+                self.prog_bar.pack(anchor="w", pady=(4, 0))
+                self._draw_prog(0.0)
+            else:
+                self.prog_bar.pack_forget()
         if alive:
             self.app.hold_awake("analysis")   # generation must not blank the
             if voice != "none":               # panel while the player waits
