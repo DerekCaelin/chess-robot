@@ -5166,6 +5166,12 @@ class AnalysisMoveScreen(kit.Screen):
         self.finish_btn = kit.big_button(nav, "Finish", self._finish_to_home,
                                          bg=kit.ACCENT, fg="#1b1e24",
                                          width=6, height=2, font=kit.F_BTN)
+        # the quality verdict is a LABEL above the text box (2026-10-23)
+        self.verdict_lbl = tk.Label(right, text="", font=("DejaVu Sans", 16,
+                                                          "bold"),
+                                    bg=kit.BG, fg=kit.ACCENT, justify="left",
+                                    anchor="w", wraplength=340)
+        self.verdict_lbl.pack(anchor="w", pady=(8, 0))
         # 'Generating voice...' is shown only while it is needed
         self.gen_lbl = tk.Label(right, text="", font=kit.F_SMALL,
                                 bg=kit.BG, fg=kit.ACCENT, justify="center")
@@ -5233,6 +5239,7 @@ class AnalysisMoveScreen(kit.Screen):
     def _show(self):
         m = self.move
         self._show_board()
+        self.verdict_lbl.configure(text=m.get("verdict") or "")
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
         for kind, val in m["segments"]:

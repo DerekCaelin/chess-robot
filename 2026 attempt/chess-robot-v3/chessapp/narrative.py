@@ -1108,9 +1108,7 @@ def build_events(analysis, teller):
         "final_screen": ("%d%s%s" % (last["no"],
                                      "." if last["color"] == "white" else "...",
                                      last["san"]) if last else ""),
-        "final_speech": ((spoken_san(last["san"])
-                          .replace(", checkmate", ""))
-                         if last else ""),
+        "final_speech": (spoken_san(last["san"]) if last else ""),
     })
     notes = _closing_notes(analysis, teller, out_slots)
     events.append({"kind": "outro", "ply": None,
@@ -1137,9 +1135,9 @@ def _slots_for(ev, style):
     return sd
 
 
-def _body(ev, style):
+def _body(ev, style, skip_pack=False):
     sd = _slots_for(ev, style)
-    body = " ".join(t.format(**sd) for t in ev["pack"])
+    body = "" if skip_pack else " ".join(t.format(**sd) for t in ev["pack"])
     for pair in ev.get("extras", []):
         ex = pair[0] if style == "screen" else pair[1]
         body = (body + " " + ex.format(**pair[2])).strip()
@@ -1156,8 +1154,8 @@ def _head(ev, style):
             no, dots = move["no"], ("." if move["color"] == "white" else "...")
             return "%d%s%s%s" % (no, dots, move["san"],
                                  mark_for(move["quality"]))
-        spk = spoken_san(move["san"]).replace(", checkmate", "")
-        return spk.capitalize() + "!"
+        # the spoken move SAYS checkmate (2026-10-23) - it used to be stripped
+        return spoken_san(move["san"]).capitalize() + "!"
     if style == "screen":
         no, dots = move["no"], ("." if move["color"] == "white" else "...")
         return "%d%s%s%s" % (no, dots, move["san"],
@@ -1168,11 +1166,11 @@ def _head(ev, style):
     return spk
 
 
-def render(events, analysis, style):
+def render(events, analysis, style, skip_pack=False):
     """style: 'screen' (numbers + notation) or 'speech' (spoken, no numbers)."""
     lines = []
     for ev in events:
-        body = _body(ev, style)
+        body = _body(ev, style, skip_pack=skip_pack)
         head = _head(ev, style)
         if not head:
             lines.append(body)
@@ -1198,19 +1196,33 @@ def glyph_of(san):
     return PIECE_GLYPH.get(c.lower() if c.isupper() else "p", "")
 
 
+QUALITY_KINDS = ("best", "good", "great", "brilliant",
+                 "inaccuracy", "mistake", "blunder")
+
+
 def per_move(analysis, seed=None):
-    """Per-move packages for the Analysis screens: the short text as segments
-    (icon / bold move / plain text) plus the spoken text for the audio."""
+    """Per-move packages for the Analysis screens: the quality verdict (the
+    LABEL above the text box), the comment as segments (icon / bold move /
+    plain text) and the spoken text for the audio. In the opening phase the
+    speech leaves the verdict out - the openings and named structures speak
+    instead (2026-10-23)."""
     teller = Teller(seed)
     events = build_events(analysis, teller)
     by = {}
     for ev in events:
         if ev.get("ply") is not None:
             by.setdefault(ev["ply"], []).append(ev)
+    # the opening phase ends at the first transition to the middlegame
+    opening_until = 0
+    for ph in (analysis.get("phases") or []):
+        if ph.get("to") == "middlegame":
+            opening_until = ph.get("ply") or 0
+            break
     out = []
     for m in analysis["moves"]:
         segs, spk = [], []
         has_head = False
+        verdict = ""
         # the move's own comment renders first; intro prefaced, quiet/opening/
         # phase transition notes trail it (2026-10-22)
         evs = sorted(by.get(m["ply"], []),
@@ -1219,7 +1231,11 @@ def per_move(analysis, seed=None):
                                     ("intro", "outro", "quiet", "opening",
                                      "phase") else 2))
         for ev in evs:
-            body_s = _body(ev, "screen")
+            quality_ev = ev["kind"] in QUALITY_KINDS
+            if quality_ev and not verdict and ev.get("pack"):
+                verdict = " ".join(t.format(**_slots_for(ev, "screen"))
+                                   for t in ev["pack"])
+            body_s = _body(ev, "screen", skip_pack=quality_ev)
             if ev["kind"] in ("intro", "outro", "quiet", "opening", "phase"):
                 if body_s:
                     segs.append(("text", body_s))
@@ -1238,7 +1254,10 @@ def per_move(analysis, seed=None):
                     segs.append(("text", " " + body_s))
             elif body_s:
                 segs.append(("text", body_s))
-            line = render([ev], analysis, "speech")
+            # the verdict lives in the LABEL on screen; the speech says it
+            # except in the opening phase
+            say_verdict = not (quality_ev and m["ply"] < opening_until)
+            line = render([ev], analysis, "speech", skip_pack=not say_verdict)
             if line:
                 spk.append(line)
         if not has_head:
@@ -1256,7 +1275,8 @@ def per_move(analysis, seed=None):
         speech = " ".join(spk)
         out.append({"ply": m["ply"], "no": m["no"], "color": m["color"],
                     "san": m["san"], "uci": m["uci"], "segments": segs,
-                    "speech": speech, "words": len(speech.split())})
+                    "verdict": verdict, "speech": speech,
+                    "words": len(speech.split())})
     return out
 
 

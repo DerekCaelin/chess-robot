@@ -208,6 +208,37 @@ def test_pack_picks_up_cached_text():
         AP.CACHE = old
 
 
+def test_verdict_label_and_speech():
+    """The quality verdict is a LABEL (not screen text); the speech says it
+    except in the opening phase, and checkmate is spoken (2026-10-23)."""
+    from chessapp.narrative import per_move
+    an = _fake_analysis()
+    an["phases"] = [{"ply": 3, "to": "middlegame", "report": {}}]
+    pm = per_move(an, seed=9)
+    # every move carries the verdict for the label
+    assert all("verdict" in m for m in pm)
+    assert pm[0]["verdict"], pm[0]
+    # the screen text never repeats the verdict
+    for m in pm:
+        text = "".join(v for k, v in m["segments"] if k != "icon")
+        assert m["verdict"] not in text, (m["verdict"], text)
+    # opening move (ply 1 < 3): speech leaves the verdict out
+    v0 = pm[0]["verdict"].rstrip(".").lower()
+    assert v0 not in pm[0]["speech"].lower(), pm[0]["speech"]
+    # later moves speak it
+    v3 = pm[3]["verdict"].rstrip(".").lower()
+    assert v3 in pm[3]["speech"].lower(), pm[3]["speech"]
+    # the spoken finish says checkmate
+    an2 = _fake_analysis()
+    last = dict(an2["moves"][-1], san="Rd8#", uci="d1d8", mate_after=1,
+                check=True, quality="brilliant", loss_cp=0, quiet=False,
+                best_san="Rd8#", capture=False)
+    an2["moves"] = an2["moves"][:3] + [last]
+    an2["meta"] = dict(an2["meta"], result="1-0")
+    pm2 = per_move(an2, seed=2)
+    assert "checkmate" in pm2[-1]["speech"].lower(), pm2[-1]["speech"]
+
+
 def main():
     test_spoken_san()
     test_renderings_and_variety()
@@ -217,6 +248,7 @@ def main():
     test_concept_notes()
     test_pack_stale_sounds()
     test_pack_picks_up_cached_text()
+    test_verdict_label_and_speech()
     print("PASS: narrative rendering + variety + facts")
 
 

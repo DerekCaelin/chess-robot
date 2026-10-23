@@ -30,10 +30,12 @@ def _fake_pack():
         {"ply": 1, "no": 1, "color": "white", "san": "e4", "uci": "e2e4",
          "segments": [("icon", "\u265f"), ("move", "1.e4"),
                       ("text", " A quiet start.")],
+         "verdict": "The best move.",
          "speech": "Pawn to e4. A quiet start.", "words": 6},
         {"ply": 2, "no": 1, "color": "black", "san": "e5", "uci": "e7e5",
          "segments": [("icon", "\u265f"), ("move", "1...e5"),
                       ("text", " Symmetrical.")],
+         "verdict": "Solid.",
          "speech": "Pawn to e5. Symmetrical.", "words": 5}]
     pk.generate = lambda *a, **k: pk.moves
     return pk
@@ -81,6 +83,11 @@ def main():
         if board.px > col_h:
             fails.append("board taller than its column: %d > %d"
                          % (board.px, col_h))
+
+    # ---- the quality verdict sits in the label above the text box --------
+    if str(scr.verdict_lbl.cget("text")).strip() != "The best move.":
+        fails.append("move screen: verdict label wrong (got %r)"
+                     % scr.verdict_lbl.cget("text"))
 
     # ---- the whole two-column body fits the window ------------------------
     body_req = scr.body.winfo_reqwidth()
