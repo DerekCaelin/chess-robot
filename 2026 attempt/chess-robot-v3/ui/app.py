@@ -5028,11 +5028,13 @@ class AnalysisHomeScreen(kit.Screen):
         st = AP.generation_state(self.gpack, voice) if self.gpack else None
         # '#/# voice files loaded' - the files that actually exist on disk
         if self.gpack and voice != "none":
-            done = sum(1 for m in self.gpack.moves
-                       if self.gpack.ready(m["ply"], voice))
+            # the GAME's move count - pack.moves is only filled once the text
+            # generation finishes (showing 0/1 before that was a bug)
+            total = self.gpack.move_count()
+            done = sum(1 for i in range(total)
+                       if self.gpack.ready(i + 1, voice))
             self.count_lbl.configure(
-                text="%d/%d voice files loaded"
-                     % (done, max(1, len(self.gpack.moves))))
+                text="%d/%d voice files loaded" % (done, max(1, total)))
         else:
             self.count_lbl.configure(text="")
         if st is not None:
@@ -5052,7 +5054,10 @@ class AnalysisHomeScreen(kit.Screen):
             else:
                 self.prog_lbl.configure(text="Generating text...")
                 self._draw_prog(0.0)
-            self._enable_begin()      # text is all Begin needs
+            # Begin only once the TEXT exists - a move screen over an
+            # ungenned pack used to fail silently on the button press
+            if self.gpack.moves:
+                self._enable_begin()
         alive = bool(st and st.get("alive"))
         # the loading bar retires when the run is finished (2026-10-23) and
         # comes back when a new run starts (a voice switch)
@@ -5078,6 +5083,8 @@ class AnalysisHomeScreen(kit.Screen):
             self.after(150, self._poll)
 
     def _begin(self):
+        if not self.gpack or not self.gpack.moves:
+            return                      # still generating the text
         voice = self._voice_key()
         first = self.gpack.moves[0] if self.gpack.moves else None
         if first and voice != "none" and \
@@ -5089,6 +5096,8 @@ class AnalysisHomeScreen(kit.Screen):
         self._open(0)
 
     def _open(self, idx):
+        if not self.gpack or not self.gpack.moves:
+            return                      # nothing to show yet
         self.stop = True
         self.app.release_awake("analysis")
         # Begin loads the first move already playing (2026-10-22)

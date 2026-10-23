@@ -113,24 +113,28 @@ class AnalysisPack:
         token = self._run_id          # cancel() invalidates this run
         os.makedirs(self.dir, exist_ok=True)
         if not self.has_text():
-            g = game_from_state(self.game)
-            self.analysis = AN.analyze_game(g, depth=depth)
-            self.moves = NR.per_move(self.analysis)
-            with open(self.text_path(), "w") as f:
-                json.dump({"format": CACHE_FORMAT,
-                           "moves": self.moves,
-                           "analysis": AN.analysis_to_jsonable(self.analysis)},
-                          f, indent=1)
-            # the spoken text changed with the re-analysis: old sounds would
-            # say something other than the screen now shows - drop them all
-            if os.path.isdir(self.dir):
-                for fn in os.listdir(self.dir):
-                    if fn.startswith("m") and fn.endswith(".wav"):
-                        try:
-                            os.remove(os.path.join(self.dir, fn))
-                        except OSError:
-                            pass
-        else:
+            with _text_lock(self.hash):
+                if not self.has_text():     # another voice's run may have
+                    g = game_from_state(self.game)   # finished it while we
+                    self.analysis = AN.analyze_game(g, depth=depth)  # waited
+                    self.moves = NR.per_move(self.analysis)
+                    with open(self.text_path(), "w") as f:
+                        json.dump({"format": CACHE_FORMAT,
+                                   "moves": self.moves,
+                                   "analysis": AN.analysis_to_jsonable(
+                                       self.analysis)},
+                                  f, indent=1)
+                    # the spoken text changed with the re-analysis: old
+                    # sounds would say something other than the screen now
+                    # shows - drop them all
+                    if os.path.isdir(self.dir):
+                        for fn in os.listdir(self.dir):
+                            if fn.startswith("m") and fn.endswith(".wav"):
+                                try:
+                                    os.remove(os.path.join(self.dir, fn))
+                                except OSError:
+                                    pass
+        if not self.moves:
             self._load_text()
         if on_progress:
             on_progress(0, max(1, len(self.moves)), "text")
@@ -194,6 +198,16 @@ def auto_advance_seconds(words, sound_len):
 
 _LOCK = threading.Lock()
 _RUNS = {}
+_TEXT_LOCKS = {}
+
+
+def _text_lock(h):
+    """One text generation per game, shared by every voice's run. A voice
+    switch used to launch a SECOND engine analysis beside the in-flight one
+    (both writing the same cache) - now the new run waits for the first and
+    picks up its text (2026-10-23)."""
+    with _LOCK:
+        return _TEXT_LOCKS.setdefault(h, threading.Lock())
 
 
 def generate_async(pack, voice, depth=18):
@@ -205,7 +219,7 @@ def generate_async(pack, voice, depth=18):
         if st is not None and st.get("alive"):
             return st
         st = {"done": 0, "total": max(1, pack.move_count()),
-              "state": "text", "error": None, "alive": True}
+              "state": "start", "error": None, "alive": True}
         _RUNS[key] = st
 
     def run():

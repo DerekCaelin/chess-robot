@@ -132,17 +132,42 @@ def main():
     import re
     settings.set("analysis.voice", "piper")
     fake = _fake_pack()
+    saved_moves, fake.moves = fake.moves, []     # text still generating
     _real_load, _real_gen = A.AP.load_pack, A.AP.generate_async
     _real_state = A.AP.generation_state
     A.AP.load_pack = lambda: fake
     A.AP.generate_async = lambda *a, **k: None
-    state = {"alive": True, "state": "audio", "done": 1, "total": 2}
+    state = {"alive": True, "state": "start", "done": 0, "total": 2}
     A.AP.generation_state = lambda *a, **k: dict(state)
     app.show(A.AnalysisHomeScreen)
     home = app.current
     settle(root)
     home._poll()
     settle(root)
+    # the total is the GAME's move count even before any text exists
+    # (it used to read len(pack.moves) -> '0/1 files created')
+    got = str(home.count_lbl.cget("text"))
+    if got != "0/2 voice files loaded":
+        fails.append("home: count should be 0/2 before text (got %r)" % got)
+    if "Generating text" not in str(home.prog_lbl.cget("text")):
+        fails.append("home: label says %r while the text generates"
+                     % home.prog_lbl.cget("text"))
+    # Begin stays disabled (and inert) until the text exists - pressing it
+    # over an empty pack used to do nothing at all
+    if str(home.begin_btn.cget("state")) != "disabled":
+        fails.append("home: Begin enabled before the text is ready")
+    home._begin()
+    settle(root)
+    if app.current is not home:
+        fails.append("home: Begin opened a move screen over an empty pack")
+    fake.moves = saved_moves
+    state.update(state="audio", done=1, total=2)
+    home._poll()
+    settle(root)
+    home._poll()
+    settle(root)
+    if str(home.begin_btn.cget("state")) == "disabled":
+        fails.append("home: Begin still disabled with the text ready")
     got = str(home.count_lbl.cget("text"))
     if not re.match(r"^\d+/\d+ voice files loaded$", got):
         fails.append("home: no voice-file count above the bar (got %r)" % got)
