@@ -66,7 +66,21 @@ def instr_label(parent, font=None, **kw):
 
 # The circled-i glyph (U+24D8) is missing from DejaVu Sans on the Pi, so the
 # info buttons rendered as empty rectangles.  Ship a PIL-drawn PNG instead.
+# Same for the pause glyph (U+23F8): play/pause transport icons are PNGs.
 _INFO_PHOTOS = {}
+_GLYPH_PHOTOS = {}
+
+
+def glyph_photo(name):
+    """PIL-drawn icon from ui/assets/<name>.png ('pause', 'play', ...)."""
+    if name not in _GLYPH_PHOTOS:
+        path = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "ui", "assets", name + ".png")
+        try:
+            _GLYPH_PHOTOS[name] = tk.PhotoImage(file=path)
+        except tk.TclError:
+            _GLYPH_PHOTOS[name] = False
+    return _GLYPH_PHOTOS[name] or None
 
 
 def _info_photo(small=False):

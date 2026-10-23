@@ -5067,7 +5067,9 @@ class AnalysisHomeScreen(kit.Screen):
     def _open(self, idx):
         self.stop = True
         self.app.release_awake("analysis")
-        self.app.show(AnalysisMoveScreen, pack=self.gpack, idx=idx)
+        # Begin loads the first move already playing (2026-10-22)
+        self.app.show(AnalysisMoveScreen, pack=self.gpack, idx=idx,
+                      autoplay=True)
 
     def _cleanup(self):
         self.stop = True
@@ -5088,7 +5090,7 @@ class AnalysisMoveScreen(kit.Screen):
     scaled to the text (5-10 s). Back returns to the analysis home; the last
     move offers Finish (the app home)."""
 
-    def __init__(self, app, pack, idx):
+    def __init__(self, app, pack, idx, autoplay=False):
         super().__init__(app=app, title="Analysis")
         self.app = app
         self.gpack = pack
@@ -5097,6 +5099,7 @@ class AnalysisMoveScreen(kit.Screen):
         self.adv = bool(settings.get("analysis.auto_advance", True))
         self.stop = False
         self._playing = False
+        self._paused = False       # pause freezes the auto-advance counter
         self._timer = None
         self._tick = None
         self._t0 = 0.0
@@ -5107,45 +5110,67 @@ class AnalysisMoveScreen(kit.Screen):
         self.bar.pack(fill="x", pady=(0, 6))
         self.bar.bind("<Configure>", lambda e: self._draw_bar(0.0))
 
-        row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
-        self.board = kit.BoardView(row, px=200)
-        self.board.pack()
+        # two columns: the board takes the entire available height of the
+        # left column; the transport buttons sit at the top of the right
+        # column with the commentary text filling the rest (2026-10-22)
+        cols = tk.Frame(self.body, bg=kit.BG)
+        cols.pack(fill="both", expand=True)
+        self.cols = cols
+        left = tk.Frame(cols, bg=kit.BG)
+        left.pack(side="left", fill="y")
+        right = tk.Frame(cols, bg=kit.BG)
+        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        self._right_col = right
+        self.board = None
+        self._board_col = left
 
-        nav = tk.Frame(self.body, bg=kit.BG)
-        nav.pack(pady=(8, 0))
+        nav = tk.Frame(right, bg=kit.BG)
+        nav.pack(fill="x")
         self.back_btn = kit.big_button(nav, "\u25C0", self._prev,
-                                       bg=kit.CARD_HI, fg=kit.FG, width=5,
+                                       bg=kit.CARD_HI, fg=kit.FG, width=3,
                                        height=2, font=kit.F_BTN)
-        self.back_btn.pack(side="left", padx=6)
-        self.play_btn = kit.big_button(nav, "\u25B6", self._toggle,
-                                       bg=kit.GREEN, fg="#1b1e24", width=5,
-                                       height=2, font=kit.F_BTN)
+        self.back_btn.pack(side="left", padx=(0, 6))
+        # play/pause: PIL-drawn icons (DejaVu Sans has no pause glyph). An
+        # image button takes its size from padding - tk width is in PIXELS
+        # for images, so big_button's width must not be used here.
+        self._icon_play = kit.glyph_photo("play")
+        self._icon_pause = kit.glyph_photo("pause")
+        self.play_btn = tk.Button(nav, text="\u25B6", command=self._toggle,
+                                  bg=kit.GREEN, fg="#1b1e24",
+                                  activebackground=kit.GREEN,
+                                  activeforeground="#1b1e24", font=kit.F_BTN,
+                                  relief="flat", bd=0, highlightthickness=0,
+                                  padx=10, pady=8)
         self.play_btn.pack(side="left", padx=6)
+        self._set_play_glyph(False)
         self.next_btn = kit.big_button(nav, "\u25B6", self._next,
-                                       bg=kit.CARD_HI, fg=kit.FG, width=5,
+                                       bg=kit.CARD_HI, fg=kit.FG, width=3,
                                        height=2, font=kit.F_BTN)
         self.next_btn.pack(side="left", padx=6)
         self.finish_btn = kit.big_button(nav, "Finish", self._finish_to_home,
                                          bg=kit.ACCENT, fg="#1b1e24",
-                                         width=8, height=2, font=kit.F_BTN)
-        # 'Generating voice...' is packed only while it is needed - the body
-        # is exactly full without it
-        self.gen_lbl = tk.Label(self.body, text="", font=kit.F_SMALL,
+                                         width=6, height=2, font=kit.F_BTN)
+        # 'Generating voice...' is shown only while it is needed
+        self.gen_lbl = tk.Label(right, text="", font=kit.F_SMALL,
                                 bg=kit.BG, fg=kit.ACCENT, justify="center")
-        self.txt = tk.Text(self.body, height=3, width=52, bg="#181b21",
+        self.txt = tk.Text(right, height=3, width=28, bg="#181b21",
                            fg=kit.FG, font=("DejaVu Sans", 14), relief="flat",
                            wrap="word", padx=8, pady=6, highlightthickness=0,
                            cursor="arrow")
         self.txt.tag_config("move", font=("DejaVu Sans", 14, "bold"),
                             foreground=kit.ACCENT)
         self.txt.tag_config("icon", font=("DejaVu Sans", 15))
-        self.txt.pack(fill="x", pady=(6, 0))
+        self.txt.pack(fill="both", expand=True, pady=(6, 0))
         self.txt.configure(state="disabled")
 
+        # the board fills its column's height once the layout is realized
+        left.bind("<Configure>", self._fit_board)
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._show()
-        if self.adv:
+        if autoplay:
+            # Begin loads the first move already playing (2026-10-22)
+            self._play()
+        elif self.adv:
             self._start_timer()
         self._poll()
 
@@ -5154,7 +5179,31 @@ class AnalysisMoveScreen(kit.Screen):
     def move(self):
         return self.gpack.moves[self.idx]
 
-    def _show(self):
+    def _fit_board(self, _e=None):
+        """The board takes the entire available height of its column - but
+        never more width than leaves the right column its request. Re-fits
+        when that request changes (the Finish button appears on the last
+        move), so the body never overflows the window."""
+        if not self.winfo_exists():
+            return
+        h = self._board_col.winfo_height()
+        if h < 120:                     # not realized yet
+            return
+        # body inner width is 800 - 2*10 padx; the right column keeps its
+        # requested width (buttons / text) plus the 12px column gap
+        avail = 780 - 12 - self._right_col.winfo_reqwidth()
+        px = (max(200, min(h, avail)) // 8) * 8
+        if self.board is not None and self.board.px == px:
+            return
+        if self.board is not None:
+            self.board.destroy()
+        self.board = kit.BoardView(self._board_col, px=px)
+        self.board.pack()
+        self._show_board()
+
+    def _show_board(self):
+        if self.board is None:
+            return
         m = self.move
         b = self.gpack.board_after(m["ply"])
         u = m.get("uci") or ""
@@ -5164,6 +5213,10 @@ class AnalysisMoveScreen(kit.Screen):
             tc, tr = ord(u[2]) - 97, 8 - int(u[3])
             hl = (fr, fc, tr, tc)
         self.board.draw(b.getBoard(), hl)
+
+    def _show(self):
+        m = self.move
+        self._show_board()
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
         for kind, val in m["segments"]:
@@ -5182,6 +5235,7 @@ class AnalysisMoveScreen(kit.Screen):
         if last:
             self.finish_btn.pack(side="left", padx=6)
         self._refresh_next()
+        self._fit_board()      # the Finish button changes the width budget
         self._draw_bar(0.0)
 
     def _refresh_next(self):
@@ -5199,6 +5253,18 @@ class AnalysisMoveScreen(kit.Screen):
         self.bar.create_rectangle(0, 0, w, 6, fill=kit.ACCENT, outline="")
 
     # transport -------------------------------------------------------------
+    def _set_play_glyph(self, playing):
+        """PIL-drawn play/pause icons; the pause glyph is missing from the
+        Pi's DejaVu, so the text fallback uses two filled bars."""
+        icon = self._icon_pause if playing else self._icon_play
+        if icon is not None:
+            self.play_btn.configure(image=icon, text="")
+            self.play_btn.image = icon          # keep a reference alive
+        else:
+            self.play_btn.configure(image="",
+                                    text=("\u25AE\u25AE" if playing
+                                          else "\u25B6"))
+
     def _toggle(self):
         if self._playing:
             self._pause()
@@ -5207,7 +5273,8 @@ class AnalysisMoveScreen(kit.Screen):
 
     def _play(self):
         self._playing = True
-        self.play_btn.configure(text="\u23F8")
+        self._paused = False
+        self._set_play_glyph(True)
         self._start_timer()
         if self.voice != "none" and self._sound_ready():
             audio.play_wav(self.gpack.wav_path(self.move["ply"], self.voice))
@@ -5216,7 +5283,8 @@ class AnalysisMoveScreen(kit.Screen):
 
     def _pause(self):
         self._playing = False
-        self.play_btn.configure(text="\u25B6")
+        self._paused = True        # the auto-advance counter must freeze
+        self._set_play_glyph(False)
         audio.stop_wav()
         self._stop_timer()
         self._draw_bar(0.0)
@@ -5241,6 +5309,8 @@ class AnalysisMoveScreen(kit.Screen):
 
     def _on_timer(self):
         self._timer = None
+        if self._paused:
+            return
         if self.voice != "none" and not self._sound_ready():
             self._pending_tick()
             return
@@ -5248,17 +5318,17 @@ class AnalysisMoveScreen(kit.Screen):
 
     def _pending_tick(self):
         """The auto-advance wants to move on but the voice is still cooking."""
+        if self._paused or self.stop or not self.winfo_exists():
+            return
         if not self.gen_lbl.winfo_ismapped():
-            self.gen_lbl.pack(pady=(2, 0))
-            self.gen_lbl.pack_configure(before=self.txt)
-        self.gen_lbl.configure(text="Generating voice...")
+            self.gen_lbl.pack(pady=(2, 0), before=self.txt)
+            self.gen_lbl.configure(text="Generating voice...")
         if self._sound_ready():
             self.gen_lbl.configure(text="")
             self.gen_lbl.pack_forget()
             self._advance()
             return
-        if self.winfo_exists():
-            self.after(400, self._pending_tick)
+        self.after(400, self._pending_tick)
 
     def _advance(self, force=False):
         if self.idx >= len(self.gpack.moves) - 1:
@@ -5276,7 +5346,7 @@ class AnalysisMoveScreen(kit.Screen):
         self._show()
         if self._playing:
             self._play()
-        elif self.adv:
+        elif self.adv and not self._paused:
             self._start_timer()
 
     def _prev(self):
@@ -5286,7 +5356,7 @@ class AnalysisMoveScreen(kit.Screen):
         self._show()
         if self._playing:
             self._play()
-        elif self.adv:
+        elif self.adv and not self._paused:
             self._start_timer()
 
     def _next(self):
