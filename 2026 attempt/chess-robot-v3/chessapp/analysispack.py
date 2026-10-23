@@ -115,18 +115,9 @@ class AnalysisPack:
         if not self.has_text():
             with _text_lock(self.hash):
                 if not self.has_text():     # another voice's run may have
-                    g = game_from_state(self.game)   # finished it while we
-                    self.analysis = AN.analyze_game(g, depth=depth)  # waited
-                    self.moves = NR.per_move(self.analysis)
-                    with open(self.text_path(), "w") as f:
-                        json.dump({"format": CACHE_FORMAT,
-                                   "moves": self.moves,
-                                   "analysis": AN.analysis_to_jsonable(
-                                       self.analysis)},
-                                  f, indent=1)
-                    # the spoken text changed with the re-analysis: old
-                    # sounds would say something other than the screen now
-                    # shows - drop them all
+                    # the old sounds describe the OLD text - drop them now,
+                    # not when the text lands: the 'n/33 voice files loaded'
+                    # count must stay honest while the re-analysis runs
                     if os.path.isdir(self.dir):
                         for fn in os.listdir(self.dir):
                             if fn.startswith("m") and fn.endswith(".wav"):
@@ -134,6 +125,18 @@ class AnalysisPack:
                                     os.remove(os.path.join(self.dir, fn))
                                 except OSError:
                                     pass
+                    g = game_from_state(self.game)
+                    self.analysis = AN.analyze_game(
+                        g, depth=depth,
+                        progress=((lambda i, n: on_progress(i, n, "start"))
+                                  if on_progress else None))
+                    self.moves = NR.per_move(self.analysis)
+                    with open(self.text_path(), "w") as f:
+                        json.dump({"format": CACHE_FORMAT,
+                                   "moves": self.moves,
+                                   "analysis": AN.analysis_to_jsonable(
+                                       self.analysis)},
+                                  f, indent=1)
         if not self.moves:
             self._load_text()
         if on_progress:

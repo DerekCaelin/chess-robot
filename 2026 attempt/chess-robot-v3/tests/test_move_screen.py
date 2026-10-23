@@ -152,6 +152,13 @@ def main():
     if "Generating text" not in str(home.prog_lbl.cget("text")):
         fails.append("home: label says %r while the text generates"
                      % home.prog_lbl.cget("text"))
+    # the text stage drives the label and the bar as it goes
+    state.update(done=1, total=2)
+    home._poll()
+    settle(root)
+    if "(1/2)" not in str(home.prog_lbl.cget("text")):
+        fails.append("home: no text-stage progress in the label (got %r)"
+                     % home.prog_lbl.cget("text"))
     # Begin stays disabled (and inert) until the text exists - pressing it
     # over an empty pack used to do nothing at all
     if str(home.begin_btn.cget("state")) != "disabled":

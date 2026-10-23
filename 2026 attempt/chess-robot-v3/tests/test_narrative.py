@@ -133,6 +133,55 @@ def test_concept_notes():
         N._PHRASE_LIB = old
 
 
+def test_pack_stale_sounds():
+    """Old sound files describe the OLD text: they must be gone before the
+    re-analysis starts, so '#/# voice files loaded' never lies (2026-10-23)."""
+    import os
+    import tempfile
+    from chessapp import analysispack as AP
+    from chessapp import analysis as AN
+    from chessapp import narrative as NR
+    tmp = tempfile.mkdtemp(prefix="ap_test_")
+    old_cache, old_an, old_pm = AP.CACHE, AN.analyze_game, NR.per_move
+    AP.CACHE = tmp
+    try:
+        pk = AP.AnalysisPack({"moves": ["e2e4", "e7e5"],
+                              "player_color": "white",
+                              "started": "2026-10-23T10:00", "result": "*"})
+        os.makedirs(pk.dir, exist_ok=True)
+        for ply in (1, 2):
+            with open(pk.wav_path(ply, "piper"), "w") as f:
+                f.write("stale")
+        seen = {}
+
+        def fake_analyze(g, depth=18, multipv=3, engine=None, progress=None):
+            seen["wavs"] = [x for x in os.listdir(pk.dir)
+                            if x.endswith(".wav")]
+            if progress:
+                progress(1, 2)
+            return _fake_analysis()
+
+        AN.analyze_game = fake_analyze
+        NR.per_move = lambda an: [
+            {"ply": 1, "no": 1, "color": "white", "san": "e4", "uci": "e2e4",
+             "segments": [], "speech": "", "words": 0},
+            {"ply": 2, "no": 1, "color": "black", "san": "e5", "uci": "e7e5",
+             "segments": [], "speech": "", "words": 0}]
+        states = []
+        pk.generate(voice="none",
+                    on_progress=lambda d, n, s: states.append((d, n, s)))
+        assert seen.get("wavs") == [], seen
+        assert pk.has_text(), "text cache not written"
+        # the engine reports its own progress under 'start'; only when the
+        # text is complete does the state become 'text'
+        assert states[0] == (1, 2, "start"), states
+        assert states[-1] == (0, 2, "text"), states
+    finally:
+        AP.CACHE = old_cache
+        AN.analyze_game = old_an
+        NR.per_move = old_pm
+
+
 def main():
     test_spoken_san()
     test_renderings_and_variety()
@@ -140,6 +189,7 @@ def main():
     test_analysis_pack()
     test_marks()
     test_concept_notes()
+    test_pack_stale_sounds()
     print("PASS: narrative rendering + variety + facts")
 
 

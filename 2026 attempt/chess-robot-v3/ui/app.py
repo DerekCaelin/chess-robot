@@ -5052,8 +5052,11 @@ class AnalysisHomeScreen(kit.Screen):
                 self.prog_lbl.configure(text="Text ready")
                 self._draw_prog(0.0)
             else:
-                self.prog_lbl.configure(text="Generating text...")
-                self._draw_prog(0.0)
+                d, t = st.get("done", 0), st.get("total", 0)
+                self.prog_lbl.configure(
+                    text=("Generating text... (%d/%d)" % (d, t))
+                    if d and t else "Generating text...")
+                self._draw_prog(d / float(max(1, t)))
             # Begin only once the TEXT exists - a move screen over an
             # ungenned pack used to fail silently on the button press
             if self.gpack.moves:
