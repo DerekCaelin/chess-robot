@@ -233,18 +233,34 @@ def _pv_line(board, pv, mover, mate=None):
         if swing > best_jump:
             best_jump, best_at = swing, i
     concl = {"kind": "holds", "what": "", "at": None, "move": ""}
+    gain = best_jump if best_at is not None else 0.0
     if mate is not None and mate > 0:
         concl = {"kind": "mate", "what": "", "at": len(plies) - 1,
                  "move": plies[-1]["san"] if plies else ""}
-    elif total >= 8:
+    elif gain >= 8:
         concl = {"kind": "wins", "what": "the queen", "at": best_at,
                  "move": plies[best_at]["san"] if best_at is not None else ""}
-    elif total >= 3:
+    elif gain >= 5:
         concl = {"kind": "wins", "what": "the exchange", "at": best_at,
                  "move": plies[best_at]["san"] if best_at is not None else ""}
-    elif total >= 1:
+    elif gain >= 3:
+        concl = {"kind": "wins", "what": "a piece", "at": best_at,
+                 "move": plies[best_at]["san"] if best_at is not None else ""}
+    elif gain >= 1:
         concl = {"kind": "wins", "what": "a pawn", "at": best_at,
                  "move": plies[best_at]["san"] if best_at is not None else ""}
+    elif total >= 1:
+        # the gain comes later in the line - name no single move for it
+        concl = {"kind": "wins", "what": "material", "at": None, "move": ""}
+    # 'wins X with MOVE' must name the MOVER's own move, and only when the
+    # gain lands early in the line - a later move's capture is not this
+    # move's achievement ('1...e5 picks up a pawn with exd4' read as if e5
+    # itself won the pawn)
+    if concl.get("move") and concl.get("at") is not None:
+        at = concl["at"]
+        if at > 2 or plies[at]["color"] != (
+                "white" if mover == chess.WHITE else "black"):
+            concl["move"] = ""
     return {"plies": plies, "total": total, "concl": concl}
 
 
@@ -413,10 +429,44 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
             # the mover played the engine's own first choice: whatever the
             # depth-limited eval wobble says, this cannot be a mistake
             loss = min(loss, 25)
+
+        # win-probability truth (2026-10-23): a position still won after the
+        # move is not a blunder whatever the centipawns wobble - depth-limited
+        # evals on sharp positions swing by hundreds of cp between searches
+        # (Morphy's 15.Bxd7+ was labelled a blunder this way). Conversely a
+        # real collapse of the winning chances IS the mistake, even when the
+        # raw numbers understate it.
+        def _mover_wp(wdl):
+            if not wdl:
+                return None
+            w, dd, l = wdl
+            tot = max(1, w + dd + l)
+            p = w if turn == chess.WHITE else l
+            return int(round(100.0 * p / tot))
+        wpb = _mover_wp(best.get("wdl"))
+        wpa = _mover_wp(cur.get("wdl"))
+        if wpb is not None and wpa is not None:
+            dw = wpa - wpb
+            if dw >= -5:
+                loss = min(loss, 30)         # the win was never in question
+            elif dw <= -30:
+                loss = max(loss, 190)        # the chances really collapsed
+            elif dw <= -15:
+                loss = max(loss, 70)
+        # one of the engine's own top candidates cannot be a disaster, even
+        # when the shallow WDL disagrees (4.dxe5 in the Opera Game swung the
+        # win-probability on noise alone)
+        if cand and any(c.get("uci") == mv.uci() for c in cand):
+            loss = min(loss, 60)
         mate_after = cur["mate"] if turn == chess.WHITE else (
             None if cur["mate"] is None else -cur["mate"])
         mate_before = best["mate"] if turn == chess.WHITE else (
             None if best["mate"] is None else -best["mate"])
+        # but allowing a FORCED MATE against oneself is a blunder whatever
+        # the chances were before (a lost side's WDL cannot fall further)
+        if mate_after is not None and mate_after < 0 and (
+                mate_before is None or mate_before >= 0):
+            loss = max(loss, 250)
 
         gap = 0
         if len(before) > 1:

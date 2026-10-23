@@ -434,6 +434,11 @@ OPENING_LINES = [
 # short verdicts - used when the recommended-line analysis follows and carries
 # the alternative itself
 VERDICT_SHORT = {
+    "best": [("The best move.",), ("Exactly the best move.",),
+             ("The strongest move on the board.",)],
+    "good": [("A good move.",), ("Solid.",), ("Sensible.",)],
+    "great": [("An excellent move!",), ("Very strong.",), ("Well played!",)],
+    "brilliant": [("A brilliant move!",), ("A lovely move!",)],
     "inaccuracy": [("A small imprecision.",),
                    ("Not the cleanest choice.",),
                    ("A slight loosening.",)],
@@ -604,8 +609,7 @@ ACHIEVE_MATE = [("It ends the game.", "That ends the game."),
                 ("The game is over by force.", "The game is over by force.")]
 ACHIEVE_WIN = [("It wins {what}{with}.", "It wins {what}{with_spk}."),
                ("{Color} picks up {what}{with}.",
-                "{Color} picks up {what}{with_spk}."),
-               ("{what_cap} is won{with}.", "{what_cap} is won{with_spk}.")]
+                "{Color} picks up {what}{with_spk}.")]
 
 # the aspect of the position that CHANGED most on the move (concept deltas
 # from the analysis) - the informative core of an otherwise quiet comment
@@ -682,16 +686,11 @@ def _line_pair(teller, e, s):
         end_scr = end_spk = "and that is checkmate"
     elif concl.get("kind") == "wins":
         what = concl.get("what") or "material"
-        bare = what.replace("the ", "").replace("a ", "")
         mv = concl.get("move") or ""
         tail = (" with %s" % mv) if mv else ""
         tail_spk = (" with %s" % spoken_san(mv)) if mv else ""
-        if mv and teller.rng.random() < 0.5:
-            end_scr = "winning %s's %s%s" % (s["opponent"], bare, tail)
-            end_spk = "winning %s's %s%s" % (s["opponent"], bare, tail_spk)
-        else:
-            end_scr = "winning %s%s" % (what, tail)
-            end_spk = "winning %s%s" % (what, tail_spk)
+        end_scr = "winning %s%s" % (what, tail)
+        end_spk = "winning %s%s" % (what, tail_spk)
     else:
         end_scr = end_spk = ""
     def _assemble(lead_s, series_s, end_s):
@@ -755,9 +754,10 @@ def _positional_notes(teller, rep, s):
 
 
 def _closing_notes(analysis, teller, s):
-    """Post-game synthesis: what went right for the winner (moves that matched
-    the best play, named events) and a constructive read of the loser's
-    mistakes."""
+    """The conclusion states only checkable things: the move the game turned
+    on - with the engine's better line - and the winner's strongest move with
+    what it achieved (2026-10-23: the earlier free-text synthesis claimed
+    things the board could not back up)."""
     moves = analysis["moves"]
     res = analysis["meta"].get("result")
     winner = ("white" if res == "1-0" else "black" if res == "0-1" else None)
@@ -767,52 +767,61 @@ def _closing_notes(analysis, teller, s):
     s = dict(s, Winner=winner.capitalize(), Loser=loser.capitalize())
     notes = []
 
-    # highlights: pieces that made the winner's good moves / a named motif
-    pieces = {}
-    motif = None
-    for m in moves:
-        if m["color"] != winner:
-            continue
-        if m["quality"] in ("great", "brilliant", "best"):
-            pc = _piece_of_san(m["san"])
-            if pc != "pawn":
-                pieces[pc] = pieces.get(pc, 0) + 1
-        for f in m.get("facts", []):
-            if f.get("kind") in ("fork", "pin") and motif is None and \
-                    m["quality"] in ("great", "brilliant"):
-                motif = (f["kind"].replace("_", " "), m["no"])
-    if motif and teller.rng.random() < 0.5:
-        notes.append((teller.phrase(HIGHLIGHT_MOTIF)
-                      .format(motif=motif[0], n=motif[1], **s),) * 1)
-    top = [k for k, _ in sorted(pieces.items(),
-                                key=lambda kv: -kv[1])[:2]]
-    if top:
-        joined = " and ".join(top)
-        notes.append((teller.phrase(HIGHLIGHT).format(pieces=joined, **s),))
+    def move_slots(m):
+        no, dots = m["no"], ("." if m["color"] == "white" else "...")
+        out = dict(s, Color=m["color"].capitalize(),
+                   opponent=("black" if m["color"] == "white" else "white")
+                   .capitalize(),
+                   move_screen="%d%s%s" % (no, dots, m["san"]),
+                   move_speech=spoken_san(m["san"]),
+                   best_screen="%d%s%s" % (no, dots, m.get("best_san", "")),
+                   best_speech=spoken_san(m.get("best_san") or ""),
+                   swing=abs(m.get("eval_cp", 0) - m.get("eval_before_cp", 0)),
+                   wp_before=_wp(m.get("wdl_before"), m["color"]),
+                   wp_after=_wp(m.get("wdl"), m["color"]),
+                   impact="won material")
+        bi = m.get("best_impact") or {}
+        if bi.get("kind") == "wins":
+            out["impact"] = ("finished the game"
+                             if bi.get("what") == "the game"
+                             else "won %s" % bi.get("what", "material"))
+        return out
 
-    # the loser's mistakes, by cause
-    big = [m for m in moves if m["color"] == loser and m["loss_cp"] >= 180]
+    # the loser's costliest move, with the engine's line against it
+    big = [m for m in moves if m["color"] == loser and m["loss_cp"] >= 150]
     big.sort(key=lambda m: -m["loss_cp"])
     if big:
         m = big[0]
-        nxt = next((x for x in moves if x["ply"] == m["ply"] + 1), None)
-        cause = None
-        for f in (nxt or {}).get("facts", []):
-            if f.get("kind") == "capture" and f.get("value", 0) >= 3:
-                cause = ("hang", f.get("piece", "piece"))
-                break
-            if f.get("kind") in ("fork", "pin") and cause is None:
-                cause = ("motif", f["kind"].replace("_", " "))
-        if cause and cause[0] == "hang":
-            notes.append((teller.phrase(MISTAKE_HANG)
-                          .format(piece=cause[1], **s),))
-        elif cause and cause[0] == "motif":
-            notes.append((teller.phrase(MISTAKE_MOTIF)
-                          .format(motif=cause[1], **s),))
+        ms = move_slots(m)
+        head = "The game turned on move %d." % m["no"]
+        pair = (_line_pair(teller, m, ms)
+                if m.get("best_line") and m["uci"] != m.get("best") else None)
+        if pair:
+            notes.append((head + " " + pair[0].format(**pair[2]),
+                          head + " " + pair[1].format(**pair[2]), {}))
+        elif m.get("mate_after") is not None and m["mate_after"] < 0:
+            notes.append((head + " It allows a forced mate.",
+                          head + " It allows a forced mate.", {}))
         else:
-            notes.append((teller.phrase(MISTAKE_GENERIC)
-                          .format(n=m["no"], **s),))
-    return notes[:2]
+            notes.append((head, head, {}))
+
+    # the winner's strongest move and what it achieved
+    strong = [m for m in moves if m["color"] == winner
+              and m["quality"] in ("great", "brilliant")]
+    if strong:
+        m = max(strong, key=lambda m: abs(m.get("eval_cp", 0)
+                                          - m.get("eval_before_cp", 0)))
+        ms = move_slots(m)
+        head = ("%s's %s was the move of the game."
+                % (ms["Winner"], ms["move_screen"]))
+        head_spk = ("%s's %s was the move of the game."
+                    % (ms["Winner"], ms["move_speech"]))
+        ach = _achievement_pair(m, teller, ms) if m.get("best_line") else None
+        if ach:
+            notes.append((head + " " + ach[0], head_spk + " " + ach[1], {}))
+        else:
+            notes.append((head, head_spk, {}))
+    return notes
 
 
 def _achievement_pair(e, teller, s):
@@ -864,6 +873,21 @@ def _concept_note(teller, e, s):
     pool = CONCEPT_NOTES[top_k][0 if top_d > 0 else 1]
     text = teller.rng.choice(pool).format(Color=s["Color"])
     return (text, text, {"kind": "concept", "concept": top_k})
+
+
+def _swing_pair(teller, e, s):
+    """What the engine says changed: winning chances when it reported a real
+    swing. (Plain evaluation words read badly in a sentence like 'the
+    position goes from a completely winning position to a winning
+    advantage' - say nothing instead.)"""
+    if (e.get("wdl") and e.get("wdl_before")
+            and abs(s["wp_before"] - s["wp_after"]) >= 12):
+        t = ("{Color}'s winning chances fall from {wp_before}% to "
+             "{wp_after}%." if s["wp_after"] < s["wp_before"] else
+             "{Color}'s winning chances rise from {wp_before}% to "
+             "{wp_after}%.")
+        return (t.format(**s), t.format(**s), {})
+    return None
 
 
 def _fact_note(teller, facts, slots):
@@ -954,11 +978,6 @@ def build_events(analysis, teller):
     events.append({"kind": "intro", "ply": 0,
                    "pack": teller.pick("intro", 2), "slots": dict(slots)})
 
-    quiet_map = {}
-    covered = set()
-    for run in analysis.get("quiet_runs", []):
-        quiet_map[run[0]] = len(range(run[0], run[1] + 1))
-        covered.update(range(run[0], run[1] + 1))
     opening_map = {}
     for op in analysis.get("openings", []):
         opening_map.setdefault(op["ply"], []).append(op["name"])
@@ -1007,9 +1026,10 @@ def build_events(analysis, teller):
         else:
             s["impact"] = teller.phrase(bank).format(**s)
 
-        # opening callout at the move that defines it
+        # opening callout at the move that defines it (no move head of its
+        # own - the move's own event carries the line)
         for op in opening_map.get(e["ply"], []):
-            events.append({"kind": "opening", "move": e, "ply": e["ply"],
+            events.append({"kind": "opening", "move": None, "ply": e["ply"],
                            "pack": teller.pick("opening", 1),
                            "slots": dict(s, opening=op,
                                          opening_cap=_sent_case(op))})
@@ -1021,14 +1041,6 @@ def build_events(analysis, teller):
                            "extras": [_phase_note(teller, ph, s)],
                            "slots": s})
 
-        if e["ply"] in covered:
-            if e["ply"] in quiet_map:      # one bridge per quiet stretch
-                events.append({"kind": "quiet", "move": None,
-                               "ply": e["ply"],
-                               "pack": teller.pick("quiet", 1),
-                               "slots": dict(s, n=quiet_map[e["ply"]])})
-            continue
-
         if (analysis["moves"][-1].get("mate_after") == 1
                 and e["ply"] == analysis["moves"][-1]["ply"]):
             # the mating move is the conclusion, not a move to review
@@ -1036,97 +1048,53 @@ def build_events(analysis, teller):
                            "pack": (), "slots": s})
             continue
 
-        tier = {"brilliant": 3, "blunder": 3, "mistake": 2, "great": 2,
-                "inaccuracy": 2}.get(q, 1)
-        # no verdict text on moves where nothing was at stake
-        say = q in ("brilliant", "great", "mistake", "blunder") or (
-            q == "inaccuracy" and e["loss_cp"] >= 70)
-        if q in ("best", "good") and not e.get("forced"):
-            if teller.rng.random() < 0.12:
-                say, tier = True, 1
-        if not say:
-            # an occasional stand-alone positional note on a notable move
-            if facts and teller.rng.random() < (
-                    0.3 if (e.get("capture") or e.get("check")) else 0.1):
-                ex = _fact_note(teller, facts, s)
-                if ex:
-                    events.append({"kind": "fact", "move": e,
-                                   "ply": e["ply"], "pack": (),
-                                   "extras": [ex], "slots": s})
-            continue
-
-        cat = {"brilliant": "brilliant", "great": "great",
-               "inaccuracy": "inaccuracy", "mistake": "mistake"}.get(q)
-        if cat is None and q == "blunder":
-            # the before/after line only earns its place on a real swing;
-            # told in winning chances when the engine reported them
-            if (e.get("wdl") and e.get("wdl_before")
-                    and abs(s["wp_before"] - s["wp_after"]) >= 8):
-                cat = "blunder_swing_wdl"
+        # ── the comment: facts only (2026-10-23) ──────────────────────────
+        # Every sentence must be traceable to the engine or the board: a
+        # brief quality verdict on each move, the engine's own line on the
+        # mistakes, what the line achieves on the good ones. Quiet stretches
+        # get NO commentary - the earlier free-text approach asserted things
+        # the board could not back up (player names, wrong pawn counts,
+        # 'nothing critical happens for 5 moves').
+        pack = list(teller.pick("verdict_" + q, 1))
+        extras = []
+        if q in ("inaccuracy", "mistake", "blunder"):
+            # the recommended line: [a better alternative would be] [move
+            # series] [impact] - mostly the player's own moves (5/6). Only
+            # when the engine's choice differs from what was played - when
+            # it agrees, the damage is what the move allows, not a missed
+            # alternative.
+            want_line = (e["loss_cp"] >= 90 and bool(e.get("best_line"))
+                         and e["uci"] != e.get("best"))
+            if want_line:
+                p = (0.9 if (player and e["color"] == player) else
+                     0.18 if player else 0.8)
+                want_line = teller.rng.random() < p
+            line_pair = _line_pair(teller, e, s) if want_line else None
+            if line_pair:
+                extras.append(line_pair)
+            if e.get("mate_after") is not None and e["mate_after"] < 0:
+                extras.append(("It allows a forced mate.",
+                               "It allows a forced mate.", {}))
             else:
-                cat = ("blunder_swing"
-                       if s["swing"] >= 300 and s["eval_before"] != s["eval_after"]
-                       else "blunder")
-        # the recommended-line analysis: [a better alternative would be]
-        # [move series] [impact] - mostly the player's own moves (5/6)
-        want_line = (q in ("inaccuracy", "mistake", "blunder")
-                     and e["loss_cp"] >= 120 and bool(e.get("best_line")))
-        if want_line:
-            p = (0.9 if (player and e["color"] == player) else
-                 0.18 if player else 0.8)
-            want_line = teller.rng.random() < p
-        line_pair = _line_pair(teller, e, s) if want_line else None
-
-        if cat is None:
-            cat = ("praise_quiet" if e["quiet"] else "praise")
-        if line_pair:
-            pack = list(teller.pick("verdict_" + q, 1))
-        else:
-            pack = list(teller.pick(cat, TIER_LIMIT[tier]))
-
-        # one extra sentence for story beats (never on the finish itself,
-        # never when the recommended line already says plenty)
-        beat = (e["ply"] in analysis.get("turning_points", [])
-                and q != "brilliant" and not line_pair)
-        if beat and teller.rng.random() < 0.6:
-            good = s["gain"] >= 0          # from the MOVER's side
-            pack += teller.pick("turning_good" if good else "turning_bad", 1)
-        elif (e["ply"] in analysis.get("decision_points", [])
-              and cat in ("praise", "praise_quiet", "inaccuracy")
-              and teller.rng.random() < 0.25):
-            pack += teller.pick("decision", 1)
-
-        # one informative extra - never stacked, never filler: the sacrifice
-        # read, what the move achieves (when it IS the engine's own choice),
-        # the concept that changed most, or a positional note
-        extras = [line_pair] if line_pair else []
-        if (not line_pair and q in ("great", "brilliant") and facts
-                and any(f["kind"] == "exposes" and f.get("square") == e["uci"][-2:]
-                        for f in facts)):
-            # a good move that deliberately hangs its own piece is a sacrifice
-            pair = teller.fact("sacrifice")
-            if pair:
-                f = next(x for x in facts if x["kind"] == "exposes"
-                         and x.get("square") == e["uci"][-2:])
-                extras.append((pair[0], pair[1], dict(s, **f)))
-        if not extras and e["uci"] == e.get("best"):
+                sw = _swing_pair(teller, e, s)
+                if sw and (not line_pair or e["loss_cp"] >= 250):
+                    extras.append(sw)
+        elif e["uci"] == e.get("best"):
+            # what the move achieves, straight from the engine's own line
             ach = _achievement_pair(e, teller, s)
             if ach:
                 extras.append(ach)
-        if not extras:
-            ex = _concept_note(teller, e, s)
-            if ex:
-                extras.append(ex)
-        if (not extras and facts and len(pack) <= 2
-                and teller.rng.random() < (0.85 if tier >= 2 else 0.6)):
-            ex = _fact_note(teller, facts, s)
-            if ex:
-                extras.append(ex)
         events.append({"kind": q, "move": e, "ply": e["ply"], "pack": pack,
                        "extras": extras, "slots": s})
 
-    turn_no = max(analysis["moves"],
-                  key=lambda m: m["loss_cp"])["no"] if analysis["moves"] else 1
+    # the move the game turned on: the loser's costliest (same move the
+    # closing note names - the outro sentence and the note must agree)
+    loser_side = ("black" if meta.get("result") == "1-0" else
+                  "white" if meta.get("result") == "0-1" else None)
+    cand = [m for m in analysis["moves"]
+            if loser_side and m["color"] == loser_side and m["loss_cp"] >= 150]
+    cand = cand or analysis["moves"]
+    turn_no = max(cand, key=lambda m: m["loss_cp"])["no"] if cand else 1
     arc = _game_arc(analysis)
     last = analysis["moves"][-1] if analysis["moves"] else None
     mate_end = bool(last and last.get("mate_after") == 1)
@@ -1148,7 +1116,7 @@ def build_events(analysis, teller):
     events.append({"kind": "outro", "ply": None,
                    "pack": teller.pick("outro_%s%s"
                                        % (arc, "_mate" if mate_end else ""), 3),
-                   "extras": [(n[0], n[0], {}) for n in notes],
+                   "extras": [(n[0], n[1], n[2]) for n in notes],
                    "slots": out_slots})
     return events
 
