@@ -267,6 +267,36 @@ def test_no_it_and_verifiable_claims():
                     (mm, m.get("next"), text)
 
 
+def test_shared_text_state():
+    """The written text is identical for every voice, so its generation is
+    ONE shared stage: switching voice mid-text must show the same #/# count,
+    not restart at 0 (2026-10-24)."""
+    from chessapp import analysispack as AP
+
+    class P:
+        hash = "abc123"
+
+        def move_count(self):
+            return 33
+
+    p = P()
+    AP._TEXT_STATE[p.hash] = {"done": 3, "total": 33, "state": "start",
+                              "error": None, "alive": True}
+    AP._RUNS[(p.hash, "none")] = {"done": 0, "total": 33, "state": "start",
+                                  "error": None, "alive": True}
+    try:
+        st = AP.generation_state(p, "none")
+        assert st["done"] == 3, st
+        st2 = AP.generation_state(p, "piper")
+        assert st2["done"] == 3, st2
+        AP._TEXT_STATE[p.hash]["alive"] = False
+        st3 = AP.generation_state(p, "none")
+        assert st3["done"] == 0, st3
+    finally:
+        AP._TEXT_STATE.pop(p.hash, None)
+        AP._RUNS.pop((p.hash, "none"), None)
+
+
 def main():
     test_spoken_san()
     test_renderings_and_variety()
@@ -278,6 +308,7 @@ def main():
     test_pack_picks_up_cached_text()
     test_verdict_label_and_speech()
     test_no_it_and_verifiable_claims()
+    test_shared_text_state()
     print("PASS: narrative rendering + variety + facts")
 
 

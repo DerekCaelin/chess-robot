@@ -4914,14 +4914,16 @@ class AnalysisHomeScreen(kit.Screen):
                      justify="left").pack(pady=40)
             return
         row = tk.Frame(self.body, bg=kit.BG)
-        row.pack(pady=(4, 0))
+        row.pack(fill="both", expand=True, pady=(4, 0))
         left = tk.Frame(row, bg=kit.BG)
-        left.pack(side="left")
-        bv = kit.BoardView(left, px=224)
-        bv.pack()
-        bv.draw(self.gpack.board_after(self.gpack.move_count()).getBoard())
+        left.pack(side="left", fill="y")
         right = tk.Frame(row, bg=kit.BG)
-        right.pack(side="left", padx=(18, 0), anchor="n")
+        right.pack(side="left", fill="both", expand=True, padx=(18, 0))
+        self._board_col = left
+        self._right_col = right
+        self.bv = None
+        left.bind("<Configure>", self._fit_board)
+
         date = (self.gpack.game.get("started") or "")[:10]
         res = AP.game_from_state(self.gpack.game).headers.get("Result", "*")
         winner = ("White wins" if res == "1-0" else
@@ -4932,16 +4934,29 @@ class AnalysisHomeScreen(kit.Screen):
         tk.Label(right, text=winner, font=kit.F_BODY, bg=kit.BG,
                  fg=kit.FG).pack(anchor="w", pady=(2, 12))
 
+        # touch-sized checkboxes (2026-10-24)
         self.adv_var = tk.BooleanVar(
             value=bool(settings.get("analysis.auto_advance", True)))
         tk.Checkbutton(right, text="Auto advance", variable=self.adv_var,
-                       command=self._save_adv, font=kit.F_BODY, bg=kit.BG,
-                       fg=kit.FG, selectcolor=kit.ACCENT,
-                       activebackground=kit.BG,
-                       activeforeground=kit.FG).pack(anchor="w", pady=(0, 6))
+                       command=self._save_adv, font=("DejaVu Sans", 18),
+                       bg=kit.BG, fg=kit.FG, selectcolor=kit.ACCENT,
+                       activebackground=kit.BG, activeforeground=kit.FG,
+                       pady=6).pack(anchor="w", pady=(0, 4))
+        # 'Show recommended line': the engine's preferred move as an arrow on
+        # the move screens (2026-10-23)
+        self.reco_var = tk.BooleanVar(
+            value=bool(settings.get("analysis.show_reco", True)))
+        tk.Checkbutton(right, text="Show recommended line",
+                       variable=self.reco_var, command=self._save_reco,
+                       font=("DejaVu Sans", 18), bg=kit.BG, fg=kit.FG,
+                       selectcolor=kit.ACCENT, activebackground=kit.BG,
+                       activeforeground=kit.FG,
+                       pady=6).pack(anchor="w", pady=(0, 10))
+        # the voice setting sits below the checkboxes (2026-10-24), with
+        # touch-sized options in the dropdown
         vrow = tk.Frame(right, bg=kit.BG)
         vrow.pack(anchor="w")
-        tk.Label(vrow, text="Voice", font=kit.F_BODY, bg=kit.BG,
+        tk.Label(vrow, text="Voice", font=("DejaVu Sans", 18), bg=kit.BG,
                  fg=kit.FG).pack(side="left", padx=(0, 8))
         cur = settings.get("analysis.voice", "none")
         if cur not in self.VOICE_KEYS:
@@ -4950,22 +4965,11 @@ class AnalysisHomeScreen(kit.Screen):
         menu = tk.OptionMenu(vrow, self.voice_var,
                              *[AP.VOICE_LABELS[k] for k in self.VOICE_KEYS],
                              command=self._voice_changed)
-        menu.configure(font=kit.F_BODY, bg=kit.CARD_HI, fg=kit.FG,
+        menu.configure(font=("DejaVu Sans", 16), bg=kit.CARD_HI, fg=kit.FG,
                        highlightthickness=0, width=14)
         menu.pack(side="left")
-        # 'Show recommended line': the engine's preferred move as a
-        # player-coloured arrow on the move screens (2026-10-23)
-        self.reco_var = tk.BooleanVar(
-            value=bool(settings.get("analysis.show_reco", True)))
-        tk.Checkbutton(right, text="Show recommended line",
-                       variable=self.reco_var, command=self._save_reco,
-                       font=kit.F_BODY, bg=kit.BG, fg=kit.FG,
-                       selectcolor=kit.ACCENT, activebackground=kit.BG,
-                       activeforeground=kit.FG).pack(anchor="w",
-                                                     pady=(0, 6))
         # one status line for whatever is generating right now (the stage's
-        # own #/# and the animated dots), then the bar - 2026-10-23: the
-        # separate 'voice files loaded' line above the bar was confusing
+        # own #/# and the animated dots), then the bar
         self.prog_lbl = tk.Label(right, text="Generating text (0/0)...",
                                  font=("DejaVu Sans", 13), bg=kit.BG,
                                  fg=kit.ACCENT, justify="left", anchor="w",
@@ -4977,10 +4981,11 @@ class AnalysisHomeScreen(kit.Screen):
         self._bar_on = True
         self._draw_prog(0.0)
 
-        self.begin_btn = kit.big_button(self.body, "Begin", self._begin,
+        # Begin lives in the right column, below the options (2026-10-24)
+        self.begin_btn = kit.big_button(right, "Begin", self._begin,
                                         bg=kit.GREEN, fg="#1b1e24",
                                         height=2, width=16, disabled=True)
-        self.begin_btn.pack(side="bottom", pady=(12, 4))
+        self.begin_btn.pack(anchor="w", pady=(12, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._start_generation()
         self._poll()
@@ -5016,6 +5021,24 @@ class AnalysisHomeScreen(kit.Screen):
         if st is None or not st.get("alive"):
             self.gpack.cancel()
             AP.generate_async(self.gpack, voice)
+
+    def _fit_board(self, _e=None):
+        """The final board fills the entire vertical space of its column
+        (2026-10-24), re-fitting if the layout request changes."""
+        if not self.winfo_exists():
+            return
+        h = self._board_col.winfo_height()
+        if h < 120:                     # not realized yet
+            return
+        avail = 780 - 12 - self._right_col.winfo_reqwidth()
+        px = (max(200, min(h, avail)) // 8) * 8
+        if self.bv is not None and self.bv.px == px:
+            return
+        if self.bv is not None:
+            self.bv.destroy()
+        self.bv = kit.BoardView(self._board_col, px=px)
+        self.bv.pack(side="left")
+        self.bv.draw(self.gpack.board_after(self.gpack.move_count()).getBoard())
 
     def _draw_prog(self, frac):
         w = max(2, int(220 * max(0.0, min(1.0, frac))))
@@ -5213,9 +5236,10 @@ class AnalysisMoveScreen(kit.Screen):
             value=bool(settings.get("analysis.show_reco", True)))
         tk.Checkbutton(right, text="Show recommended line",
                        variable=self.reco_var, command=self._save_reco,
-                       font=("DejaVu Sans", 11), bg=kit.BG, fg=kit.FG,
+                       font=("DejaVu Sans", 16), bg=kit.BG, fg=kit.FG,
                        selectcolor=kit.ACCENT, activebackground=kit.BG,
-                       activeforeground=kit.FG).pack(anchor="w", pady=(4, 0))
+                       activeforeground=kit.FG,
+                       pady=4).pack(anchor="w", pady=(4, 0))
 
         # the board fills its column's height once the layout is realized
         left.bind("<Configure>", self._fit_board)

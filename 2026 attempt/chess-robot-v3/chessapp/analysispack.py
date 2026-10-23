@@ -209,6 +209,11 @@ def auto_advance_seconds(words, sound_len):
 _LOCK = threading.Lock()
 _RUNS = {}
 _TEXT_LOCKS = {}
+# The written/spoken TEXT is identical for every voice ('there will just be
+# nothing to play it in voice-only mode') - so its generation is ONE shared
+# stage per game. Switching voices used to restart the count at 0/33 while
+# the engine was already at 3/33 (2026-10-24).
+_TEXT_STATE = {}
 
 
 def _text_lock(h):
@@ -233,13 +238,24 @@ def generate_async(pack, voice, depth=18):
         _RUNS[key] = st
 
     def run():
+        def prog(d, n, s):
+            st.update(done=d, total=n, state=s)
+            if s in ("start", "text"):
+                ts = _TEXT_STATE.setdefault(
+                    pack.hash, {"done": 0,
+                                "total": max(1, pack.move_count()),
+                                "state": s, "error": None, "alive": True})
+                ts.update(done=d, total=n, state=s)
+                if s == "text":
+                    ts["alive"] = False   # the text stage is complete
         try:
-            pack.generate(
-                voice, depth=depth,
-                on_progress=lambda d, n, s: st.update(done=d, total=n,
-                                                      state=s))
+            pack.generate(voice, depth=depth, on_progress=prog)
         except Exception as e:
             st["error"] = str(e)
+            ts = _TEXT_STATE.get(pack.hash)
+            if ts is not None and ts.get("alive"):
+                ts["error"] = str(e)
+                ts["alive"] = False
         finally:
             st["alive"] = False
 
@@ -248,6 +264,12 @@ def generate_async(pack, voice, depth=18):
 
 
 def generation_state(pack, voice):
+    # the text stage is shared across voices: the same words are being
+    # written whatever the selected voice (and the same words get spoken -
+    # only the sound differs), so every voice shows the same count
+    ts = _TEXT_STATE.get(pack.hash)
+    if ts is not None and ts.get("alive"):
+        return ts
     return _RUNS.get((pack.hash, voice))
 
 
