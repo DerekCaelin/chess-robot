@@ -47,6 +47,12 @@ class Engine:
             preexec_fn=lambda: os.nice(10))
         self._put("uci")
         self._wait("uciok")
+        # use the Pi's cores: left at the default the search runs on one of
+        # four (~1 min per move); 3 threads keeps a core free for the UI and
+        # the camera. 64 MB hash instead of Stockfish's 16 MB default.
+        self._put("setoption name Threads value %d"
+                  % max(1, min(3, (os.cpu_count() or 2) - 1)))
+        self._put("setoption name Hash value 64")
         self._put("setoption name MultiPV value %d" % multipv)
         self._put("setoption name UCI_ShowWDL value true")
         tb = os.path.join(ROOT, "data", "tablebases")
