@@ -4953,20 +4953,14 @@ class AnalysisHomeScreen(kit.Screen):
         menu.configure(font=kit.F_BODY, bg=kit.CARD_HI, fg=kit.FG,
                        highlightthickness=0, width=14)
         menu.pack(side="left")
-        self.prog_lbl = tk.Label(right, text="Generating text...",
+        # one status line for whatever is generating right now (the stage's
+        # own #/# and the animated dots), then the bar - 2026-10-23: the
+        # separate 'voice files loaded' line above the bar was confusing
+        self.prog_lbl = tk.Label(right, text="Generating text (0/0)...",
                                  font=("DejaVu Sans", 13), bg=kit.BG,
-                                 fg=kit.ACCENT, justify="left", anchor="w")
+                                 fg=kit.ACCENT, justify="left", anchor="w",
+                                 wraplength=340)
         self.prog_lbl.pack(anchor="w", pady=(10, 0))
-        # the animated '...' progress signifier sits above the loading bar
-        self.dots_lbl = tk.Label(right, text="", font=("DejaVu Sans", 13),
-                                 bg=kit.BG, fg=kit.ACCENT, justify="left",
-                                 anchor="w")
-        self.dots_lbl.pack(anchor="w")
-        # '#/# voice files loaded' - the count sits right above the bar
-        self.count_lbl = tk.Label(right, text="", font=("DejaVu Sans", 13),
-                                  bg=kit.BG, fg=kit.FG, justify="left",
-                                  anchor="w")
-        self.count_lbl.pack(anchor="w", pady=(2, 0))
         self.prog_bar = tk.Canvas(right, width=220, height=16, bg="#181b21",
                                   highlightthickness=0)
         self.prog_bar.pack(anchor="w", pady=(4, 0))
@@ -5026,42 +5020,31 @@ class AnalysisHomeScreen(kit.Screen):
     def _poll(self):
         voice = self._voice_key()
         st = AP.generation_state(self.gpack, voice) if self.gpack else None
-        # '#/# voice files loaded' - the files that actually exist on disk
-        if self.gpack and voice != "none":
-            # the GAME's move count - pack.moves is only filled once the text
-            # generation finishes (showing 0/1 before that was a bug)
-            total = self.gpack.move_count()
-            done = sum(1 for i in range(total)
-                       if self.gpack.ready(i + 1, voice))
-            self.count_lbl.configure(
-                text="%d/%d voice files loaded" % (done, max(1, total)))
-        else:
-            self.count_lbl.configure(text="")
-        if st is not None:
+        alive = bool(st and st.get("alive"))
+        dots = ""
+        if alive:
+            self._dots = (self._dots % 3) + 1
+            dots = "." * self._dots
+        # one line for whatever is generating right now (its own #/# plus the
+        # animated dots), then the bar below it
+        if alive and not st.get("error"):
+            d, t = st.get("done", 0), st.get("total", 0)
             if st.get("state") == "audio":
                 self.prog_lbl.configure(
-                    text="Text ready... generating %s voice (%d/%d)"
-                         % (voice, st.get("done", 0), st.get("total", 0)))
-                self._draw_prog(st.get("done", 0)
-                                / float(max(1, st.get("total", 1))))
-            elif st.get("error"):
-                self.prog_lbl.configure(
-                    text="Analysis failed: %s" % st["error"])
-                self._draw_prog(1.0)
-            elif st.get("state") == "text":
-                self.prog_lbl.configure(text="Text ready")
-                self._draw_prog(0.0)
+                    text="Generating %s audio (%d/%d)%s" % (voice, d, t, dots))
             else:
-                d, t = st.get("done", 0), st.get("total", 0)
                 self.prog_lbl.configure(
-                    text=("Generating text... (%d/%d)" % (d, t))
-                    if d and t else "Generating text...")
-                self._draw_prog(d / float(max(1, t)))
-            # Begin only once the TEXT exists - a move screen over an
-            # ungenned pack used to fail silently on the button press
-            if self.gpack.moves:
-                self._enable_begin()
-        alive = bool(st and st.get("alive"))
+                    text="Generating text (%d/%d)%s" % (d, t, dots))
+            self._draw_prog(d / float(max(1, t)))
+        elif st is not None and st.get("error"):
+            self.prog_lbl.configure(text="Analysis failed: %s" % st["error"])
+            self._draw_prog(1.0)
+        else:
+            self.prog_lbl.configure(text="Ready")
+        # Begin only once the TEXT exists - a move screen over an
+        # ungenned pack used to fail silently on the button press
+        if st is not None and self.gpack and self.gpack.moves:
+            self._enable_begin()
         # the loading bar retires when the run is finished (2026-10-23) and
         # comes back when a new run starts (a voice switch)
         if alive != self._bar_on:
@@ -5073,14 +5056,7 @@ class AnalysisHomeScreen(kit.Screen):
                 self.prog_bar.pack_forget()
         if alive:
             self.app.hold_awake("analysis")   # generation must not blank the
-            if voice != "none":               # panel while the player waits
-                self._dots = (self._dots % 3) + 1
-                self.dots_lbl.configure(text="." * self._dots)
-        else:
-            self.dots_lbl.configure(text="")
-            if st is not None and not st.get("error"):
-                self.prog_lbl.configure(text="Ready")
-                self._draw_prog(1.0)
+        else:                                 # panel while the player waits
             self.app.release_awake("analysis")
         if self.winfo_exists() and not self.stop:
             self.after(150, self._poll)

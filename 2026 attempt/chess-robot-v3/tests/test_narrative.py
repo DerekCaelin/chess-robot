@@ -172,10 +172,10 @@ def test_pack_stale_sounds():
                     on_progress=lambda d, n, s: states.append((d, n, s)))
         assert seen.get("wavs") == [], seen
         assert pk.has_text(), "text cache not written"
-        # the engine reports its own progress under 'start'; only when the
-        # text is complete does the state become 'text'
+        # the engine reports its own progress under 'start'; the text stage
+        # ends at n/n so the bar reads full at the handover
         assert states[0] == (1, 2, "start"), states
-        assert states[-1] == (0, 2, "text"), states
+        assert states[-1] == (2, 2, "text"), states
     finally:
         AP.CACHE = old_cache
         AN.analyze_game = old_an

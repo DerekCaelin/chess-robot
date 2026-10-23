@@ -140,7 +140,8 @@ class AnalysisPack:
         if not self.moves:
             self._load_text()
         if on_progress:
-            on_progress(0, max(1, len(self.moves)), "text")
+            n = max(1, len(self.moves))
+            on_progress(n, n, "text")     # the text stage ends at n/n
         if voice in ("espeak", "piper"):
             total = max(1, len(self.moves))
             for i, m in enumerate(self.moves):

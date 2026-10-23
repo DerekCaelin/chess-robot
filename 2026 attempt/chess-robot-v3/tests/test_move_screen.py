@@ -128,7 +128,7 @@ def main():
 
     scr._cleanup()
 
-    # ---- analysis home: '#/# voice files loaded' + the bar retires --------
+    # ---- analysis home: one status line per generating stage + the bar ----
     import re
     settings.set("analysis.voice", "piper")
     fake = _fake_pack()
@@ -144,21 +144,16 @@ def main():
     settle(root)
     home._poll()
     settle(root)
-    # the total is the GAME's move count even before any text exists
-    # (it used to read len(pack.moves) -> '0/1 files created')
-    got = str(home.count_lbl.cget("text"))
-    if got != "0/2 voice files loaded":
-        fails.append("home: count should be 0/2 before text (got %r)" % got)
-    if "Generating text" not in str(home.prog_lbl.cget("text")):
-        fails.append("home: label says %r while the text generates"
-                     % home.prog_lbl.cget("text"))
+    got = str(home.prog_lbl.cget("text"))
+    if not got.startswith("Generating text (0/2)"):
+        fails.append("home: text stage line wrong (got %r)" % got)
     # the text stage drives the label and the bar as it goes
     state.update(done=1, total=2)
     home._poll()
     settle(root)
-    if "(1/2)" not in str(home.prog_lbl.cget("text")):
-        fails.append("home: no text-stage progress in the label (got %r)"
-                     % home.prog_lbl.cget("text"))
+    got = str(home.prog_lbl.cget("text"))
+    if not got.startswith("Generating text (1/2)"):
+        fails.append("home: no text-stage progress in the label (got %r)" % got)
     # Begin stays disabled (and inert) until the text exists - pressing it
     # over an empty pack used to do nothing at all
     if str(home.begin_btn.cget("state")) != "disabled":
@@ -175,9 +170,9 @@ def main():
     settle(root)
     if str(home.begin_btn.cget("state")) == "disabled":
         fails.append("home: Begin still disabled with the text ready")
-    got = str(home.count_lbl.cget("text"))
-    if not re.match(r"^\d+/\d+ voice files loaded$", got):
-        fails.append("home: no voice-file count above the bar (got %r)" % got)
+    got = str(home.prog_lbl.cget("text"))
+    if not got.startswith("Generating piper audio (1/2)"):
+        fails.append("home: audio stage line wrong (got %r)" % got)
     if not home._bar_on or not home.prog_bar.winfo_ismapped():
         fails.append("home: loading bar hidden while generating")
     state.update(alive=False, done=2)
@@ -185,21 +180,23 @@ def main():
     settle(root)
     if home._bar_on or home.prog_bar.winfo_ismapped():
         fails.append("home: loading bar still up after the run finished")
-    got = str(home.count_lbl.cget("text"))
-    if not re.match(r"^\d+/\d+ voice files loaded$", got):
-        fails.append("home: count vanished with the bar (got %r)" % got)
+    if str(home.prog_lbl.cget("text")).strip() != "Ready":
+        fails.append("home: finished state should say Ready (got %r)"
+                     % home.prog_lbl.cget("text"))
     # a fresh run (voice switch) brings the bar back
     state.update(alive=True, state="audio")
     home._poll()
     settle(root)
     if not home._bar_on or not home.prog_bar.winfo_ismapped():
         fails.append("home: bar did not come back for a new run")
-    # with voice off there are no voice files - the count stays away
+    # with voice off there is no audio stage at all
     home.voice_var.set(A.AP.VOICE_LABELS["none"])
+    state.update(alive=False)
     home._poll()
     settle(root)
-    if str(home.count_lbl.cget("text")).strip():
-        fails.append("home: voice count shown with voice off")
+    got = str(home.prog_lbl.cget("text"))
+    if "audio" in got or "files loaded" in got:
+        fails.append("home: audio stage shown with voice off (got %r)" % got)
     A.AP.load_pack, A.AP.generate_async = _real_load, _real_gen
     A.AP.generation_state = _real_state
     settings.set("analysis.voice", "none")
