@@ -145,44 +145,34 @@ QUIET = [
 ]
 
 PRAISE_QUIET = [
-    ("Solid.",),
-    ("Sensible.",),
-    ("A natural move.",),
-    ("Developing calmly.",),
-    ("Nothing wrong with that.",),
+    ("A solid move.",),
+    ("A sensible move.",),
+    ("A natural developing move.",),
     ("Steady play.",),
 ]
 
 PRAISE = [
     ("The best move.",),
     ("The best move in the position.",),
-    ("The best move - nothing else comes close.",),
     ("Exactly the best move.",),
-    ("Playing the best move.",),
-    ("The right move, and the best one.",),
+    ("The right move.",),
 ]
 
 GREAT = [
     ("An excellent move!",),
-    ("A strong choice.", "{Color} keeps every threat alive."),
-    ("This is the move the position was asking for.",),
+    ("A strong choice.",),
     ("The clearest path in the position.",),
-    ("Nicely played.", "{Color} keeps the initiative."),
-    ("Very strong.", "The attack rolls on."),
-    ("A sharp move!", "It is hard to answer."),
+    ("Very strong.",),
+    ("A sharp move!",),
     ("The best move by some distance.",),
-    ("This keeps the pressure on.", "Nothing is handed back."),
-    ("Well played!", "{Color} finds the point of the position."),
+    ("Well played!",),
 ]
 
 BRILLIANT = [
     ("A brilliant move!",),
     ("A brilliant move!", "{Color} has seen further than the opponent."),
-    ("This ends the game by force.",),
-    ("The finish is forced from here.",),
-    ("A lovely move!", "The attack lands with force."),
-    ("The best move by a distance - and it finishes the game.",),
-    ("Beautifully played!", "{Color} converts with precision."),
+    ("A lovely move!",),
+    ("Beautifully played!",),
     ("A brilliant finish!",),
 ]
 
@@ -238,6 +228,17 @@ BLUNDER_SWING = [
      "{eval_after}.", "With {best}, that would have {impact}."),
     ("This is where it slips away.", "Before the move: {eval_before}. After: "
      "{eval_after}.", "{best} would have {impact}."),
+]
+
+# the same stories told in winning chances (engine WDL) when available
+BLUNDER_SWING_WDL = [
+    ("A serious error.", "{Color} could have played {best}, which would have "
+     "{impact}.", "{Color}'s winning chances fall from {wp_before}% to "
+     "{wp_after}%."),
+    ("A costly mistake.", "{Color}'s winning chances fall from {wp_before}% "
+     "to {wp_after}%.", "With {best}, that would have {impact}."),
+    ("This is where it slips away.", "The winning chances fall from "
+     "{wp_before}% to {wp_after}%.", "{best} would have {impact}."),
 ]
 
 TURNING_GOOD = [
@@ -482,6 +483,7 @@ TEMPLATES = {"intro": INTRO, "quiet": QUIET, "praise": PRAISE,
              "brilliant": BRILLIANT, "inaccuracy": INACCURACY,
              "mistake": MISTAKE, "blunder": BLUNDER,
              "blunder_swing": BLUNDER_SWING,
+             "blunder_swing_wdl": BLUNDER_SWING_WDL,
              "turning_good": TURNING_GOOD, "turning_bad": TURNING_BAD,
              "decision": DECISION, "finish": FINISH,
              "opening": OPENING_LINES, "line_lead": LINE_LEAD}
@@ -527,6 +529,88 @@ class Teller:
 
 
 # ── narrative assembly ───────────────────────────────────────────────────────
+
+def wdl_phrase(wdl):
+    """Human read of the engine's win/draw/loss probabilities (white POV)."""
+    try:
+        w, d, l = (int(x) for x in wdl)
+    except (TypeError, ValueError):
+        return ""
+    tot = max(1, w + d + l)
+    wp, bp = 100 * w // tot, 100 * l // tot
+    if wp >= 70:
+        return "White is winning"
+    if bp >= 70:
+        return "Black is winning"
+    if wp >= 55:
+        return "White is better"
+    if bp >= 55:
+        return "Black is better"
+    return "the game is balanced"
+
+
+def wdl_pct(wdl):
+    try:
+        w, d, l = (int(x) for x in wdl)
+    except (TypeError, ValueError):
+        return 0
+    tot = max(1, w + d + l)
+    return int(round(100.0 * w / tot))
+
+
+def _wp(wdl, color):
+    """Winning probability in % for the given color (engine WDL, white POV)."""
+    try:
+        w, d, l = (int(x) for x in wdl)
+    except (TypeError, ValueError):
+        return 0
+    tot = max(1, w + d + l)
+    return int(round(100.0 * (w if color == "white" else l) / tot))
+
+
+# what a move ACHIEVES - the commentary is built from the projected line, the
+# recognized brilliancies and the blunders, not from filler
+ACHIEVE_MATE = [("It ends the game.", "That ends the game."),
+                ("Mate follows.", "Mate follows."),
+                ("The game is over by force.", "The game is over by force.")]
+ACHIEVE_WIN = [("It wins {what}{with}.", "It wins {what}{with_spk}."),
+               ("{Color} picks up {what}{with}.",
+                "{Color} picks up {what}{with_spk}."),
+               ("{what_cap} is won{with}.", "{what_cap} is won{with_spk}.")]
+
+# the aspect of the position that CHANGED most on the move (concept deltas
+# from the analysis) - the informative core of an otherwise quiet comment
+CONCEPT_NOTES = {
+    "center": (["{Color}'s grip on the center grows.",
+                "The center comes under {Color}'s control.",
+                "{Color} gains a stronger say in the center."],
+               ["{Color}'s grip on the center loosens.",
+                "Some control of the center is given up."]),
+    "king_safety": (["{Color}'s king looks safer.",
+                     "The king tucks in behind the pawns for {Color}."],
+                    ["{Color}'s king cover weakens.",
+                     "The {Color} king looks more exposed."]),
+    "development": (["More {Color} pieces join the game.",
+                     "{Color} brings another piece into play."],
+                    ["{Color} falls behind in development."]),
+    "space": (["{Color} gains room to work.",
+               "More space for the {Color} pieces."],
+              ["{Color}'s space is squeezed."]),
+    "structure": (["{Color}'s pawn structure improves.",
+                   "The pawns work better for {Color} now."],
+                  ["{Color}'s pawn structure is weakened."]),
+    "outposts": (["A {Color} piece settles on a protected outpost."],
+                 ["{Color} loses an outpost."]),
+    "bishop_pair": (["{Color} keeps the bishop pair."],
+                    ["{Color} loses the bishop pair."]),
+    "rook_files": (["{Color}'s rooks find open files."],
+                   ["{Color}'s rooks are cut off from the open files."]),
+}
+# a delta must clear this to say anything (the metrics move on quiet moves)
+CONCEPT_MIN = {"center": 2, "king_safety": 2, "development": 2,
+               "space": 6, "structure": 2, "outposts": 1,
+               "bishop_pair": 1, "rook_files": 1}
+
 
 PIECE_WORDS_S = {"N": "knight", "B": "bishop", "R": "rook", "Q": "queen",
                  "K": "king"}
@@ -702,6 +786,52 @@ def _closing_notes(analysis, teller, s):
     return notes[:2]
 
 
+def _achievement_pair(e, teller, s):
+    """What the move ACHIEVES, from the projected line and the position's
+    outcome - informative commentary instead of filler."""
+    bl = e.get("best_line") or {}
+    c = bl.get("concl") or {}
+    if c.get("kind") == "mate":
+        return teller.rng.choice(ACHIEVE_MATE) + ({},)
+    if c.get("kind") == "wins":
+        what = c.get("what") or "material"
+        bare = what.replace("the ", "").replace("a ", "")
+        mv = c.get("move") or ""
+        scr, spk = teller.rng.choice(ACHIEVE_WIN)
+        d = dict(s, what=what, what_cap=bare.capitalize(),
+                 **{"with": (" with %s" % mv) if mv else "",
+                    "with_spk": (" with %s" % spoken_san(mv)) if mv else ""})
+        return (scr.format(**d), spk.format(**d), {})
+    w = wdl_phrase(e.get("wdl"))
+    if w:
+        # only say the outcome when it is decisive or clearly changed hands -
+        # repeating "White is winning" move after move is noise
+        wp = _wp(e.get("wdl"), e["color"])
+        swung = abs(_wp(e.get("wdl_before"), e["color"]) - wp) >= 20
+        if wp >= 75 or swung:
+            line = w[0].upper() + w[1:] + "."
+            return (line, line, {})
+    return None
+
+
+def _concept_note(teller, e, s):
+    """The aspect of the position that changed most on this move - the
+    informative core of an otherwise quiet comment (concept deltas come
+    from the analysis; material gains are the achievement's job)."""
+    deltas = e.get("concepts") or {}
+    top_k, top_d = None, 0
+    for k, d in deltas.items():
+        if k == "material" or k not in CONCEPT_NOTES:
+            continue
+        if abs(d) >= CONCEPT_MIN.get(k, 2) and abs(d) > abs(top_d):
+            top_k, top_d = k, d
+    if not top_k:
+        return None
+    pool = CONCEPT_NOTES[top_k][0 if top_d > 0 else 1]
+    text = teller.rng.choice(pool).format(Color=s["Color"])
+    return (text, text, {"kind": "concept", "concept": top_k})
+
+
 def _fact_note(teller, facts, slots):
     """One positional note (screen tpl, speech tpl, slots): the most
     important fact present."""
@@ -821,6 +951,8 @@ def build_events(analysis, teller):
             "eval_before": AN._eval_words(e["eval_before_cp"]),
             "eval_after": AN._eval_words(e["eval_cp"]),
             "swing": abs(e["eval_cp"] - e["eval_before_cp"]),
+            "wp_before": _wp(e.get("wdl_before"), e["color"]),
+            "wp_after": _wp(e.get("wdl"), e["color"]),
             "gain": ((e["eval_cp"] - e["eval_before_cp"])
                      * (1 if color == "white" else -1)),
             "what": ("the queen" if e["material_swing"] <= -8 else
@@ -892,10 +1024,15 @@ def build_events(analysis, teller):
         cat = {"brilliant": "brilliant", "great": "great",
                "inaccuracy": "inaccuracy", "mistake": "mistake"}.get(q)
         if cat is None and q == "blunder":
-            # the before/after line only earns its place on a real swing
-            cat = ("blunder_swing"
-                   if s["swing"] >= 300 and s["eval_before"] != s["eval_after"]
-                   else "blunder")
+            # the before/after line only earns its place on a real swing;
+            # told in winning chances when the engine reported them
+            if (e.get("wdl") and e.get("wdl_before")
+                    and abs(s["wp_before"] - s["wp_after"]) >= 8):
+                cat = "blunder_swing_wdl"
+            else:
+                cat = ("blunder_swing"
+                       if s["swing"] >= 300 and s["eval_before"] != s["eval_after"]
+                       else "blunder")
         # the recommended-line analysis: [a better alternative would be]
         # [move series] [impact] - mostly the player's own moves (5/6)
         want_line = (q in ("inaccuracy", "mistake", "blunder")
@@ -925,20 +1062,30 @@ def build_events(analysis, teller):
               and teller.rng.random() < 0.25):
             pack += teller.pick("decision", 1)
 
-        # positional note - moderately often, more on important moves; never
-        # pile onto a comment that already has plenty to say
+        # one informative extra - never stacked, never filler: the sacrifice
+        # read, what the move achieves (when it IS the engine's own choice),
+        # the concept that changed most, or a positional note
         extras = [line_pair] if line_pair else []
-        if (not line_pair and facts and len(pack) <= 2
-                and teller.rng.random() < (0.75 if tier >= 2 else 0.4)):
-            ex = _fact_note(teller, facts, s)
+        if (not line_pair and q in ("great", "brilliant") and facts
+                and any(f["kind"] == "exposes" and f.get("square") == e["uci"][-2:]
+                        for f in facts)):
             # a good move that deliberately hangs its own piece is a sacrifice
-            if (ex and ex[2].get("kind") == "exposes"
-                    and q in ("great", "brilliant")
-                    and ex[2].get("square") == e["uci"][-2:]):
-                pair = teller.fact("sacrifice")
-                if pair:
-                    ex = (pair[0], pair[1],
-                          dict(ex[2], piece=ex[2].get("piece", "piece")))
+            pair = teller.fact("sacrifice")
+            if pair:
+                f = next(x for x in facts if x["kind"] == "exposes"
+                         and x.get("square") == e["uci"][-2:])
+                extras.append((pair[0], pair[1], dict(s, **f)))
+        if not extras and e["uci"] == e.get("best"):
+            ach = _achievement_pair(e, teller, s)
+            if ach:
+                extras.append(ach)
+        if not extras:
+            ex = _concept_note(teller, e, s)
+            if ex:
+                extras.append(ex)
+        if (not extras and facts and len(pack) <= 2
+                and teller.rng.random() < (0.85 if tier >= 2 else 0.6)):
+            ex = _fact_note(teller, facts, s)
             if ex:
                 extras.append(ex)
         events.append({"kind": q, "move": e, "ply": e["ply"], "pack": pack,
@@ -1067,9 +1214,11 @@ def per_move(analysis, seed=None):
             if ev["kind"] in ("intro", "outro", "quiet", "opening", "phase"):
                 if body_s:
                     segs.append(("text", body_s))
-                line = render([ev], analysis, "speech")
-                if line:
-                    spk.append(line)
+                # body only: the move line itself comes from the head insert
+                # below (render() would say the move twice)
+                body_sp = _body(ev, "speech")
+                if body_sp:
+                    spk.append(body_sp)
                 continue
             head_s = _head(ev, "screen")
             if head_s:
@@ -1090,6 +1239,11 @@ def per_move(analysis, seed=None):
                                                 else "...", m["san"])))
             segs.insert(0, ("icon", glyph_of(m["san"])))
             spk.insert(0, spoken_san(m["san"]).capitalize() + ".")
+        # segments concatenate literally: text after a move or text needs space
+        for i in range(1, len(segs)):
+            if (segs[i][0] == "text" and segs[i - 1][0] in ("move", "text")
+                    and not segs[i][1].startswith(" ")):
+                segs[i] = ("text", " " + segs[i][1])
         speech = " ".join(spk)
         out.append({"ply": m["ply"], "no": m["no"], "color": m["color"],
                     "san": m["san"], "uci": m["uci"], "segments": segs,

@@ -48,6 +48,10 @@ class Engine:
         self._put("uci")
         self._wait("uciok")
         self._put("setoption name MultiPV value %d" % multipv)
+        self._put("setoption name UCI_ShowWDL value true")
+        tb = os.path.join(ROOT, "data", "tablebases")
+        if os.path.isdir(tb):
+            self._put("setoption name SyzygyPath value %s" % tb)
         self._put("isready")
         self._wait("readyok")
 
@@ -63,8 +67,15 @@ class Engine:
             if line.startswith(token):
                 return line.strip()
 
-    def analyse(self, fen, depth=13):
-        """[{uci, cp, mate, pv}] best first, scores in WHITE point of view."""
+    def set_multipv(self, n):
+        self._put("setoption name MultiPV value %d" % n)
+        self._put("isready")
+        self._wait("readyok")
+
+    def analyse(self, fen, depth=13, multipv=None):
+        """[{uci, cp, mate, wdl, pv}] best first, scores in WHITE POV."""
+        if multipv is not None:
+            self.set_multipv(multipv)
         self._put("ucinewgame")
         self._put("isready")
         self._wait("readyok")
@@ -100,11 +111,20 @@ class Engine:
             cp = (MATE_CP - 100 * min(abs(val), 40)) * (1 if val > 0 else -1)
         else:
             mate, cp = None, val
+        wdl = None
+        if "wdl" in parts:
+            try:
+                i = parts.index("wdl")
+                wdl = (int(parts[i + 1]), int(parts[i + 2]), int(parts[i + 3]))
+            except (ValueError, IndexError):
+                wdl = None
         if turn == chess.BLACK:               # UCI scores are side-to-move
             cp = -cp
             if mate is not None:
                 mate = -mate
-        return {"multipv": mp, "cp": cp, "mate": mate,
+            if wdl is not None:
+                wdl = (wdl[2], wdl[1], wdl[0])
+        return {"multipv": mp, "cp": cp, "mate": mate, "wdl": wdl,
                 "pv": parts[parts.index("pv") + 1:]}
 
     def close(self):
@@ -123,6 +143,28 @@ def _material(board):
             total += PIECE_VALUE[piece.symbol().lower()] * (
                 1 if piece.color == chess.WHITE else -1)
     return total
+
+
+def _concept_deltas(rep_before, rep_after, turn):
+    """Change per concept from the MOVER's point of view: their own gain
+    plus the opponent's loss. Positive = the move improved that aspect.
+    (CCC's prioritization idea: commentary leads with what changed most.)"""
+
+    def side(v):
+        if isinstance(v, tuple):        # (passed, isolated, doubled) pawns
+            return 2 * v[0] - v[1] - v[2]
+        return int(v)
+
+    sign = 1 if turn == chess.WHITE else -1
+    out = {}
+    for k, v in rep_before.items():
+        a = rep_after[k]
+        if isinstance(v, tuple):
+            w = side(a[0]) - side(v[0]) - (side(a[1]) - side(v[1]))
+        else:
+            w = side(a) - side(v)
+        out[k] = int(round(w * sign))
+    return out
 
 
 def load_pgn(path):
@@ -271,8 +313,13 @@ def _is_endgame(board):
             or n_types(chess.ROOK, chess.BISHOP, chess.KNIGHT) <= 3)
 
 
-def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
-    """Walk the game with the engine and return the analysis dict."""
+def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
+    """Walk the game with the engine and return the analysis dict.
+
+    TWO passes per position (2026-10-22): MultiPV 1 at full depth for the
+    verdict (the eval and the best line - MultiPV splits search effort, so a
+    verdict from a MultiPV-3 search is diluted), and a cheaper MultiPV pass
+    for the candidate alternatives. Background pre-warming absorbs the time."""
     own = engine is None
     eng = engine or Engine(multipv=multipv)
     board = game.board()
@@ -293,7 +340,7 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
     entries = []
     ucis = []
     openings = []
-    pos = eng.analyse(board.fen(), depth)      # evaluation of the start
+    pos = eng.analyse(board.fen(), depth, multipv=1)   # evaluation of the start
     prev_eval = pos[0]["cp"] if pos else 0
     prev_mate = pos[0]["mate"] if pos else None
 
@@ -301,11 +348,15 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
         if progress:
             progress(i, len(moves))
         turn = board.turn
-        before = eng.analyse(board.fen(), depth)
-        best = before[0] if before else {"cp": prev_eval, "mate": prev_mate,
-                                         "pv": [], "multipv": 1}
+        # pass 1: the verdict (full depth, single line); pass 2: alternatives
+        before = eng.analyse(board.fen(), depth, multipv=1)
+        alts = eng.analyse(board.fen(), max(10, depth - 3), multipv=multipv)
+        best = before[0] if before else (alts[0] if alts else
+                                        {"cp": prev_eval, "mate": prev_mate,
+                                         "pv": [], "multipv": 1})
         fen_before = board.fen()
         mat_before = _material(board)
+        rep_before = CP.report(board)
         gives_check = board.gives_check(mv)
         is_capture = board.is_capture(mv)
         is_castle = board.is_castling(mv)
@@ -323,7 +374,7 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
                              "color": "white" if turn == chess.WHITE
                              else "black", "san": san})
         cand = []
-        for c in before[:3]:
+        for c in alts[:3]:
             if c.get("pv"):
                 try:
                     m2 = chess.Move.from_uci(c["pv"][0])
@@ -340,11 +391,12 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
             # position - record the mate explicitly
             sgn = 1 if turn == chess.WHITE else -1
             after = [{"cp": (MATE_CP - 100) * sgn, "mate": sgn, "pv": [],
-                      "multipv": 1}]
+                      "multipv": 1, "wdl": (1000 * sgn, 0, 0)}]
         else:
-            after = eng.analyse(board.fen(), depth)
+            after = eng.analyse(board.fen(), depth, multipv=1)
         cur = after[0] if after else best
         mat_after = _material(board)
+        concepts = _concept_deltas(rep_before, CP.report(board), turn)
 
         best_cp = best["cp"]
         cur_cp = cur["cp"]
@@ -400,8 +452,11 @@ def analyze_game(game, depth=13, multipv=3, engine=None, progress=None):
             "mate_after": mate_after,
             "material_swing": mat_after - mat_before,
             "facts": facts,
+            "concepts": concepts,
             "best_line": best_line,
             "best_impact": _impact_of(best_line),
+            "wdl": cur.get("wdl"),
+            "wdl_before": best.get("wdl"),
             "forced": bool(forced),
             "quiet": (not is_capture and not gives_check and loss <= 30
                       and quality in ("good", "best")),
