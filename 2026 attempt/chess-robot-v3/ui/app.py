@@ -5137,6 +5137,11 @@ class AnalysisMoveScreen(kit.Screen):
         right = tk.Frame(cols, bg=kit.BG)
         right.pack(side="left", fill="both", expand=True, padx=(12, 0))
         self._right_col = right
+        # the win-probability bar: thin, stacked white/black, no labels, and
+        # the PLAYER's share at the bottom (2026-10-23)
+        self.wdl_bar = tk.Canvas(left, width=12, bg="#181b21",
+                                 highlightthickness=0)
+        self.wdl_bar.pack(side="left", padx=(0, 4))
         self.board = None
         self._board_col = left
 
@@ -5184,6 +5189,11 @@ class AnalysisMoveScreen(kit.Screen):
         self.txt.tag_config("icon", font=("DejaVu Sans", 15))
         self.txt.pack(fill="both", expand=True, pady=(6, 0))
         self.txt.configure(state="disabled")
+        # the engine's continuation from this position, beneath the text box
+        self.next_lbl = tk.Label(right, text="", font=("DejaVu Sans", 12),
+                                 bg=kit.BG, fg=kit.FG_DIM, justify="left",
+                                 anchor="w", wraplength=340)
+        self.next_lbl.pack(anchor="w", pady=(6, 0))
 
         # the board fills its column's height once the layout is realized
         left.bind("<Configure>", self._fit_board)
@@ -5212,16 +5222,44 @@ class AnalysisMoveScreen(kit.Screen):
         if h < 120:                     # not realized yet
             return
         # body inner width is 800 - 2*10 padx; the right column keeps its
-        # requested width (buttons / text) plus the 12px column gap
-        avail = 780 - 12 - self._right_col.winfo_reqwidth()
+        # requested width (buttons / text) plus the 12px column gap and the
+        # win-probability bar (12px + gap)
+        avail = 780 - 12 - 20 - self._right_col.winfo_reqwidth()
         px = (max(200, min(h, avail)) // 8) * 8
         if self.board is not None and self.board.px == px:
             return
         if self.board is not None:
             self.board.destroy()
         self.board = kit.BoardView(self._board_col, px=px)
-        self.board.pack()
+        self.board.pack(side="left")
+        self.wdl_bar.configure(height=px)
         self._show_board()
+
+    def _draw_wdl(self, wdl):
+        """The stacked win-probability bar: white/black shares (draws split),
+        the PLAYER's share always at the bottom. No labels (2026-10-23)."""
+        try:
+            w, d, l = (int(x) for x in (wdl or (500, 500, 0)))
+        except (TypeError, ValueError):
+            w, d, l = 500, 500, 0
+        tot = max(1, w + d + l)
+        white = (w + d / 2.0) / tot
+        h = int(self.wdl_bar.cget("height") or 0) or 200
+        ww = int(self.wdl_bar.cget("width") or 12)
+        wh = int(round(h * white))
+        self.wdl_bar.delete("all")
+        player = (self.gpack.game.get("player_color") or "white")
+        light, dark = "#e8e4da", "#20242c"
+        if player == "white":
+            self.wdl_bar.create_rectangle(0, 0, ww, h - wh,
+                                          fill=dark, outline="")
+            self.wdl_bar.create_rectangle(0, h - wh, ww, h,
+                                          fill=light, outline="")
+        else:
+            self.wdl_bar.create_rectangle(0, 0, ww, wh,
+                                          fill=light, outline="")
+            self.wdl_bar.create_rectangle(0, wh, ww, h,
+                                          fill=dark, outline="")
 
     def _show_board(self):
         if self.board is None:
@@ -5234,12 +5272,24 @@ class AnalysisMoveScreen(kit.Screen):
             fc, fr = ord(u[0]) - 97, 8 - int(u[1])
             tc, tr = ord(u[2]) - 97, 8 - int(u[3])
             hl = (fr, fc, tr, tc)
-        self.board.draw(b.getBoard(), hl)
+        # a mistake or blunder shows the recommended move as a white arrow -
+        # but only when the engine actually has a different move to offer
+        arrow = None
+        bu = m.get("best") or ""
+        if (m.get("quality") in ("mistake", "blunder") and len(bu) >= 4
+                and bu != u):
+            fc, fr = ord(bu[0]) - 97, 8 - int(bu[1])
+            tc, tr = ord(bu[2]) - 97, 8 - int(bu[3])
+            arrow = (fr, fc, tr, tc)
+        self.board.draw(b.getBoard(), hl, arrow=arrow)
+        self._draw_wdl(m.get("wdl"))
 
     def _show(self):
         m = self.move
         self._show_board()
         self.verdict_lbl.configure(text=m.get("verdict") or "")
+        self.next_lbl.configure(text=("Next: " + m["next"])
+                                if m.get("next") else "")
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
         for kind, val in m["segments"]:

@@ -491,6 +491,21 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
         else:
             quality = "blunder"
 
+        # the engine's continuation from here - shown under the text box
+        nb = board.copy()
+        plays = i + 1
+        nxt = []
+        for k, u in enumerate((cur.get("pv") or [])[:6]):
+            try:
+                mv2 = chess.Move.from_uci(u)
+                san2 = nb.san(mv2)
+            except (ValueError, AssertionError):
+                break
+            n = (plays + k) // 2 + 1
+            dots = "..." if nb.turn == chess.BLACK else "."
+            nxt.append("%d%s%s" % (n, dots, san2))
+            nb.push(mv2)
+
         entries.append({
             "ply": i + 1, "no": i // 2 + 1,
             "color": "white" if turn == chess.WHITE else "black",
@@ -509,6 +524,7 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
             "material_swing": mat_after - mat_before,
             "facts": facts,
             "concepts": concepts,
+            "next": " ".join(nxt),
             "best_line": best_line,
             "best_impact": _impact_of(best_line),
             "wdl": cur.get("wdl"),

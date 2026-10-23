@@ -602,14 +602,18 @@ def _wp(wdl, color):
     return int(round(100.0 * (w if color == "white" else l) / tot))
 
 
-# what a move ACHIEVES - the commentary is built from the projected line, the
-# recognized brilliancies and the blunders, not from filler
+# what a move achieves - and what it merely THREATENS. The gain often lands
+# later in the engine's line ('7.Qb3 ... picks up a pawn with Bxf7+'): that
+# is a threat of the move, not its result (2026-10-23).
 ACHIEVE_MATE = [("It ends the game.", "That ends the game."),
                 ("Mate follows.", "Mate follows."),
                 ("The game is over by force.", "The game is over by force.")]
-ACHIEVE_WIN = [("It wins {what}{with}.", "It wins {what}{with_spk}."),
-               ("{Color} picks up {what}{with}.",
-                "{Color} picks up {what}{with_spk}.")]
+ACHIEVE_WIN = [("It wins {what}.", "It wins {what}."),
+               ("{Color} picks up {what}.", "{Color} picks up {what}.")]
+THREAT_WIN = [("It threatens to win {what}{with}.",
+               "It threatens to win {what}{with_spk}."),
+              ("{Color} threatens to win {what}{with}.",
+               "{Color} threatens to win {what}{with_spk}.")]
 
 # the aspect of the position that CHANGED most on the move (concept deltas
 # from the analysis) - the informative core of an otherwise quiet comment
@@ -833,10 +837,16 @@ def _achievement_pair(e, teller, s):
         return teller.rng.choice(ACHIEVE_MATE) + ({},)
     if c.get("kind") == "wins":
         what = c.get("what") or "material"
-        bare = what.replace("the ", "").replace("a ", "")
+        at = c.get("at")
         mv = c.get("move") or ""
-        scr, spk = teller.rng.choice(ACHIEVE_WIN)
-        d = dict(s, what=what, what_cap=bare.capitalize(),
+        if at == 0:
+            # the gain IS the move itself - already named in the move head
+            scr, spk = teller.rng.choice(ACHIEVE_WIN)
+            d = dict(s, what=what)
+            return (scr.format(**d), spk.format(**d), {})
+        # the gain lands later in the line: a threat of this move
+        scr, spk = teller.rng.choice(THREAT_WIN)
+        d = dict(s, what=what,
                  **{"with": (" with %s" % mv) if mv else "",
                     "with_spk": (" with %s" % spoken_san(mv)) if mv else ""})
         return (scr.format(**d), spk.format(**d), {})
@@ -1257,7 +1267,32 @@ def per_move(analysis, seed=None):
             # the verdict lives in the LABEL on screen; the speech says it
             # except in the opening phase
             say_verdict = not (quality_ev and m["ply"] < opening_until)
-            line = render([ev], analysis, "speech", skip_pack=not say_verdict)
+            body_sp = _body(ev, "speech", skip_pack=not say_verdict)
+            head_spk = _head(ev, "speech")
+            if ev["kind"] == "finish":
+                line = head_spk
+            elif body_sp and not head_spk.endswith("!") \
+                    and teller.rng.random() < 0.35:
+                # vary when the move is mentioned: 'with [move]' ends the
+                # first sentence instead of the move leading it
+                first, _dot, rest = body_sp.partition(". ")
+                first = first.rstrip(".").strip()
+                if " with " in first:
+                    # the sentence already names a move - leave the move in
+                    # front rather than say 'with' twice
+                    line = head_spk + ". " + body_sp
+                else:
+                    line = "%s with %s." % (first, spoken_san(m["san"]))
+                    if rest:
+                        line += " " + rest
+            elif body_sp:
+                line = head_spk + (" " if head_spk.endswith("!") else ". ") \
+                    + body_sp
+            else:
+                # the invisible period: unseen on screen, but the voice must
+                # hear the sentence end (2026-10-23)
+                line = (head_spk if head_spk.endswith((".", "!", "?"))
+                        else head_spk + ".")
             if line:
                 spk.append(line)
         if not has_head:
@@ -1275,8 +1310,10 @@ def per_move(analysis, seed=None):
         speech = " ".join(spk)
         out.append({"ply": m["ply"], "no": m["no"], "color": m["color"],
                     "san": m["san"], "uci": m["uci"], "segments": segs,
-                    "verdict": verdict, "speech": speech,
-                    "words": len(speech.split())})
+                    "verdict": verdict, "next": m.get("next", ""),
+                    "wdl": m.get("wdl"), "quality": m.get("quality", ""),
+                    "best": m.get("best"),
+                    "speech": speech, "words": len(speech.split())})
     return out
 
 

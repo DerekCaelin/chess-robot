@@ -314,7 +314,7 @@ class BoardView(tk.Canvas):
         super().__init__(master, width=self.px, height=self.px,
                          bg=BG, highlightthickness=0, bd=0, **kw)
 
-    def draw(self, board, last_move=None):
+    def draw(self, board, last_move=None, arrow=None):
         self.delete("all")
         for r in range(8):
             for c in range(8):
@@ -355,3 +355,15 @@ class BoardView(tk.Canvas):
                                           (cc + 1) * self.sq - 2,
                                           (rr + 1) * self.sq - 2,
                                           outline=ACCENT, width=3)
+        # the recommended move as a white arrow (2026-10-23): a pawn to e6
+        # is an arrow from e7 to e6
+        if arrow:
+            (fr, fc, tr, tc) = arrow
+            x0 = fc * self.sq + self.sq // 2
+            y0 = fr * self.sq + self.sq // 2
+            x1 = tc * self.sq + self.sq // 2
+            y1 = tr * self.sq + self.sq // 2
+            self.create_line(x0, y0, x1, y1, fill="#f6f2e8",
+                             width=max(3, self.sq // 7), arrow=tk.LAST,
+                             arrowshape=(self.sq // 3, self.sq // 2,
+                                         self.sq // 5))
