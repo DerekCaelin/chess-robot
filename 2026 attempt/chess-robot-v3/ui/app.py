@@ -4953,6 +4953,16 @@ class AnalysisHomeScreen(kit.Screen):
         menu.configure(font=kit.F_BODY, bg=kit.CARD_HI, fg=kit.FG,
                        highlightthickness=0, width=14)
         menu.pack(side="left")
+        # 'Show recommended line': the engine's preferred move as a
+        # player-coloured arrow on the move screens (2026-10-23)
+        self.reco_var = tk.BooleanVar(
+            value=bool(settings.get("analysis.show_reco", True)))
+        tk.Checkbutton(right, text="Show recommended line",
+                       variable=self.reco_var, command=self._save_reco,
+                       font=kit.F_BODY, bg=kit.BG, fg=kit.FG,
+                       selectcolor=kit.ACCENT, activebackground=kit.BG,
+                       activeforeground=kit.FG).pack(anchor="w",
+                                                     pady=(0, 6))
         # one status line for whatever is generating right now (the stage's
         # own #/# and the animated dots), then the bar - 2026-10-23: the
         # separate 'voice files loaded' line above the bar was confusing
@@ -4985,6 +4995,9 @@ class AnalysisHomeScreen(kit.Screen):
 
     def _save_adv(self):
         settings.set("analysis.auto_advance", bool(self.adv_var.get()))
+
+    def _save_reco(self):
+        settings.set("analysis.show_reco", bool(self.reco_var.get()))
 
     def _voice_changed(self, _=None):
         settings.set("analysis.voice", self._voice_key())
@@ -5194,6 +5207,15 @@ class AnalysisMoveScreen(kit.Screen):
                                  bg=kit.BG, fg=kit.FG_DIM, justify="left",
                                  anchor="w", wraplength=340)
         self.next_lbl.pack(anchor="w", pady=(6, 0))
+        # 'Show recommended line': the engine's preferred move as a
+        # player-coloured arrow on the board (2026-10-23)
+        self.reco_var = tk.BooleanVar(
+            value=bool(settings.get("analysis.show_reco", True)))
+        tk.Checkbutton(right, text="Show recommended line",
+                       variable=self.reco_var, command=self._save_reco,
+                       font=("DejaVu Sans", 11), bg=kit.BG, fg=kit.FG,
+                       selectcolor=kit.ACCENT, activebackground=kit.BG,
+                       activeforeground=kit.FG).pack(anchor="w", pady=(4, 0))
 
         # the board fills its column's height once the layout is realized
         left.bind("<Configure>", self._fit_board)
@@ -5276,16 +5298,21 @@ class AnalysisMoveScreen(kit.Screen):
             fc, fr = ord(u[0]) - 97, 8 - int(u[1])
             tc, tr = ord(u[2]) - 97, 8 - int(u[3])
             hl = (fr, fc, tr, tc)
-        # a mistake or blunder shows the recommended move as a white arrow -
-        # but only when the engine actually has a different move to offer
+        # the recommended move: the 'Show recommended line' visualization,
+        # always for mistakes and blunders - a line in the PLAYER's colour
         arrow = None
         bu = m.get("best") or ""
-        if (m.get("quality") in ("mistake", "blunder") and len(bu) >= 4
-                and bu != u):
+        show_reco = bool(settings.get("analysis.show_reco", True))
+        if (len(bu) >= 4 and bu != u
+                and (show_reco
+                     or m.get("quality") in ("mistake", "blunder"))):
             fc, fr = ord(bu[0]) - 97, 8 - int(bu[1])
             tc, tr = ord(bu[2]) - 97, 8 - int(bu[3])
             arrow = (fr, fc, tr, tc)
-        self.board.draw(b.getBoard(), hl, arrow=arrow)
+        player = (self.gpack.game.get("player_color") or "white")
+        self.board.draw(b.getBoard(), hl, arrow=arrow,
+                        arrow_fg=("#f6f2e8" if player == "white"
+                                  else "#16181d"))
         self._draw_wdl(m.get("wdl"))
 
     def _show(self):
@@ -5320,6 +5347,10 @@ class AnalysisMoveScreen(kit.Screen):
         self.next_btn.configure(state="normal" if ok else "disabled",
                                 bg=kit.CARD_HI if ok else kit.CARD,
                                 fg=kit.FG if ok else kit.FG_DIM)
+
+    def _save_reco(self):
+        settings.set("analysis.show_reco", bool(self.reco_var.get()))
+        self._show_board()
 
     def _sound_ready(self):
         return self.gpack.ready(self.move["ply"], self.voice)

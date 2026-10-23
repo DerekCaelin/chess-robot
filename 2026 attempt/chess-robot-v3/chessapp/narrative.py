@@ -605,15 +605,15 @@ def _wp(wdl, color):
 # what a move achieves - and what it merely THREATENS. The gain often lands
 # later in the engine's line ('7.Qb3 ... picks up a pawn with Bxf7+'): that
 # is a threat of the move, not its result (2026-10-23).
-ACHIEVE_MATE = [("It ends the game.", "That ends the game."),
+ACHIEVE_MATE = [("That ends the game.", "That ends the game."),
                 ("Mate follows.", "Mate follows."),
                 ("The game is over by force.", "The game is over by force.")]
-ACHIEVE_WIN = [("It wins {what}.", "It wins {what}."),
+ACHIEVE_WIN = [("{Color} wins {what}.", "{Color} wins {what}."),
                ("{Color} picks up {what}.", "{Color} picks up {what}.")]
-THREAT_WIN = [("It threatens to win {what}{with}.",
-               "It threatens to win {what}{with_spk}."),
-              ("{Color} threatens to win {what}{with}.",
-               "{Color} threatens to win {what}{with_spk}.")]
+THREAT_WIN = [("{Color} threatens to win {what}{with}.",
+               "{Color} threatens to win {what}{with_spk}."),
+              ("The threat is to win {what}{with}.",
+               "The threat is to win {what}{with_spk}.")]
 
 # the aspect of the position that CHANGED most on the move (concept deltas
 # from the analysis) - the informative core of an otherwise quiet comment
@@ -704,30 +704,53 @@ def _line_pair(teller, e, s):
             _assemble(lead, spk_series, end_spk), {})
 
 
+def _score_line(cp):
+    """What the engine's SCORE says about the position (white POV cp) - the
+    non-neutral half of the phase summary. '' when the score is quiet."""
+    if cp >= 300:
+        return "White has a clear advantage in positional strength"
+    if cp >= 90:
+        return "White has the better position"
+    if cp <= -300:
+        return "Black has a clear advantage in positional strength"
+    if cp <= -90:
+        return "Black has the better position"
+    return ""
+
+
 def _phase_note(teller, ph, s):
-    """High-level analysis at a phase transition: material + engine read +
-    one or two measurable positional advantages."""
+    """The phase summary is scoped and honest (2026-10-23): a neutral
+    material statement 'in terms of material', then - when the engine's
+    score says otherwise - the advantage statement, joined with 'but'.
+    'White and Black are evenly matched' alone claimed of the position what
+    is only true of material."""
     rep = ph.get("report") or {}
     d = rep.get("material", 0)
     lead = "White" if d > 0 else "Black"
     if abs(d) <= 2:
-        core = "White and Black are fairly evenly matched"
+        core = "White and Black are evenly matched in terms of material"
         if abs(d) >= 1:
             core += ", with %s up a single pawn" % lead
     elif abs(d) <= 4:
-        core = "%s is up the exchange" % lead
+        core = "in terms of material, %s is up the exchange" % lead
     elif abs(d) <= 8:
-        core = "%s is up a piece" % lead
+        core = "in terms of material, %s is up a piece" % lead
     else:
-        core = "%s is up significant material" % lead
+        core = "in terms of material, %s is up significant material" % lead
     head = teller.phrase(PHASE_TO_MID if ph["to"] == "middlegame"
                          else PHASE_TO_END)
+    score = _score_line(ph.get("eval_cp", 0))
+    out = "%s %s" % (head, core)
+    if score:
+        # 'but' when the score contradicts the material impression
+        contrast = (abs(d) <= 2 and not score.startswith("White and")) or \
+                   (d > 0 and score.startswith("Black")) or \
+                   (d < 0 and score.startswith("White"))
+        out += (", but " if contrast else ", and ") + score
+    out += "."
     obs = _positional_notes(teller, rep, s)
-    out = "%s %s." % (head, core)
     if obs:
         out += " " + obs[0]
-        if len(obs) > 1:
-            out += " " + obs[1]
     return (out, out, {})
 
 
@@ -804,8 +827,10 @@ def _closing_notes(analysis, teller, s):
             notes.append((head + " " + pair[0].format(**pair[2]),
                           head + " " + pair[1].format(**pair[2]), {}))
         elif m.get("mate_after") is not None and m["mate_after"] < 0:
-            notes.append((head + " It allows a forced mate.",
-                          head + " It allows a forced mate.", {}))
+            notes.append((head + " %s allows a forced mate."
+                          % ms["Color"],
+                          head + " %s allows a forced mate."
+                          % ms["Color"], {}))
         else:
             notes.append((head, head, {}))
 
@@ -1048,7 +1073,10 @@ def build_events(analysis, teller):
         for ph in phase_map.get(e["ply"], []):
             events.append({"kind": "phase", "move": None, "ply": e["ply"],
                            "pack": (),
-                           "extras": [_phase_note(teller, ph, s)],
+                           "extras": [_phase_note(teller,
+                                                  dict(ph,
+                                                       eval_cp=e["eval_cp"]),
+                                                  s)],
                            "slots": s})
 
         if (analysis["moves"][-1].get("mate_after") == 1
@@ -1083,8 +1111,8 @@ def build_events(analysis, teller):
             if line_pair:
                 extras.append(line_pair)
             if e.get("mate_after") is not None and e["mate_after"] < 0:
-                extras.append(("It allows a forced mate.",
-                               "It allows a forced mate.", {}))
+                extras.append(("{Color} allows a forced mate.",
+                               "{Color} allows a forced mate.", s))
             else:
                 sw = _swing_pair(teller, e, s)
                 if sw and (not line_pair or e["loss_cp"] >= 250):
@@ -1094,6 +1122,12 @@ def build_events(analysis, teller):
             ach = _achievement_pair(e, teller, s)
             if ach:
                 extras.append(ach)
+        # a move that gives check says so in the text (the spoken move
+        # already says 'with check', so the speech skips this) - 2026-10-23
+        if e.get("check") and not e.get("mate_after"):
+            said = " ".join(x[0] for x in extras) + " " + " ".join(pack)
+            if "check" not in said.lower() and "+" not in said:
+                extras.append(("That gives check.", "", {}))
         events.append({"kind": q, "move": e, "ply": e["ply"], "pack": pack,
                        "extras": extras, "slots": s})
 
