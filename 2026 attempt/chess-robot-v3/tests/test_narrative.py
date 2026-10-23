@@ -239,6 +239,34 @@ def test_verdict_label_and_speech():
     assert "checkmate" in pm2[-1]["speech"].lower(), pm2[-1]["speech"]
 
 
+def test_no_it_and_verifiable_claims():
+    """No analysis sentence may use 'It' for a player (2026-10-23), and a
+    'threatens ... with [move]' claim must cite a move from the prediction
+    line shown on screen."""
+    import re
+    from chessapp.narrative import per_move
+    an = _fake_analysis()
+    an["phases"] = []
+    # move 3 gets a structured continuation with a checking reply
+    an["moves"][2]["next_plies"] = [
+        {"san": "Qe7+", "no": 2, "dots": "...", "color": "black",
+         "kinds": ["check"], "check": True, "capture": False}]
+    an["moves"][2]["next"] = "2...Qe7+ 3.Kf1"
+    pm = per_move(an, seed=5)
+    texts = ["".join(v for k, v in m["segments"] if k == "text")
+             for m in pm]
+    for text in texts:
+        assert not re.search(r"(^|[.!?] )It\b", text), text
+    joined = " ".join(texts)
+    if "threatens" in joined:
+        # every threatened move must appear in that move's prediction line
+        for m, text in zip(pm, texts):
+            for mm in re.findall(r"threatens ([A-Z][^ ,.]+)", text):
+                assert mm in (m.get("next") or "") or \
+                    mm.replace("+", "") in (m.get("next") or ""), \
+                    (mm, m.get("next"), text)
+
+
 def main():
     test_spoken_san()
     test_renderings_and_variety()
@@ -249,6 +277,7 @@ def main():
     test_pack_stale_sounds()
     test_pack_picks_up_cached_text()
     test_verdict_label_and_speech()
+    test_no_it_and_verifiable_claims()
     print("PASS: narrative rendering + variety + facts")
 
 

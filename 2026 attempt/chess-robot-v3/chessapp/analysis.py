@@ -233,33 +233,31 @@ def _pv_line(board, pv, mover, mate=None):
         if swing > best_jump:
             best_jump, best_at = swing, i
     concl = {"kind": "holds", "what": "", "at": None, "move": ""}
-    gain = best_jump if best_at is not None else 0.0
+    # the claim describes the line's NET outcome (2026-10-23): a mid-line
+    # flash that is recaptured is not 'winning the queen' - the Nxb5 line
+    # QUEEN-TRADES on b4 and nets a pawn or two
     if mate is not None and mate > 0:
         concl = {"kind": "mate", "what": "", "at": len(plies) - 1,
                  "move": plies[-1]["san"] if plies else ""}
-    elif gain >= 8:
+    elif total >= 8:
         concl = {"kind": "wins", "what": "the queen", "at": best_at,
                  "move": plies[best_at]["san"] if best_at is not None else ""}
-    elif gain >= 5:
+    elif total >= 5:
         concl = {"kind": "wins", "what": "the exchange", "at": best_at,
                  "move": plies[best_at]["san"] if best_at is not None else ""}
-    elif gain >= 3:
+    elif total >= 3:
         concl = {"kind": "wins", "what": "a piece", "at": best_at,
                  "move": plies[best_at]["san"] if best_at is not None else ""}
-    elif gain >= 1:
+    elif total >= 1:
         concl = {"kind": "wins", "what": "a pawn", "at": best_at,
                  "move": plies[best_at]["san"] if best_at is not None else ""}
-    elif total >= 1:
-        # the gain comes later in the line - name no single move for it
-        concl = {"kind": "wins", "what": "material", "at": None, "move": ""}
-    # 'wins X with MOVE' must name the MOVER's own move, and only when the
-    # gain lands early in the line - a later move's capture is not this
-    # move's achievement ('1...e5 picks up a pawn with exd4' read as if e5
-    # itself won the pawn)
+    # 'wins X with MOVE' must name the MOVER's own move, early in the line,
+    # and only when that gain actually survives to the end of the line
     if concl.get("move") and concl.get("at") is not None:
         at = concl["at"]
         if at > 2 or plies[at]["color"] != (
-                "white" if mover == chess.WHITE else "black"):
+                "white" if mover == chess.WHITE else "black") \
+                or best_jump > total + 0.5:
             concl["move"] = ""
     return {"plies": plies, "total": total, "concl": concl}
 
@@ -404,8 +402,19 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
                                  "cp": c["cp"], "mate": c["mate"]})
                 except (ValueError, AssertionError):
                     pass
-        best_san = cand[0]["san"] if cand else san
-        best_uci = cand[0]["uci"] if cand else mv.uci()
+        # ONE source of truth for the recommendation: the deep verdict's own
+        # line. The alternatives pass disagreed on sharp positions (the
+        # arrow showed c6 while the text quoted e6) - 2026-10-23.
+        if best.get("pv"):
+            try:
+                best_uci = best["pv"][0]
+                best_san = board.san(chess.Move.from_uci(best_uci))
+            except (ValueError, AssertionError):
+                best_san = cand[0]["san"] if cand else san
+                best_uci = cand[0]["uci"] if cand else mv.uci()
+        else:
+            best_san = cand[0]["san"] if cand else san
+            best_uci = cand[0]["uci"] if cand else mv.uci()
         played_is_best = bool(best.get("pv")) and mv.uci() == best["pv"][0]
         board.push(mv)
         if board.is_checkmate():
@@ -449,6 +458,10 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
             None if cur["mate"] is None else -cur["mate"])
         mate_before = best["mate"] if turn == chess.WHITE else (
             None if best["mate"] is None else -best["mate"])
+        # the continuation's own outcome - claims like 'threatens to win a
+        # pawn with 11.Qxb4' must describe the line SHOWN under the text
+        # box, not the other search's line (2026-10-23)
+        next_line = _pv_line(board, cur.get("pv"), turn, mate_after)
         # allowing a FORCED MATE against oneself is a blunder whatever the
         # position looked like before (a lost side's numbers cannot fall)
         if mate_after is not None and mate_after < 0 and (
@@ -483,19 +496,28 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
         else:
             quality = "blunder"
 
-        # the engine's continuation from here - shown under the text box
+        # the engine's continuation from here - shown under the text box,
+        # and as structured data for the opponent-threat commentary
         nb = board.copy()
         plays = i + 1
         nxt = []
+        nxt_plies = []
         for k, u in enumerate((cur.get("pv") or [])[:6]):
             try:
                 mv2 = chess.Move.from_uci(u)
                 san2 = nb.san(mv2)
+                kinds = [kk for kk, _ in CF.move_facts(nb, mv2)]
             except (ValueError, AssertionError):
                 break
             n = (plays + k) // 2 + 1
             dots = "..." if nb.turn == chess.BLACK else "."
             nxt.append("%d%s%s" % (n, dots, san2))
+            nxt_plies.append({"san": san2, "no": n, "dots": dots,
+                              "color": ("white" if nb.turn == chess.WHITE
+                                        else "black"),
+                              "kinds": kinds,
+                              "check": nb.gives_check(mv2),
+                              "capture": nb.is_capture(mv2)})
             nb.push(mv2)
 
         entries.append({
@@ -517,6 +539,8 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
             "facts": facts,
             "concepts": concepts,
             "next": " ".join(nxt),
+            "next_plies": nxt_plies,
+            "next_line": next_line,
             "best_line": best_line,
             "best_impact": _impact_of(best_line),
             "wdl": cur.get("wdl"),

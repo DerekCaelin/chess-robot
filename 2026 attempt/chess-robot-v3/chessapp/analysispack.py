@@ -28,9 +28,9 @@ VOICE_LABELS = {"none": "None (fastest)", "espeak": "espeak (fast)",
 
 # The stored analysis + commentary format. Bump when the engine fields or
 # the narrative output change shape/quality - a cached text.json with an
-# older format is regenerated. v4 (2026-10-23): engine continuation line,
-# threat phrasing, WDL quality labels.
-CACHE_FORMAT = 4
+# older format is regenerated. v5 (2026-10-23): one recommendation source,
+# net-gain claims, opponent threats, alternatives, no 'It' for players.
+CACHE_FORMAT = 5
 
 
 def game_hash(game):

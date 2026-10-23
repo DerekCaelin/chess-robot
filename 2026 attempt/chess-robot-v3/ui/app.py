@@ -5299,7 +5299,9 @@ class AnalysisMoveScreen(kit.Screen):
             tc, tr = ord(u[2]) - 97, 8 - int(u[3])
             hl = (fr, fc, tr, tc)
         # the recommended move: the 'Show recommended line' visualization,
-        # always for mistakes and blunders - a line in the PLAYER's colour
+        # always for mistakes and blunders - a line in the colour of the
+        # side whose move it is (2026-10-23), so the robot's own missed
+        # moves show in its colour too
         arrow = None
         bu = m.get("best") or ""
         show_reco = bool(settings.get("analysis.show_reco", True))
@@ -5309,9 +5311,9 @@ class AnalysisMoveScreen(kit.Screen):
             fc, fr = ord(bu[0]) - 97, 8 - int(bu[1])
             tc, tr = ord(bu[2]) - 97, 8 - int(bu[3])
             arrow = (fr, fc, tr, tc)
-        player = (self.gpack.game.get("player_color") or "white")
+        side = m.get("color") or "white"
         self.board.draw(b.getBoard(), hl, arrow=arrow,
-                        arrow_fg=("#f6f2e8" if player == "white"
+                        arrow_fg=("#f6f2e8" if side == "white"
                                   else "#16181d"))
         self._draw_wdl(m.get("wdl"))
 

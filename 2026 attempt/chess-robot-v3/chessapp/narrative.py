@@ -854,25 +854,31 @@ def _closing_notes(analysis, teller, s):
 
 
 def _achievement_pair(e, teller, s):
-    """What the move ACHIEVES, from the projected line and the position's
-    outcome - informative commentary instead of filler."""
-    bl = e.get("best_line") or {}
-    c = bl.get("concl") or {}
+    """What the move won - and what it threatens. Both verifiable (2026-10-23):
+    the immediate gain is ON THE BOARD (material_swing); the threat is the
+    continuation shown under the text box, cited with its move number."""
+    # what the move itself captured
+    swing = e.get("material_swing") or 0
+    if swing >= 1:
+        what = ("a pawn" if swing < 3 else "a piece" if swing < 5 else
+                "the exchange" if swing < 8 else "the queen")
+        scr, spk = teller.rng.choice(ACHIEVE_WIN)
+        d = dict(s, what=what)
+        return (scr.format(**d), spk.format(**d), {})
+    # what the move threatens: the outcome of the SHOWN prediction line
+    nl = e.get("next_line") or {}
+    c = nl.get("concl") or {}
     if c.get("kind") == "mate":
         return teller.rng.choice(ACHIEVE_MATE) + ({},)
     if c.get("kind") == "wins":
         what = c.get("what") or "material"
         at = c.get("at")
         mv = c.get("move") or ""
-        if at == 0:
-            # the gain IS the move itself - already named in the move head
-            scr, spk = teller.rng.choice(ACHIEVE_WIN)
-            d = dict(s, what=what)
-            return (scr.format(**d), spk.format(**d), {})
-        # the gain lands later in the line: a threat of this move
         scr, spk = teller.rng.choice(THREAT_WIN)
+        # only cite the move when the line's own survival rule kept its name
+        disp = _next_move_disp(e, at) if mv else ""
         d = dict(s, what=what,
-                 **{"with": (" with %s" % mv) if mv else "",
+                 **{"with": (" with %s" % disp) if disp else "",
                     "with_spk": (" with %s" % spoken_san(mv)) if mv else ""})
         return (scr.format(**d), spk.format(**d), {})
     w = wdl_phrase(e.get("wdl"))
@@ -923,6 +929,83 @@ def _swing_pair(teller, e, s):
              "{wp_after}%.")
         return (t.format(**s), t.format(**s), {})
     return None
+
+
+def _next_move_disp(e, at):
+    """The prediction line's move with its number - checkable against the
+    'Next:' list under the text box (2026-10-23)."""
+    plies = e.get("next_plies") or []
+    if at is None or at >= len(plies):
+        return ""
+    p = plies[at]
+    return "%d%s%s" % (p.get("no", 0), p.get("dots", ""), p["san"])
+
+
+def _contrast_pair(e, teller, s):
+    """Why the better move was better: what the played move actually won,
+    against the recommended line's gain (2026-10-23)."""
+    bi = e.get("best_impact") or {}
+    if bi.get("kind") != "wins" or bi.get("what") == "the game":
+        return None
+    swing = e.get("material_swing") or 0
+    if swing <= 0:
+        text = "The move played wins nothing."
+        return (text, text, {})
+    won = ("a pawn" if swing < 3 else
+           "a piece" if swing < 5 else
+           "the exchange" if swing < 8 else "the queen")
+    if won == bi.get("what"):
+        return None
+    text = "The move played wins only %s." % won
+    return (text, text, {})
+
+
+def _reply_threat(e, teller, s):
+    """What the opponent is ready to do next - only from the prediction line
+    shown on screen, and only when it carries a named tactical event."""
+    plies = e.get("next_plies") or []
+    if not plies:
+        return None
+    p = plies[0]
+    if p.get("color") == e["color"]:
+        return None                    # should not happen - be safe
+    ev = []
+    if "check" in p.get("kinds", []) or p.get("check"):
+        ev.append("check")
+    if "fork" in p.get("kinds", []):
+        ev.append("a fork")
+    if "pin" in p.get("kinds", []):
+        ev.append("a pin")
+    if not ev:
+        return None
+    move_disp = "%d%s%s" % (p["no"], p.get("dots", ""), p["san"])
+    tail = " with " + " and ".join(ev) if ev else ""
+    text = "%s threatens %s%s." % (s["opponent"], move_disp, tail)
+    spk = "%s threatens %s%s." % (s["opponent"], spoken_san(p["san"]),
+                                  tail)
+    return (text, spk, {})
+
+
+def _alternatives_pair(e, teller, s):
+    """The other moves the engine considered - 'the things to consider'.
+    Only when the player deviated from the engine's choice: for the engine's
+    own move the prediction line already shows what comes next."""
+    if e["uci"] == e.get("best"):
+        return None
+    cand = [c for c in (e.get("candidates") or [])
+            if c.get("san") and c.get("san") != e["san"]]
+    seen, opts = set(), []
+    for c in cand:
+        if c["san"] not in seen:
+            seen.add(c["san"])
+            opts.append(c["san"])
+    opts = opts[:2]
+    if len(opts) < 2:
+        return None
+    text = "Other options were %s and %s." % (opts[0], opts[1])
+    spk = "Other options were %s and %s." % (spoken_san(opts[0]),
+                                             spoken_san(opts[1]))
+    return (text, spk, {})
 
 
 def _fact_note(teller, facts, slots):
@@ -1095,6 +1178,7 @@ def build_events(analysis, teller):
         # 'nothing critical happens for 5 moves').
         pack = list(teller.pick("verdict_" + q, 1))
         extras = []
+        line_pair = None
         if q in ("inaccuracy", "mistake", "blunder"):
             # the recommended line: [a better alternative would be] [move
             # series] [impact] - mostly the player's own moves (5/6). Only
@@ -1110,6 +1194,10 @@ def build_events(analysis, teller):
             line_pair = _line_pair(teller, e, s) if want_line else None
             if line_pair:
                 extras.append(line_pair)
+                # why the better move was better: the outcomes, side by side
+                cw = _contrast_pair(e, teller, s)
+                if cw:
+                    extras.append(cw)
             if e.get("mate_after") is not None and e["mate_after"] < 0:
                 extras.append(("{Color} allows a forced mate.",
                                "{Color} allows a forced mate.", s))
@@ -1122,6 +1210,17 @@ def build_events(analysis, teller):
             ach = _achievement_pair(e, teller, s)
             if ach:
                 extras.append(ach)
+        # what the opponent is ready to do next - straight from the
+        # prediction line shown on screen (2026-10-23)
+        if len(extras) < 2 and not line_pair:
+            th = _reply_threat(e, teller, s)
+            if th:
+                extras.append(th)
+        # the other moves the engine considered
+        if not extras:
+            al = _alternatives_pair(e, teller, s)
+            if al:
+                extras.append(al)
         # a move that gives check says so in the text (the spoken move
         # already says 'with check', so the speech skips this) - 2026-10-23
         if e.get("check") and not e.get("mate_after"):
