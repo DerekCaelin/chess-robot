@@ -5236,30 +5236,34 @@ class AnalysisMoveScreen(kit.Screen):
         self._show_board()
 
     def _draw_wdl(self, wdl):
-        """The stacked win-probability bar: white/black shares (draws split),
-        the PLAYER's share always at the bottom. No labels (2026-10-23)."""
+        """The stacked win bar - the SAME numbers the commentary quotes
+        ('White's winning chances fall to 76%'): each side's pure win share
+        as its own colour, the draw share as a neutral segment between them,
+        and the PLAYER's segment always at the bottom. No labels (2026-10-23:
+        splitting draws into the colours made the bar read 90% where the text
+        said 76%)."""
         try:
             w, d, l = (int(x) for x in (wdl or (500, 500, 0)))
         except (TypeError, ValueError):
             w, d, l = 500, 500, 0
         tot = max(1, w + d + l)
-        white = (w + d / 2.0) / tot
         h = int(self.wdl_bar.cget("height") or 0) or 200
         ww = int(self.wdl_bar.cget("width") or 12)
-        wh = int(round(h * white))
-        self.wdl_bar.delete("all")
         player = (self.gpack.game.get("player_color") or "white")
-        light, dark = "#e8e4da", "#20242c"
-        if player == "white":
-            self.wdl_bar.create_rectangle(0, 0, ww, h - wh,
-                                          fill=dark, outline="")
-            self.wdl_bar.create_rectangle(0, h - wh, ww, h,
-                                          fill=light, outline="")
-        else:
-            self.wdl_bar.create_rectangle(0, 0, ww, wh,
-                                          fill=light, outline="")
-            self.wdl_bar.create_rectangle(0, wh, ww, h,
-                                          fill=dark, outline="")
+        pw = w if player == "white" else l
+        light, dark, mid = "#e8e4da", "#20242c", "#6f7680"
+        mine = light if player == "white" else dark
+        theirs = dark if player == "white" else light
+        ph = int(round(h * pw / float(tot)))
+        dh = int(round(h * d / float(tot)))
+        oh = h - ph - dh
+        self.wdl_bar.delete("all")
+        y = h
+        for seg_h, col in ((ph, mine), (dh, mid), (oh, theirs)):
+            if seg_h > 0:
+                self.wdl_bar.create_rectangle(0, y - seg_h, ww, y,
+                                              fill=col, outline="")
+            y -= seg_h
 
     def _show_board(self):
         if self.board is None:

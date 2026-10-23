@@ -430,43 +430,35 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
             # depth-limited eval wobble says, this cannot be a mistake
             loss = min(loss, 25)
 
-        # win-probability truth (2026-10-23): a position still won after the
-        # move is not a blunder whatever the centipawns wobble - depth-limited
-        # evals on sharp positions swing by hundreds of cp between searches
-        # (Morphy's 15.Bxd7+ was labelled a blunder this way). Conversely a
-        # real collapse of the winning chances IS the mistake, even when the
-        # raw numbers understate it.
-        def _mover_wp(wdl):
-            if not wdl:
-                return None
-            w, dd, l = wdl
-            tot = max(1, w + dd + l)
-            p = w if turn == chess.WHITE else l
-            return int(round(100.0 * p / tot))
-        wpb = _mover_wp(best.get("wdl"))
-        wpa = _mover_wp(cur.get("wdl"))
-        if wpb is not None and wpa is not None:
-            dw = wpa - wpb
-            if dw >= -5:
-                loss = min(loss, 30)         # the win was never in question
-            elif dw <= -30:
-                loss = max(loss, 190)        # the chances really collapsed
-            elif dw <= -15:
-                loss = max(loss, 70)
-        # one of the engine's own top candidates cannot be a disaster, even
-        # when the shallow WDL disagrees (4.dxe5 in the Opera Game swung the
-        # win-probability on noise alone)
-        if cand and any(c.get("uci") == mv.uci() for c in cand):
-            loss = min(loss, 60)
+        # The verdict is the impact of the move on the MOVER's own position
+        # (2026-10-23). Two noise guards, both mover-true:
+        #  * a move from the engine's own candidate list is scored by the
+        #    within-search comparison (both evals come from one search tree,
+        #    so no cross-search wobble);
+        #  * a big loss gets a deeper second look before it is believed
+        #    (Morphy's 15.Bxd7+ read as -334 on shallow noise alone).
+        # The earlier WDL caps are gone: they whitewashed real damage ('Solid'
+        # for a move that worsened the mover's position).
+        if alts and cand:
+            cand_cp = next((c["cp"] for c in cand
+                            if c.get("uci") == mv.uci()), None)
+            if cand_cp is not None:
+                loss = max(0, int(alts[0]["cp"] - cand_cp))
+
         mate_after = cur["mate"] if turn == chess.WHITE else (
             None if cur["mate"] is None else -cur["mate"])
         mate_before = best["mate"] if turn == chess.WHITE else (
             None if best["mate"] is None else -best["mate"])
-        # but allowing a FORCED MATE against oneself is a blunder whatever
-        # the chances were before (a lost side's WDL cannot fall further)
+        # allowing a FORCED MATE against oneself is a blunder whatever the
+        # position looked like before (a lost side's numbers cannot fall)
         if mate_after is not None and mate_after < 0 and (
                 mate_before is None or mate_before >= 0):
             loss = max(loss, 250)
+        elif loss >= 150 and not played_is_best:
+            re = eng.analyse(board.fen(), depth + 3, multipv=1)
+            if re:
+                rc = re[0]["cp"] * (1 if turn == chess.WHITE else -1)
+                loss = min(loss, max(0, int(mover_before - rc)))
 
         gap = 0
         if len(before) > 1:
