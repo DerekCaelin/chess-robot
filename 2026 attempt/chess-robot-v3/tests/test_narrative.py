@@ -121,14 +121,15 @@ def test_concept_notes():
     assert note[2]["concept"] in ("center", "structure")
     e2 = {"concepts": {"center": 1, "space": 1}, "uci": "e2e4", "best": "e2e4"}
     assert N._concept_note(Teller(seed=7), e2, s) is None
-    # harvested human phrasing wins over the built-in banks when present
+    # harvested human phrasing is NOT used: mined sentences leaked player
+    # names and unverifiable claims (2026-10-23)
     old = N._PHRASE_LIB
-    N._PHRASE_LIB = {"center": {"+": {"white": ["Human phrasing here."],
+    N._PHRASE_LIB = {"center": {"+": {"white": ["Lasker dominates here."],
                                       "any": []}}}
     try:
         e3 = {"concepts": {"center": 4}, "uci": "e2e4", "best": "e2e4"}
         note = N._concept_note(Teller(seed=7), e3, s)
-        assert note[0] == "Human phrasing here.", note
+        assert "Lasker" not in note[0], note
     finally:
         N._PHRASE_LIB = old
 
@@ -182,6 +183,31 @@ def test_pack_stale_sounds():
         NR.per_move = old_pm
 
 
+def test_pack_picks_up_cached_text():
+    """Another instance's background run (pre-warm) writes the text: a pack
+    created later must see it immediately - the analysis home's Begin enable
+    condition waits on pack.moves (2026-10-23)."""
+    import json
+    import os
+    import tempfile
+    from chessapp import analysispack as AP
+    tmp = tempfile.mkdtemp(prefix="ap_test2_")
+    old = AP.CACHE
+    AP.CACHE = tmp
+    try:
+        game = {"moves": ["e2e4", "e7e5"], "player_color": "white",
+                "started": "2026-10-23T10:00", "result": "*"}
+        a = AP.AnalysisPack(game)
+        os.makedirs(a.dir, exist_ok=True)
+        with open(a.text_path(), "w") as f:
+            json.dump({"format": AP.CACHE_FORMAT,
+                       "moves": [{"ply": 1}, {"ply": 2}], "analysis": {}}, f)
+        b = AP.AnalysisPack(game)          # the screen's own instance
+        assert b.moves, "second instance did not pick up the cached text"
+    finally:
+        AP.CACHE = old
+
+
 def main():
     test_spoken_san()
     test_renderings_and_variety()
@@ -190,6 +216,7 @@ def main():
     test_marks()
     test_concept_notes()
     test_pack_stale_sounds()
+    test_pack_picks_up_cached_text()
     print("PASS: narrative rendering + variety + facts")
 
 

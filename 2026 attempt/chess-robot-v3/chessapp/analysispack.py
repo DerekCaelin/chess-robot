@@ -75,6 +75,11 @@ class AnalysisPack:
         self.moves = []
         self.analysis = None
         self._run_id = 0
+        # pick up cached text right away: another instance's background run
+        # (pre-warm) may have produced it - the analysis home's Begin button
+        # waits on this list (2026-10-23)
+        if self.has_text():
+            self._load_text()
 
     def cancel(self):
         """Stop the current generation run. Files already written are kept -

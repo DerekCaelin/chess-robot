@@ -5042,7 +5042,11 @@ class AnalysisHomeScreen(kit.Screen):
         else:
             self.prog_lbl.configure(text="Ready")
         # Begin only once the TEXT exists - a move screen over an
-        # ungenned pack used to fail silently on the button press
+        # ungenned pack used to fail silently on the button press. The text
+        # may land via ANOTHER instance's run (pre-warm): pick it up here.
+        if self.gpack is not None and not self.gpack.moves \
+                and self.gpack.has_text():
+            self.gpack._load_text()
         if st is not None and self.gpack and self.gpack.moves:
             self._enable_begin()
         # the loading bar retires when the run is finished (2026-10-23) and

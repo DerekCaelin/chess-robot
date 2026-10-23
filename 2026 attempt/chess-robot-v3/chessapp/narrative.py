@@ -856,16 +856,13 @@ def _concept_note(teller, e, s):
             top_k, top_d = k, d
     if not top_k:
         return None
-    # harvested human phrasing first (keyed by concept, polarity, colour),
-    # then the built-in banks
-    sign = "+" if top_d > 0 else "-"
-    mover = s["color"]
-    buckets = phrase_lib().get(top_k, {}).get(sign, {})
-    text = (teller.lib("%s/%s/%s" % (top_k, sign, mover), buckets.get(mover))
-            or teller.lib("%s/%s/any" % (top_k, sign), buckets.get("any")))
-    if not text:
-        pool = CONCEPT_NOTES[top_k][0 if top_d > 0 else 1]
-        text = teller.rng.choice(pool).format(Color=s["Color"])
+    # Harvested human phrasing is OFF (2026-10-23): mined sentences leaked
+    # player names ('Lasker (black) controls...') and unverifiable claims
+    # ('black has 3 center pawns') - a phrase is only safe when it can be
+    # verified against the position, which the library cannot guarantee.
+    # The banks below are templated over computed facts instead.
+    pool = CONCEPT_NOTES[top_k][0 if top_d > 0 else 1]
+    text = teller.rng.choice(pool).format(Color=s["Color"])
     return (text, text, {"kind": "concept", "concept": top_k})
 
 
