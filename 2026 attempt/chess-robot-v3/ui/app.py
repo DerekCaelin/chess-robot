@@ -4934,24 +4934,20 @@ class AnalysisHomeScreen(kit.Screen):
         tk.Label(right, text=winner, font=kit.F_BODY, bg=kit.BG,
                  fg=kit.FG).pack(anchor="w", pady=(2, 12))
 
-        # touch-sized checkboxes (2026-10-24)
+        # touch-sized checkboxes (2026-10-24): drawn boxes - Tk's checkbutton
+        # INDICATOR does not grow with the font
         self.adv_var = tk.BooleanVar(
             value=bool(settings.get("analysis.auto_advance", True)))
-        tk.Checkbutton(right, text="Auto advance", variable=self.adv_var,
-                       command=self._save_adv, font=("DejaVu Sans", 18),
-                       bg=kit.BG, fg=kit.FG, selectcolor=kit.ACCENT,
-                       activebackground=kit.BG, activeforeground=kit.FG,
-                       pady=6).pack(anchor="w", pady=(0, 4))
+        kit.checkbox(right, "Auto advance", self.adv_var,
+                     command=self._save_adv,
+                     font=("DejaVu Sans", 18)).pack(anchor="w", pady=(0, 6))
         # 'Show recommended line': the engine's preferred move as an arrow on
         # the move screens (2026-10-23)
         self.reco_var = tk.BooleanVar(
             value=bool(settings.get("analysis.show_reco", True)))
-        tk.Checkbutton(right, text="Show recommended line",
-                       variable=self.reco_var, command=self._save_reco,
-                       font=("DejaVu Sans", 18), bg=kit.BG, fg=kit.FG,
-                       selectcolor=kit.ACCENT, activebackground=kit.BG,
-                       activeforeground=kit.FG,
-                       pady=6).pack(anchor="w", pady=(0, 10))
+        kit.checkbox(right, "Show recommended line", self.reco_var,
+                     command=self._save_reco,
+                     font=("DejaVu Sans", 18)).pack(anchor="w", pady=(0, 10))
         # the voice setting sits below the checkboxes (2026-10-24), with
         # touch-sized options in the dropdown
         vrow = tk.Frame(right, bg=kit.BG)
@@ -4967,6 +4963,11 @@ class AnalysisHomeScreen(kit.Screen):
                              command=self._voice_changed)
         menu.configure(font=("DejaVu Sans", 16), bg=kit.CARD_HI, fg=kit.FG,
                        highlightthickness=0, width=14)
+        # the dropdown LIST has its own font - the widget's font never
+        # reaches the items (2026-10-24)
+        menu["menu"].configure(font=("DejaVu Sans", 18), bg=kit.CARD_HI,
+                               fg=kit.FG, activebackground=kit.ACCENT,
+                               activeforeground="#1b1e24")
         menu.pack(side="left")
         # one status line for whatever is generating right now (the stage's
         # own #/# and the animated dots), then the bar
@@ -5230,16 +5231,14 @@ class AnalysisMoveScreen(kit.Screen):
                                  bg=kit.BG, fg=kit.FG_DIM, justify="left",
                                  anchor="w", wraplength=340)
         self.next_lbl.pack(anchor="w", pady=(6, 0))
-        # 'Show recommended line': the engine's preferred move as a
-        # player-coloured arrow on the board (2026-10-23)
+        # 'Show recommended line': the engine's preferred move as an
+        # arrow on the board (2026-10-23) - drawn checkbox box
         self.reco_var = tk.BooleanVar(
             value=bool(settings.get("analysis.show_reco", True)))
-        tk.Checkbutton(right, text="Show recommended line",
-                       variable=self.reco_var, command=self._save_reco,
-                       font=("DejaVu Sans", 16), bg=kit.BG, fg=kit.FG,
-                       selectcolor=kit.ACCENT, activebackground=kit.BG,
-                       activeforeground=kit.FG,
-                       pady=4).pack(anchor="w", pady=(4, 0))
+        kit.checkbox(right, "Show recommended line", self.reco_var,
+                     command=self._save_reco,
+                     font=("DejaVu Sans", 16)).pack(anchor="w",
+                                                    pady=(4, 0))
 
         # the board fills its column's height once the layout is realized
         left.bind("<Configure>", self._fit_board)

@@ -83,6 +83,46 @@ def glyph_photo(name):
     return _GLYPH_PHOTOS[name] or None
 
 
+# Touch-sized checkboxes (2026-10-24): Tk's checkbutton INDICATOR does not
+# grow with the font, so the box is a PIL-drawn PNG (the info/pause pattern)
+# swapped on toggle.
+_CHECK_PHOTOS = {}
+
+
+def _check_photo(on):
+    name = "check_on" if on else "check_off"
+    if name not in _CHECK_PHOTOS:
+        path = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "ui", "assets", name + ".png")
+        try:
+            _CHECK_PHOTOS[name] = tk.PhotoImage(file=path)
+        except tk.TclError:
+            _CHECK_PHOTOS[name] = False
+    return _CHECK_PHOTOS[name] or None
+
+
+def checkbox(parent, text, variable, command=None, font=None, bg=BG,
+             fg=FG):
+    """A finger-sized toggle: the drawn box left of the label."""
+    img = _check_photo(bool(variable.get()))
+    b = tk.Button(parent, text=text, image=img, compound="left",
+                  bg=bg, fg=fg, activebackground=CARD_HI,
+                  activeforeground=fg, font=font or F_BODY, relief="flat",
+                  bd=0, highlightthickness=0, anchor="w", padx=6, pady=8)
+    b.image = img
+
+    def toggle():
+        variable.set(not bool(variable.get()))
+        new = _check_photo(bool(variable.get()))
+        if new is not None:
+            b.configure(image=new)
+            b.image = new
+        if command:
+            command()
+    b.configure(command=toggle)
+    return b
+
+
 def _info_photo(small=False):
     name = "info_small.png" if small else "info.png"
     if name not in _INFO_PHOTOS:
