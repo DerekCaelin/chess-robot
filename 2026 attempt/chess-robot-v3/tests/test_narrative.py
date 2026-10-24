@@ -321,6 +321,38 @@ def test_shared_text_state():
         AP._RUNS.pop((p.hash, "none"), None)
 
 
+def test_adaptive_level():
+    """Adaptive Level (2026-10-24): a game ending in CHECKMATE moves the
+    level one step toward a challenging-but-feasible opponent; a game that
+    does not end in mate is no evidence at all."""
+    from chessapp import levels as LV
+    from chessapp import settings
+    fools = ["f2f3", "e7e5", "g2g4", "d8h4"]     # black mates
+    old = (settings.get("stockfish.level"), settings.get("stockfish.adaptive"))
+    settings.set("stockfish.adaptive", True)
+    try:
+        settings.set("stockfish.level", 5)
+        settings.set("stockfish.player_elo", 1050)
+        up = LV.adapt_after_game({"moves": fools, "player_color": "black",
+                                  "started": "t1"}, force=True)
+        assert up == 6, up                 # the player delivered mate
+        settings.set("stockfish.level", 5)
+        settings.set("stockfish.player_elo", 1050)
+        down = LV.adapt_after_game({"moves": fools, "player_color": "white",
+                                    "started": "t2"}, force=True)
+        assert down == 4, down             # the player got mated
+        settings.set("stockfish.level", 5)
+        assert LV.adapt_after_game({"moves": ["e2e4", "e7e5"],
+                                    "player_color": "white",
+                                    "started": "t3"}, force=True) is None
+        # one update per game
+        assert LV.adapt_after_game({"moves": fools, "player_color": "black",
+                                    "started": "t1"}) is None
+    finally:
+        settings.set("stockfish.level", old[0])
+        settings.set("stockfish.adaptive", old[1])
+
+
 def main():
     test_spoken_san()
     test_renderings_and_variety()
@@ -333,6 +365,7 @@ def main():
     test_verdict_label_and_speech()
     test_no_it_and_verifiable_claims()
     test_shared_text_state()
+    test_adaptive_level()
     print("PASS: narrative rendering + variety + facts")
 
 

@@ -37,6 +37,7 @@ from PIL import Image, ImageTk                   # noqa: E402
 import CBstate                                   # noqa: E402
 import camera                                    # noqa: E402
 from chessapp import game_state, audio, verify_log
+from chessapp import levels as LV  # noqa: E402
 from chessapp import analysispack as AP  # noqa: E402
 from chessapp.game_controller import ChessGame  # noqa: E402
 from ui import ui_kit as kit                     # noqa: E402
@@ -5027,6 +5028,9 @@ class AnalysisHomeScreen(kit.Screen):
     def _save_adv(self):
         settings.set("analysis.auto_advance", bool(self.adv_var.get()))
 
+    def _save_adapt(self):
+        settings.set("stockfish.adaptive", bool(self.adapt_var.get()))
+
     def _save_engine(self):
         settings.set("analysis.show_engine", bool(self.engine_var.get()))
         self._update_begin()
@@ -5160,10 +5164,12 @@ class AnalysisHomeScreen(kit.Screen):
         # around while it runs)
         if self.gpack is not None:
             mv = self.gpack.live_moves or []
+            player = self.gpack.game.get("player_color") or "white"
             done = not alive
             self.chart.update_moves(
                 mv, stars=self.gpack.game.get("stars") or [],
-                turning=AP.top_turning(mv) if done else [])
+                turning=(AP.top_turning(mv, player=player) if done else []),
+                total=self.gpack.move_count(), player=player)
         if self.winfo_exists() and not self.stop:
             self.after(150, self._poll)
 
@@ -5256,13 +5262,11 @@ class AnalysisMoveScreen(kit.Screen):
         # chart sits UNDER the board (2026-10-24)
         top = tk.Frame(left, bg=kit.BG)
         top.pack(side="top", fill="both", expand=True)
-        self.wdl_bar = tk.Canvas(top, width=12, bg="#181b21",
-                                 highlightthickness=0)
-        self.wdl_bar.pack(side="left", padx=(0, 4))
+        self.score_bar = tk.Canvas(top, width=12, bg="#181b21",
+                                   highlightthickness=0)
+        self.score_bar.pack(side="left", padx=(0, 4))
         self.board = None
         self._board_col = top
-        self.chart = kit.EvalChart(left, w=396, h=100)
-        self.chart.pack(side="bottom", pady=(4, 0))
 
         nav = tk.Frame(right, bg=kit.BG)
         nav.pack(fill="x")
@@ -5372,38 +5376,24 @@ class AnalysisMoveScreen(kit.Screen):
             self.board.destroy()
         self.board = kit.BoardView(self._board_col, px=px)
         self.board.pack(side="left")
-        self.wdl_bar.configure(height=px)
+        self.score_bar.configure(height=px)
         self._show_board()
 
-    def _draw_wdl(self, wdl):
-        """The stacked win bar - the SAME numbers the commentary quotes
-        ('White's winning chances fall to 76%'): each side's pure win share
-        as its own colour, the draw share as a neutral segment between them,
-        and the PLAYER's segment always at the bottom. No labels (2026-10-23:
-        splitting draws into the colours made the bar read 90% where the text
-        said 76%)."""
-        try:
-            w, d, l = (int(x) for x in (wdl or (500, 500, 0)))
-        except (TypeError, ValueError):
-            w, d, l = 500, 500, 0
-        tot = max(1, w + d + l)
-        h = int(self.wdl_bar.cget("height") or 0) or 200
-        ww = int(self.wdl_bar.cget("width") or 12)
-        player = (self.gpack.game.get("player_color") or "white")
-        pw = w if player == "white" else l
-        light, dark, mid = "#e8e4da", "#20242c", "#6f7680"
-        mine = light if player == "white" else dark
-        theirs = dark if player == "white" else light
-        ph = int(round(h * pw / float(tot)))
-        dh = int(round(h * d / float(tot)))
-        oh = h - ph - dh
-        self.wdl_bar.delete("all")
-        y = h
-        for seg_h, col in ((ph, mine), (dh, mid), (oh, theirs)):
-            if seg_h > 0:
-                self.wdl_bar.create_rectangle(0, y - seg_h, ww, y,
-                                              fill=col, outline="")
-            y -= seg_h
+    def _draw_eval(self, m):
+        """The POSITION SCORE bar left of the board (2026-10-24): white at
+        the bottom, black at the top, split by the engine's evaluation of
+        positional strength - the same scale as the chart's axis (±1200)."""
+        cp = float(m.get("eval_cp") or 0)
+        h = int(self.score_bar.cget("height") or 0) or 200
+        ww = int(self.score_bar.cget("width") or 12)
+        v = max(-1200.0, min(1200.0, cp))
+        wh = int(round(h * (0.5 + 0.5 * v / 1200.0)))
+        self.score_bar.delete("all")
+        light, dark = "#e8e4da", "#20242c"
+        self.score_bar.create_rectangle(0, 0, ww, h - wh,
+                                        fill=dark, outline="")
+        self.score_bar.create_rectangle(0, h - wh, ww, h,
+                                        fill=light, outline="")
 
     def _show_board(self):
         if self.board is None:
@@ -5420,7 +5410,7 @@ class AnalysisMoveScreen(kit.Screen):
             tc, tr = ord(u[2]) - 97, 8 - int(u[3])
             hl = (fr, fc, tr, tc)
         self.board.draw(b.getBoard(), hl)
-        self._draw_wdl(m.get("wdl"))
+        self._draw_eval(m)
 
     def _stars(self):
         """(player_star, turn_star) for the move on screen (2026-10-24):
@@ -5459,12 +5449,6 @@ class AnalysisMoveScreen(kit.Screen):
             else:
                 self.txt.insert("end", val)
         self.txt.configure(state="disabled")
-        # the chart mirrors the review position (hidden without the engine)
-        moves = self.gpack.live_moves or []
-        self.chart.update_moves(moves if eng else [],
-                                stars=self.gpack.game.get("stars") or [],
-                                turning=AP.top_turning(moves),
-                                current=m["ply"] if eng else None)
         self.engine_btn.configure(text=("Hide analysis" if eng
                                         else "Show analysis"))
         # 'Explore engine line' is disabled without engine analysis
@@ -5542,7 +5526,7 @@ class AnalysisMoveScreen(kit.Screen):
 
     def _set_bg(self, col):
         for w in (self, self.body, self.cols, self._board_col,
-                  self._right_col, self.chart, self.wdl_bar):
+                  self._right_col, self.score_bar):
             try:
                 w.configure(bg=col)
             except tk.TclError:
@@ -5571,7 +5555,7 @@ class AnalysisMoveScreen(kit.Screen):
                 text="Engine line %d/%d: %d%s%s"
                      % (self._explore_i, len(uci), p["no"],
                         p.get("dots", ""), p["san"]))
-        self._draw_wdl(None)
+        self.score_bar.delete("all")
 
     def _toggle_engine(self):
         """Hide / display the engine analysis (evaluation, text, audio)."""
@@ -5818,6 +5802,15 @@ class SettingsScreen(kit.Screen):
                                         bg=kit.CARD_HI, fg=kit.FG, width=28,
                                         height=2)
         self.level_btn.pack(pady=6)
+        # Adaptive Level (2026-10-24): a game that ends in checkmate updates
+        # the strength estimate and re-picks the level - challenged but
+        # feasible. One step per game; draws and abandoned games count for
+        # nothing.
+        self.adapt_var = tk.BooleanVar(
+            value=bool(settings.get("stockfish.adaptive", True)))
+        kit.checkbox(col, "Adaptive Level", self.adapt_var,
+                     command=self._save_adapt,
+                     font=kit.F_BODY).pack(anchor="w", pady=(0, 6))
         self.vol_btn = kit.big_button(col, self._vol_txt(), self._volume,
                                       bg=kit.CARD_HI, fg=kit.FG, width=28,
                                       height=2)
@@ -5829,7 +5822,9 @@ class SettingsScreen(kit.Screen):
         self._refresh()
 
     def _level_txt(self):
-        return "Stockfish level: %d / 10" % settings.get("stockfish.level", 5)
+        v = int(settings.get("stockfish.level", 5))
+        # the parenthesis is the exact UCI_Elo the engine gets (2026-10-24)
+        return "Stockfish level: %d (~%d)" % (v, LV.level_elo(v))
 
     def _vol_txt(self):
         return "Volume: %d %%" % settings.get("audio.volume", 80)
@@ -5848,7 +5843,12 @@ class SettingsScreen(kit.Screen):
             settings.set("stockfish.level", int(v))
             self._refresh()
         kit.slider(self.app, "Stockfish strength level", 1, 10, 1,
-                   settings.get("stockfish.level", 5), setv, fmt="%d")
+                   settings.get("stockfish.level", 5), setv, fmt="%d",
+                   extra=lambda v: " (~%d)" % LV.level_elo(int(v)))
+
+    def _save_adapt(self):
+        settings.set("stockfish.adaptive", bool(self.adapt_var.get()))
+        self._refresh()
 
     def _volume(self):
         def setv(v):
@@ -5893,7 +5893,9 @@ class NewGameScreen(kit.Screen):
 
     def _txt(self, key):
         v = settings.get(key)
-        return ("Level %d" % v) if key == "stockfish.level" else v.capitalize()
+        if key == "stockfish.level":
+            return "Level %d (~%d)" % (int(v), LV.level_elo(int(v)))
+        return v.capitalize()
 
     def _refresh(self):
         for k, l in self.lbls.items():

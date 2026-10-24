@@ -61,6 +61,13 @@ def save_last(data=None):
     os.makedirs(os.path.dirname(LAST_PATH), exist_ok=True)
     with open(LAST_PATH, "w") as f:
         json.dump(data, f, indent=1)
+    # Adaptive Level: a game that ends in checkmate updates the strength
+    # estimate and re-picks the level (2026-10-24)
+    try:
+        from chessapp import levels
+        levels.adapt_after_game(data)
+    except Exception:
+        pass
     return data
 
 

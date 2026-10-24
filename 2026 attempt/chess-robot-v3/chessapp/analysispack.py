@@ -337,11 +337,17 @@ def generation_state(pack, voice):
     return _RUNS.get((pack.hash, voice))
 
 
-def top_turning(moves, n=3):
+def top_turning(moves, n=3, player=None, exclude_last=True):
     """The game's most consequential moves: the biggest swings in the
-    position score after a move (2026-10-24)."""
+    position score after a move - the PLAYER's moves only, and never the
+    FINAL move (a checkmate is always the biggest swing, 2026-10-24)."""
+    cand = list(moves)
+    if exclude_last and len(cand) > 1:
+        cand = cand[:-1]
+    if player:
+        cand = [m for m in cand if m.get("color") == player]
     ranked = sorted(
-        moves,
+        cand,
         key=lambda m: -abs((m.get("eval_cp") or 0)
                            - (m.get("eval_before_cp") or 0)))
     return [m["ply"] for m in ranked[:n] if m.get("ply")]

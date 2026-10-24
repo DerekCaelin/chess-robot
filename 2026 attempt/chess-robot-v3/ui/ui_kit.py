@@ -193,13 +193,14 @@ def confirm(app, title, message, on_yes, on_no=None, yes_text="Yes",
 
 
 def slider(app, title, lo, hi, step, value, on_change, fmt=None,
-           unit="", confirm_msg=None):
+           unit="", confirm_msg=None, extra=None):
     """Value editor: big +/- keys and a wide scale.
     The scale AND the +/- keys both move in exact `step` increments (dragging
     snaps to the same grid as the buttons), so you never land on an odd value
     like 1.0201. Shows the original and moving value; Cancel reverts, Done
     keeps. When confirm_msg is set the change is NOT applied live - Done first
-    asks 'Are you sure?' (for destructive edits like the arm constants)."""
+    asks 'Are you sure?' (for destructive edits like the arm constants).
+    extra(value) adds a suffix to the shown number (the Elo of a level)."""
     import math as _m
 
     def _dec(s):                       # decimals implied by the step size
@@ -226,7 +227,8 @@ def slider(app, title, lo, hi, step, value, on_change, fmt=None,
     sc.pack(pady=8)
 
     def render():
-        head.configure(text=fmt % val.get() + unit)
+        v = val.get()
+        head.configure(text=fmt % v + (extra(v) if extra else "") + unit)
 
     def push(*_ignore):        # Tk variable traces hand us (name, index, op)
         render()
@@ -435,12 +437,14 @@ class EvalChart(tk.Canvas):
         self.create_text(x, y, text="\u2605", fill=col,
                          font=("DejaVu Sans", 15))
 
-    def update_moves(self, moves, stars=(), turning=(), current=None):
+    def update_moves(self, moves, stars=(), turning=(), current=None,
+                     total=None, player="white"):
         self.delete("all")
         mid = self.h // 2
-        self.create_line(0, mid, self.w, mid, fill=self.ZERO, width=2)
-        n = max(20, len(moves))
-        span = self.w / float(n)
+        n = max(2, total or len(moves))     # the game length is KNOWN: the
+        span = self.w / float(n)            # x scale never re-computes
+        mine = "#e8e4da" if player == "white" else "#20242c"
+        theirs = "#20242c" if player == "white" else "#e8e4da"
 
         def x(ply):
             return (ply - 0.5) * span
@@ -448,11 +452,19 @@ class EvalChart(tk.Canvas):
         def y(cp):
             v = max(-1200.0, min(1200.0, float(cp or 0)))
             return mid - int((mid - 8) * v / 1200.0)
-        pts = []
-        for m in moves:
-            pts += [x(m.get("ply", len(pts) // 2 + 1)), y(m.get("eval_cp", 0))]
-        if len(pts) >= 4:
-            self.create_line(*pts, fill=self.LINE, width=3, smooth=True)
+        pts = [(x(m.get("ply", i + 1)), y(m.get("eval_cp", 0)))
+               for i, m in enumerate(moves)]
+        if pts:
+            curve = [c for p in pts for c in p]
+            # the territory split (2026-10-24): the PLAYER's colour fills
+            # everything under the line, the opponent's everything over it
+            self.create_polygon(curve + [pts[-1][0], self.h,
+                                         pts[0][0], self.h],
+                                fill=mine, outline="")
+            self.create_polygon(curve + [pts[-1][0], 0, pts[0][0], 0],
+                                fill=theirs, outline="")
+            self.create_line(*curve, fill=self.LINE, width=3, smooth=True)
+        self.create_line(0, mid, self.w, mid, fill=self.ZERO, width=2)
         starset, turnset = set(stars), set(turning)
         for m in moves:
             ply = m.get("ply", 0)

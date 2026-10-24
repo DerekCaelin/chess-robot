@@ -1478,6 +1478,8 @@ def per_move(analysis, seed=None):
         out.append({"ply": m["ply"], "no": m["no"], "color": m["color"],
                     "san": m["san"], "uci": m["uci"], "segments": segs,
                     "verdict": verdict, "next": m.get("next", ""),
+                    "next_uci": m.get("next_uci", []),
+                    "next_plies": m.get("next_plies", []),
                     "wdl": m.get("wdl"), "quality": m.get("quality", ""),
                     "best": m.get("best"),
                     "speech": speech, "words": len(speech.split())})

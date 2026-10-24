@@ -149,11 +149,9 @@ class ChessGame:
 
     def _apply_engine_level(self):
         self._put("setoption name Slow Mover value " + CBstate.slowmover)
+        from chessapp import levels as LV
         level = max(1, int(settings.get("stockfish.level", 5)))
-        elos = settings.get("stockfish.levels_elo",
-                            [450, 600, 750, 900, 1050, 1200, 1400, 1650,
-                             1950, 2400])
-        elo = elos[min(level, len(elos)) - 1]
+        elo = LV.level_elo(level)     # ONE table: the display cannot drift
         self._put("setoption name UCI_LimitStrength value true")
         self._put("setoption name UCI_Elo value %d" % elo)
         self._put("isready")
