@@ -354,14 +354,11 @@ def top_turning(moves, n=3, player=None, exclude_last=True):
 
 
 def prewarm(voice=None):
-    """Idle-time generation: if a last finished game has ungenerated work for
-    the selected voice, quietly do it in the background. Returns the state or
-    None when there is nothing to do."""
+    """Idle-time generation: if a last finished game has ungenerated work,
+    quietly do it in the background. The voices are generated whatever the
+    user picked (espeak then piper), so this is NOT gated on the selection -
+    a reboot used to find nothing started at all (2026-10-24)."""
     try:
-        from chessapp import settings
-        voice = voice or settings.get("analysis.voice", "none")
-        if voice not in ("espeak", "piper"):
-            return None
         pack = load_pack()
         if pack is None:
             return None

@@ -5880,13 +5880,23 @@ class NewGameScreen(kit.Screen):
             row.pack(pady=4)
             tk.Label(row, text=name + ":", font=kit.F_BODY, bg=kit.BG,
                      width=10, anchor="e").pack(side="left")
-            kit.big_button(row, "", lambda k=key: self._edit(k),
-                           bg=kit.CARD_HI, fg=kit.FG, width=14, height=2,
-                           font=kit.F_BODY).pack(side="left", padx=6)
-            lbl = tk.Label(row, text="", font=kit.F_BODY, bg=kit.BG,
-                           fg=kit.ACCENT, width=10, anchor="w")
-            lbl.pack(side="left")
-            self.lbls[key] = lbl
+            # the VALUE lives on the button itself (2026-10-24) - a label
+            # beside it ran off the edge
+            btn = kit.big_button(row, self._txt(key),
+                                 lambda k=key: self._edit(k),
+                                 bg=kit.CARD_HI, fg=kit.FG, width=15,
+                                 height=2, font=kit.F_BODY)
+            btn.pack(side="left", padx=6)
+            self.lbls[key] = btn
+            if key == "stockfish.level":
+                # Adaptive Level sits beneath the level button
+                self.adapt_var = tk.BooleanVar(
+                    value=bool(settings.get("stockfish.adaptive", True)))
+                kit.checkbox(col, "Adaptive Level", self.adapt_var,
+                             command=self._save_adapt,
+                             font=kit.F_BODY).pack(anchor="w",
+                                                   padx=(120, 0),
+                                                   pady=(0, 6))
         kit.big_button(col, "BEGIN", self._begin, bg=kit.GREEN, fg="#14161c",
                        height=3, width=22).pack(pady=16)
         self._refresh()
@@ -5894,12 +5904,16 @@ class NewGameScreen(kit.Screen):
     def _txt(self, key):
         v = settings.get(key)
         if key == "stockfish.level":
-            return "Level %d (~%d)" % (int(v), LV.level_elo(int(v)))
+            # just [level] ([elo]) - the row's label names it
+            return "%d (~%d)" % (int(v), LV.level_elo(int(v)))
         return v.capitalize()
 
+    def _save_adapt(self):
+        settings.set("stockfish.adaptive", bool(self.adapt_var.get()))
+
     def _refresh(self):
-        for k, l in self.lbls.items():
-            l.configure(text=self._txt(k))
+        for k, b in self.lbls.items():
+            b.configure(text=self._txt(k))
 
     def _edit(self, key):
         if key == "stockfish.level":
@@ -5907,7 +5921,8 @@ class NewGameScreen(kit.Screen):
                 settings.set(key, int(v))
                 self._refresh()
             kit.slider(self.app, "Stockfish level", 1, 10, 1,
-                       settings.get(key), setv, fmt="%d")
+                       settings.get(key), setv, fmt="%d",
+                       extra=lambda v: " (~%d)" % LV.level_elo(int(v)))
         else:
             def setv(v):
                 settings.set(key, v)
