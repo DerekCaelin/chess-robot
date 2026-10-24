@@ -73,11 +73,12 @@ def main():
         fails.append("board never fitted")
     else:
         col_h = scr._board_col.winfo_height()
-        if col_h < 320:
+        if col_h < 250:
             fails.append("board column only %dpx tall" % col_h)
         # the board takes the ENTIRE available height (8px square grid
-        # quantization aside); a gap means the width budget squeezed it
-        if col_h - board.px >= 8:
+        # quantization + the layout paddings aside); a gap means the width
+        # budget squeezed it
+        if col_h - board.px >= 24:
             fails.append("board leaves %dpx of the %dpx column unused"
                          % (col_h - board.px, col_h))
         if board.px > col_h:

@@ -333,13 +333,17 @@ def _is_endgame(board):
             or n_types(chess.ROOK, chess.BISHOP, chess.KNIGHT) <= 3)
 
 
-def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
+def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
+                 on_entry=None):
     """Walk the game with the engine and return the analysis dict.
 
     TWO passes per position (2026-10-22): MultiPV 1 at full depth for the
     verdict (the eval and the best line - MultiPV splits search effort, so a
     verdict from a MultiPV-3 search is diluted), and a cheaper MultiPV pass
-    for the candidate alternatives. Background pre-warming absorbs the time."""
+    for the candidate alternatives. Background pre-warming absorbs the time.
+
+    on_entry(entry) fires as each move is analysed, so a chart can show the
+    evaluation growing while the analysis advances (2026-10-24)."""
     own = engine is None
     eng = engine or Engine(multipv=multipv)
     board = game.board()
@@ -541,6 +545,7 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
             "concepts": concepts,
             "next": " ".join(nxt),
             "next_plies": nxt_plies,
+            "next_uci": [u for u in (cur.get("pv") or [])[:6]],
             "next_line": next_line,
             "best_line": best_line,
             "best_impact": _impact_of(best_line),
@@ -551,6 +556,8 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
                       and quality in ("good", "best")),
         })
         prev_eval, prev_mate = cur_cp, mate_after
+        if on_entry is not None:
+            on_entry(entries[-1])
 
     if progress:
         progress(len(moves), len(moves))

@@ -18,6 +18,7 @@ from chessapp import analysis as AN
 from chessapp import audio
 from chessapp import game_state
 from chessapp import narrative as NR
+from chessapp import settings
 from chessapp import voice as VO
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,6 +94,7 @@ class AnalysisPack:
         self.dir = os.path.join(CACHE, self.hash)
         self.moves = []
         self.analysis = None
+        self.live_moves = []    # grows as the analysis advances (the chart)
         self._run_id = 0
         # pick up cached text right away: another instance's background run
         # (pre-warm) may have produced it - the analysis home's Begin button
@@ -133,11 +135,14 @@ class AnalysisPack:
             b.addTextMove(u)
         return b
 
-    def generate(self, voice="none", on_progress=None, depth=18):
+    def generate(self, voice="none", on_progress=None, depth=None):
         """Staged background generation. on_progress(done, total, stage).
         Cancellable between moves; one bad move never kills the run."""
+        if depth is None:
+            depth = int(settings.get("analysis.depth", 18))
         token = self._run_id          # cancel() invalidates this run
         os.makedirs(self.dir, exist_ok=True)
+        self.live_moves = []
         if not self.has_text():
             with _text_lock(self.hash):
                 if not self.has_text():     # another voice's run may have
@@ -155,7 +160,8 @@ class AnalysisPack:
                     self.analysis = AN.analyze_game(
                         g, depth=depth,
                         progress=((lambda i, n: on_progress(i, n, "start"))
-                                  if on_progress else None))
+                                  if on_progress else None),
+                        on_entry=self.live_moves.append)
                     self.moves = NR.per_move(self.analysis)
                     with open(self.text_path(), "w") as f:
                         json.dump({"format": CACHE_FORMAT,
@@ -199,6 +205,8 @@ class AnalysisPack:
                 data = json.load(f)
             self.moves = data.get("moves", [])
             self.analysis = data.get("analysis")
+            if self.analysis:
+                self.live_moves = list(self.analysis.get("moves") or [])
         except (OSError, ValueError):
             self.moves = []
 
@@ -246,9 +254,11 @@ def _text_lock(h):
         return _TEXT_LOCKS.setdefault(h, threading.Lock())
 
 
-def generate_async(pack, voice, depth=18):
+def generate_async(pack, voice, depth=None):
     """Start (or join) the staged generation for this game+voice. Returns the
     shared state dict: {done, total, state, error, alive}."""
+    if depth is None:
+        depth = int(settings.get("analysis.depth", 18))
     key = (pack.hash, voice)
     with _LOCK:
         st = _RUNS.get(key)
@@ -292,6 +302,16 @@ def generation_state(pack, voice):
     if ts is not None and ts.get("alive"):
         return ts
     return _RUNS.get((pack.hash, voice))
+
+
+def top_turning(moves, n=3):
+    """The game's most consequential moves: the biggest swings in the
+    position score after a move (2026-10-24)."""
+    ranked = sorted(
+        moves,
+        key=lambda m: -abs((m.get("eval_cp") or 0)
+                           - (m.get("eval_before_cp") or 0)))
+    return [m["ply"] for m in ranked[:n] if m.get("ply")]
 
 
 def prewarm(voice=None):

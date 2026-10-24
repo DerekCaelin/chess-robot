@@ -42,6 +42,7 @@ class ChessGame:
         self.engine = None
         self.fmove = ""
         self.movelist = []
+        self.stars = []          # plies the player starred (2026-10-24)
         self.game_over = False
         self.result_text = None
 
@@ -120,6 +121,7 @@ class ChessGame:
                 pass
         self.fmove = ""
         self.movelist = []
+        self.stars = []
         self.game_over = False
         self.result_text = None
         self._put("ucinewgame")
@@ -136,9 +138,12 @@ class ChessGame:
                     self.movelist.append(mv)
                 settings.set("player.color",
                              saved.get("player_color", "white"))
+                self.stars = [s for s in (saved.get("stars") or [])
+                              if 1 <= s <= len(self.movelist)]
         level = settings.get("stockfish.level", 5)
         color = settings.get("player.color", "white")
-        game_state.save(self.movelist, color, level, result=None)
+        game_state.save(self.movelist, color, level, result=None,
+                        stars=self.stars)
         self._notify_board()
         return {"ok": True, "resumed": bool(resume and self.movelist)}
 
@@ -324,13 +329,30 @@ class ChessGame:
 
     # ── persistence ──────────────────────────────────────────────────────────
 
+    def toggle_star(self):
+        """Star the CURRENT move (the last one played) - the player can tap
+        this at any time during the game; the star shows again in the review
+        (2026-10-24)."""
+        ply = len(self.movelist)
+        if ply < 1:
+            return False
+        if ply in self.stars:
+            self.stars.remove(ply)
+        else:
+            self.stars.append(ply)
+        self._persist()
+        return ply in self.stars
+
+    def star_for(self, ply):
+        return ply in self.stars
+
     def _persist(self):
         """Save progress after every move; a finished game clears the save."""
         if self.game_over:
             game_state.clear()
             return
         game_state.save(self.movelist, settings.get("player.color", "white"),
-                        settings.get("stockfish.level", 5))
+                        settings.get("stockfish.level", 5), stars=self.stars)
 
     def end_game(self):
         """User chose to abandon: wipe the saved game."""
@@ -351,6 +373,7 @@ class ChessGame:
                 break
             self.movelist.pop()
             n += 1
+        self.stars = [s for s in self.stars if s <= len(self.movelist)]
         if n == 0:
             return 0
         self.fmove = " ".join(self.movelist)
@@ -358,7 +381,7 @@ class ChessGame:
         self._put("isready")
         self._get("readyok")
         game_state.save(self.movelist, settings.get("player.color", "white"),
-                        settings.get("stockfish.level", 5))
+                        settings.get("stockfish.level", 5), stars=self.stars)
         return n
 
     def board(self):

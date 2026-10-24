@@ -19,7 +19,7 @@ def exists():
     return os.path.exists(PATH)
 
 
-def save(moves, player_color, level, result=None, started=None):
+def save(moves, player_color, level, result=None, started=None, stars=None):
     os.makedirs(os.path.dirname(PATH), exist_ok=True)
     data = {
         "moves": list(moves),
@@ -27,6 +27,9 @@ def save(moves, player_color, level, result=None, started=None):
         "level": level,
         "result": result,
         "started": started or time.strftime("%Y-%m-%dT%H:%M:%S"),
+        # moves the PLAYER starred during the game (1-based ply) - shown
+        # again in the analysis review (2026-10-24)
+        "stars": sorted(set(stars or [])),
     }
     tmp = PATH + ".tmp"
     with open(tmp, "w") as f:

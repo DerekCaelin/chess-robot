@@ -413,3 +413,54 @@ class BoardView(tk.Canvas):
                                          shape[2] + 5))
             self.create_line(x0, y0, x1, y1, fill=fg, width=w,
                              arrow=tk.LAST, arrowshape=shape)
+
+
+class EvalChart(tk.Canvas):
+    """The engine's evaluation of positional strength at every move: white
+    above the middle line, black below. The PLAYER's stars are white; the
+    game's three most consequential moves are orange; the current move has
+    a marker. The chart grows as the analysis advances (2026-10-24)."""
+
+    LINE = "#c8d0dc"
+    ZERO = "#3b4252"
+    STAR_PLAYER = "#f6f2e8"
+    STAR_TURN = "#e08b3e"
+
+    def __init__(self, master, w=380, h=132, **kw):
+        super().__init__(master, width=w, height=h, bg="#181b21",
+                         highlightthickness=0, **kw)
+        self.w, self.h = w, h
+
+    def _star(self, x, y, col):
+        self.create_text(x, y, text="\u2605", fill=col,
+                         font=("DejaVu Sans", 15))
+
+    def update_moves(self, moves, stars=(), turning=(), current=None):
+        self.delete("all")
+        mid = self.h // 2
+        self.create_line(0, mid, self.w, mid, fill=self.ZERO, width=2)
+        n = max(20, len(moves))
+        span = self.w / float(n)
+
+        def x(ply):
+            return (ply - 0.5) * span
+
+        def y(cp):
+            v = max(-1200.0, min(1200.0, float(cp or 0)))
+            return mid - int((mid - 8) * v / 1200.0)
+        pts = []
+        for m in moves:
+            pts += [x(m.get("ply", len(pts) // 2 + 1)), y(m.get("eval_cp", 0))]
+        if len(pts) >= 4:
+            self.create_line(*pts, fill=self.LINE, width=3, smooth=True)
+        starset, turnset = set(stars), set(turning)
+        for m in moves:
+            ply = m.get("ply", 0)
+            px, py = x(ply), y(m.get("eval_cp", 0))
+            if ply in turnset:
+                self._star(px, py, self.STAR_TURN)
+            if ply in starset:
+                self._star(px, py, self.STAR_PLAYER)
+        if current:
+            cx = x(current)
+            self.create_line(cx, 2, cx, self.h - 2, fill=ACCENT, width=2)

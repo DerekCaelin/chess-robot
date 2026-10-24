@@ -16,6 +16,7 @@ import math
 import os
 import queue
 import random
+import shutil
 import signal
 import subprocess
 import sys
@@ -4898,6 +4899,7 @@ class AnalysisHomeScreen(kit.Screen):
     then one sound file per move starting with the first."""
 
     VOICE_KEYS = ("none", "espeak", "piper")
+    DEPTH_KEYS = ("12", "15", "18", "21")
 
     def __init__(self, app):
         super().__init__(app=app, title="Analysis")
@@ -4919,20 +4921,26 @@ class AnalysisHomeScreen(kit.Screen):
         left.pack(side="left", fill="y")
         right = tk.Frame(row, bg=kit.BG)
         right.pack(side="left", fill="both", expand=True, padx=(18, 0))
-        self._board_col = left
+        # the board on top, the evaluation chart under it (2026-10-24) -
+        # the chart grows as the analysis advances
+        top = tk.Frame(left, bg=kit.BG)
+        top.pack(side="top", fill="both", expand=True)
+        self.chart = kit.EvalChart(left, w=396, h=100)
+        self.chart.pack(side="bottom", pady=(4, 0))
+        self._board_col = top
         self._right_col = right
         self.bv = None
         left.bind("<Configure>", self._fit_board)
+        top.bind("<Configure>", self._fit_board)
 
         date = (self.gpack.game.get("started") or "")[:10]
         res = AP.game_from_state(self.gpack.game).headers.get("Result", "*")
         winner = ("White wins" if res == "1-0" else
                   "Black wins" if res == "0-1" else
                   "Draw" if res == "1/2-1/2" else "Unfinished")
-        tk.Label(right, text=date, font=("DejaVu Sans", 18, "bold"),
-                 bg=kit.BG, fg=kit.ACCENT).pack(anchor="w")
-        tk.Label(right, text=winner, font=kit.F_BODY, bg=kit.BG,
-                 fg=kit.FG).pack(anchor="w", pady=(2, 12))
+        tk.Label(right, text="%s  \u00b7  %s" % (date, winner),
+                 font=("DejaVu Sans", 16, "bold"),
+                 bg=kit.BG, fg=kit.ACCENT).pack(anchor="w", pady=(0, 12))
 
         # touch-sized checkboxes (2026-10-24): drawn boxes - Tk's checkbutton
         # INDICATOR does not grow with the font
@@ -4940,14 +4948,23 @@ class AnalysisHomeScreen(kit.Screen):
             value=bool(settings.get("analysis.auto_advance", True)))
         kit.checkbox(right, "Auto advance", self.adv_var,
                      command=self._save_adv,
-                     font=("DejaVu Sans", 18)).pack(anchor="w", pady=(0, 6))
-        # 'Show recommended line': the engine's preferred move as an arrow on
-        # the move screens (2026-10-23)
-        self.reco_var = tk.BooleanVar(
-            value=bool(settings.get("analysis.show_reco", True)))
-        kit.checkbox(right, "Show recommended line", self.reco_var,
-                     command=self._save_reco,
-                     font=("DejaVu Sans", 18)).pack(anchor="w", pady=(0, 10))
+                     font=("DejaVu Sans", 16)).pack(anchor="w", pady=(0, 6))
+        # the Stockfish depth of analysis (2026-10-24): picking a new depth
+        # throws out the stored text and audio and starts from scratch
+        drow = tk.Frame(right, bg=kit.BG)
+        drow.pack(anchor="w", pady=(0, 6))
+        tk.Label(drow, text="Engine depth", font=("DejaVu Sans", 18),
+                 bg=kit.BG, fg=kit.FG).pack(side="left", padx=(0, 8))
+        self.depth_var = tk.StringVar(value=str(
+            settings.get("analysis.depth", 18)))
+        dmenu = tk.OptionMenu(drow, self.depth_var, *self.DEPTH_KEYS,
+                              command=self._depth_changed)
+        dmenu.configure(font=("DejaVu Sans", 16), bg=kit.CARD_HI, fg=kit.FG,
+                        highlightthickness=0, width=6)
+        dmenu["menu"].configure(font=("DejaVu Sans", 18), bg=kit.CARD_HI,
+                                fg=kit.FG, activebackground=kit.ACCENT,
+                                activeforeground="#1b1e24")
+        dmenu.pack(side="left")
         # the voice setting sits below the checkboxes (2026-10-24), with
         # touch-sized options in the dropdown
         vrow = tk.Frame(right, bg=kit.BG)
@@ -4982,11 +4999,19 @@ class AnalysisHomeScreen(kit.Screen):
         self._bar_on = True
         self._draw_prog(0.0)
 
-        # Begin lives in the right column, below the options (2026-10-24)
+        # Begin lives in the right column, below the options (2026-10-24);
+        # under it, the review WITHOUT the engine overlay
         self.begin_btn = kit.big_button(right, "Begin", self._begin,
                                         bg=kit.GREEN, fg="#1b1e24",
                                         height=2, width=16, disabled=True)
         self.begin_btn.pack(anchor="w", pady=(12, 0))
+        self.noeng_btn = kit.big_button(right, "Review without engine",
+                                        lambda: self._open(0, False),
+                                        bg=kit.CARD_HI, fg=kit.FG,
+                                        height=2, width=19,
+                                        font=("DejaVu Sans", 13),
+                                        disabled=True)
+        self.noeng_btn.pack(anchor="w", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._start_generation()
         self._poll()
@@ -5002,8 +5027,20 @@ class AnalysisHomeScreen(kit.Screen):
     def _save_adv(self):
         settings.set("analysis.auto_advance", bool(self.adv_var.get()))
 
-    def _save_reco(self):
-        settings.set("analysis.show_reco", bool(self.reco_var.get()))
+    def _depth_changed(self, _=None):
+        """A new depth throws out the stored text and audio and starts over."""
+        try:
+            depth = int(self.depth_var.get())
+        except ValueError:
+            return
+        settings.set("analysis.depth", depth)
+        if self.gpack is not None:
+            self.gpack.cancel()
+            shutil.rmtree(self.gpack.dir, ignore_errors=True)
+            self.gpack.moves = []
+            self.gpack.analysis = None
+            self.gpack.live_moves = []
+            self._start_generation()
 
     def _voice_changed(self, _=None):
         settings.set("analysis.voice", self._voice_key())
@@ -5031,6 +5068,7 @@ class AnalysisHomeScreen(kit.Screen):
         h = self._board_col.winfo_height()
         if h < 120:                     # not realized yet
             return
+        h -= 12                         # the layout paddings round-trip
         avail = 780 - 12 - self._right_col.winfo_reqwidth()
         px = (max(200, min(h, avail)) // 8) * 8
         if self.bv is not None and self.bv.px == px:
@@ -5051,6 +5089,8 @@ class AnalysisHomeScreen(kit.Screen):
         try:
             self.begin_btn.configure(state="normal", bg=kit.GREEN,
                                      fg="#1b1e24")
+            self.noeng_btn.configure(state="normal", bg=kit.CARD_HI,
+                                     fg=kit.FG)
         except tk.TclError:
             pass
 
@@ -5099,6 +5139,12 @@ class AnalysisHomeScreen(kit.Screen):
             self.app.hold_awake("analysis")   # generation must not blank the
         else:                                 # panel while the player waits
             self.app.release_awake("analysis")
+        # the evaluation chart follows the analysis as it advances
+        if self.gpack is not None:
+            mv = self.gpack.live_moves or []
+            self.chart.update_moves(mv,
+                                    stars=self.gpack.game.get("stars") or [],
+                                    turning=AP.top_turning(mv))
         if self.winfo_exists() and not self.stop:
             self.after(150, self._poll)
 
@@ -5115,14 +5161,16 @@ class AnalysisHomeScreen(kit.Screen):
             return
         self._open(0)
 
-    def _open(self, idx):
+    def _open(self, idx, show_engine=True):
         if not self.gpack or not self.gpack.moves:
             return                      # nothing to show yet
         self.stop = True
         self.app.release_awake("analysis")
-        # Begin loads the first move already playing (2026-10-22)
+        # Begin loads the first move already playing (2026-10-22);
+        # 'Review without engine' opens the same review with the engine
+        # overlay hidden (2026-10-24)
         self.app.show(AnalysisMoveScreen, pack=self.gpack, idx=idx,
-                      autoplay=True)
+                      autoplay=show_engine, show_engine=show_engine)
 
     def _cleanup(self):
         self.stop = True
@@ -5143,7 +5191,7 @@ class AnalysisMoveScreen(kit.Screen):
     scaled to the text (5-10 s). Back returns to the analysis home; the last
     move offers Finish (the app home)."""
 
-    def __init__(self, app, pack, idx, autoplay=False):
+    def __init__(self, app, pack, idx, autoplay=False, show_engine=True):
         super().__init__(app=app, title="Analysis")
         self.app = app
         self.gpack = pack
@@ -5156,6 +5204,11 @@ class AnalysisMoveScreen(kit.Screen):
         self._timer = None
         self._tick = None
         self._t0 = 0.0
+        # the engine overlay can be hidden ('Review without engine') and the
+        # engine line can be explored on the board (2026-10-24)
+        self._engine_visible = bool(show_engine)
+        self._exploring = False
+        self._explore_i = 0
 
         # thin playback progress along the top
         self.bar = tk.Canvas(self.body, height=6, bg="#181b21",
@@ -5174,13 +5227,17 @@ class AnalysisMoveScreen(kit.Screen):
         right = tk.Frame(cols, bg=kit.BG)
         right.pack(side="left", fill="both", expand=True, padx=(12, 0))
         self._right_col = right
-        # the win-probability bar: thin, stacked white/black, no labels, and
-        # the PLAYER's share at the bottom (2026-10-23)
-        self.wdl_bar = tk.Canvas(left, width=12, bg="#181b21",
+        # the win bar and the board share the column top; the evaluation
+        # chart sits UNDER the board (2026-10-24)
+        top = tk.Frame(left, bg=kit.BG)
+        top.pack(side="top", fill="both", expand=True)
+        self.wdl_bar = tk.Canvas(top, width=12, bg="#181b21",
                                  highlightthickness=0)
         self.wdl_bar.pack(side="left", padx=(0, 4))
         self.board = None
-        self._board_col = left
+        self._board_col = top
+        self.chart = kit.EvalChart(left, w=396, h=100)
+        self.chart.pack(side="bottom", pady=(4, 0))
 
         nav = tk.Frame(right, bg=kit.BG)
         nav.pack(fill="x")
@@ -5217,13 +5274,17 @@ class AnalysisMoveScreen(kit.Screen):
         # 'Generating voice...' is shown only while it is needed
         self.gen_lbl = tk.Label(right, text="", font=kit.F_SMALL,
                                 bg=kit.BG, fg=kit.ACCENT, justify="center")
-        self.txt = tk.Text(right, height=3, width=28, bg="#181b21",
+        self.txt = tk.Text(right, height=2, width=28, bg="#181b21",
                            fg=kit.FG, font=("DejaVu Sans", 14), relief="flat",
                            wrap="word", padx=8, pady=6, highlightthickness=0,
                            cursor="arrow")
         self.txt.tag_config("move", font=("DejaVu Sans", 14, "bold"),
                             foreground=kit.ACCENT)
         self.txt.tag_config("icon", font=("DejaVu Sans", 15))
+        self.txt.tag_config("star", foreground="#f6f2e8",
+                            font=("DejaVu Sans", 15))
+        self.txt.tag_config("turn", foreground="#e08b3e",
+                            font=("DejaVu Sans", 15))
         self.txt.pack(fill="both", expand=True, pady=(6, 0))
         self.txt.configure(state="disabled")
         # the engine's continuation from this position, beneath the text box
@@ -5231,17 +5292,25 @@ class AnalysisMoveScreen(kit.Screen):
                                  bg=kit.BG, fg=kit.FG_DIM, justify="left",
                                  anchor="w", wraplength=340)
         self.next_lbl.pack(anchor="w", pady=(6, 0))
-        # 'Show recommended line': the engine's preferred move as an
-        # arrow on the board (2026-10-23) - drawn checkbox box
-        self.reco_var = tk.BooleanVar(
-            value=bool(settings.get("analysis.show_reco", True)))
-        kit.checkbox(right, "Show recommended line", self.reco_var,
-                     command=self._save_reco,
-                     font=("DejaVu Sans", 16)).pack(anchor="w",
-                                                    pady=(4, 0))
+        # 'Explore engine line' and the engine-analysis toggle (2026-10-24):
+        # the 'Show recommended line' checkbox is replaced by the explore
+        # mode, which walks the line itself on the board
+        self.explore_btn = kit.big_button(right, "Explore engine line",
+                                          self._explore_toggle,
+                                          bg=kit.CARD_HI, fg=kit.FG,
+                                          width=18, height=2,
+                                          font=("DejaVu Sans", 13))
+        self.explore_btn.pack(anchor="w", pady=(6, 0))
+        self.engine_btn = kit.big_button(right, "Hide analysis",
+                                         self._toggle_engine,
+                                         bg=kit.CARD_HI, fg=kit.FG,
+                                         width=18, height=2,
+                                         font=("DejaVu Sans", 13))
+        self.engine_btn.pack(anchor="w", pady=(6, 0))
 
         # the board fills its column's height once the layout is realized
         left.bind("<Configure>", self._fit_board)
+        top.bind("<Configure>", self._fit_board)
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._show()
         if autoplay:
@@ -5266,6 +5335,7 @@ class AnalysisMoveScreen(kit.Screen):
         h = self._board_col.winfo_height()
         if h < 120:                     # not realized yet
             return
+        h -= 12                         # the layout paddings round-trip
         # body inner width is 800 - 2*10 padx; the right column keeps its
         # requested width (buttons / text) plus the 12px column gap and the
         # win-probability bar (12px + gap)
@@ -5313,6 +5383,9 @@ class AnalysisMoveScreen(kit.Screen):
     def _show_board(self):
         if self.board is None:
             return
+        if self._exploring:
+            self._explore_draw()
+            return
         m = self.move
         b = self.gpack.board_after(m["ply"])
         u = m.get("uci") or ""
@@ -5321,47 +5394,67 @@ class AnalysisMoveScreen(kit.Screen):
             fc, fr = ord(u[0]) - 97, 8 - int(u[1])
             tc, tr = ord(u[2]) - 97, 8 - int(u[3])
             hl = (fr, fc, tr, tc)
-        # the recommended move: the 'Show recommended line' visualization,
-        # always for mistakes and blunders - a line in the colour of the
-        # side whose move it is (2026-10-23), so the robot's own missed
-        # moves show in its colour too
-        arrow = None
-        bu = m.get("best") or ""
-        show_reco = bool(settings.get("analysis.show_reco", True))
-        if (len(bu) >= 4 and bu != u
-                and (show_reco
-                     or m.get("quality") in ("mistake", "blunder"))):
-            fc, fr = ord(bu[0]) - 97, 8 - int(bu[1])
-            tc, tr = ord(bu[2]) - 97, 8 - int(bu[3])
-            arrow = (fr, fc, tr, tc)
-        side = m.get("color") or "white"
-        self.board.draw(b.getBoard(), hl, arrow=arrow,
-                        arrow_fg=("#f6f2e8" if side == "white"
-                                  else "#16181d"))
+        self.board.draw(b.getBoard(), hl)
         self._draw_wdl(m.get("wdl"))
+
+    def _stars(self):
+        """(player_star, turn_star) for the move on screen (2026-10-24):
+        white = the player starred it during the game, orange = one of the
+        three moves where the position score changed most."""
+        stars = set(self.gpack.game.get("stars") or [])
+        turn = set(AP.top_turning(self.gpack.live_moves or []))
+        ply = self.move["ply"]
+        return (ply in stars, ply in turn)
 
     def _show(self):
         m = self.move
         self._show_board()
-        self.verdict_lbl.configure(text=m.get("verdict") or "")
+        eng = self._engine_visible
+        self.verdict_lbl.configure(text=(m.get("verdict") or "") if eng
+                                   else "")
         self.next_lbl.configure(text=("Next: " + m["next"])
-                                if m.get("next") else "")
+                                if (eng and m.get("next") and
+                                    not self._exploring) else "")
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
+        pstar, tstar = self._stars()
+        if tstar:
+            self.txt.insert("end", "\u2605", ("turn",))
+        if pstar:
+            self.txt.insert("end", "\u2605", ("star",))
+        if tstar or pstar:
+            self.txt.insert("end", " ")
         for kind, val in m["segments"]:
             if kind == "icon":
                 self.txt.insert("end", val + " ", ("icon",))
             elif kind == "move":
                 self.txt.insert("end", val, ("move",))
+            elif not eng:
+                continue        # the comment itself is engine analysis
             else:
                 self.txt.insert("end", val)
         self.txt.configure(state="disabled")
+        # the chart mirrors the review position (hidden without the engine)
+        moves = self.gpack.live_moves or []
+        self.chart.update_moves(moves if eng else [],
+                                stars=self.gpack.game.get("stars") or [],
+                                turning=AP.top_turning(moves),
+                                current=m["ply"] if eng else None)
+        self.engine_btn.configure(text=("Hide analysis" if eng
+                                        else "Show analysis"))
+        # 'Explore engine line' is disabled without engine analysis
+        if not self._exploring:
+            ok = bool(self.move.get("next_uci") or [])
+            self.explore_btn.configure(
+                state="normal" if ok else "disabled",
+                bg=kit.CARD_HI if ok else kit.CARD,
+                fg=kit.FG if ok else kit.FG_DIM)
         self.back_btn.configure(state="normal" if self.idx > 0 else "disabled",
                                 bg=kit.CARD_HI if self.idx > 0 else kit.CARD,
                                 fg=kit.FG if self.idx > 0 else kit.FG_DIM)
         last = self.idx >= len(self.gpack.moves) - 1
         self.finish_btn.pack_forget()
-        if last:
+        if last and not self._exploring:
             self.finish_btn.pack(side="left", padx=6)
         self._refresh_next()
         self._fit_board()      # the Finish button changes the width budget
@@ -5372,10 +5465,6 @@ class AnalysisMoveScreen(kit.Screen):
         self.next_btn.configure(state="normal" if ok else "disabled",
                                 bg=kit.CARD_HI if ok else kit.CARD,
                                 fg=kit.FG if ok else kit.FG_DIM)
-
-    def _save_reco(self):
-        settings.set("analysis.show_reco", bool(self.reco_var.get()))
-        self._show_board()
 
     def _sound_ready(self):
         return self.gpack.ready(self.move["ply"], self.voice)
@@ -5404,12 +5493,76 @@ class AnalysisMoveScreen(kit.Screen):
         else:
             self._play()
 
+    # engine line exploration (2026-10-24) ----------------------------------
+    def _explore_toggle(self):
+        if self._exploring:
+            self._explore_exit()
+            return
+        if not (self.move.get("next_uci") or []):
+            return                      # no engine analysis to explore
+        self._exploring = True
+        self._explore_i = 0
+        self._set_bg("#2c313b")         # lighter grey: this is the ENGINE's
+        self.explore_btn.configure(text="Back to game",
+                                   bg=kit.ACCENT, fg="#1b1e24")
+        self._show()
+
+    def _explore_exit(self):
+        """One-button escape back to the actual game."""
+        self._exploring = False
+        self._set_bg(kit.BG)
+        self.explore_btn.configure(text="Explore engine line",
+                                   bg=kit.CARD_HI, fg=kit.FG)
+        self._show()
+
+    def _set_bg(self, col):
+        for w in (self, self.body, self.cols, self._board_col,
+                  self._right_col, self.chart, self.wdl_bar):
+            try:
+                w.configure(bg=col)
+            except tk.TclError:
+                pass
+
+    def _explore_draw(self):
+        """The engine's continuation on the board, step by step."""
+        m = self.move
+        uci = m.get("next_uci") or []
+        b = self.gpack.board_after(m["ply"])
+        hl = None
+        for u in uci[:self._explore_i]:
+            if b.addTextMove(u) is False:
+                break
+            if len(u) >= 4:
+                fc, fr = ord(u[0]) - 97, 8 - int(u[1])
+                tc, tr = ord(u[2]) - 97, 8 - int(u[3])
+                hl = (fr, fc, tr, tc)
+        self.board.draw(b.getBoard(), hl)
+        pl = m.get("next_plies") or []
+        if self._explore_i == 0:
+            self.verdict_lbl.configure(text="Engine line:")
+        elif self._explore_i <= len(pl):
+            p = pl[self._explore_i - 1]
+            self.verdict_lbl.configure(
+                text="Engine line %d/%d: %d%s%s"
+                     % (self._explore_i, len(uci), p["no"],
+                        p.get("dots", ""), p["san"]))
+        self._draw_wdl(None)
+
+    def _toggle_engine(self):
+        """Hide / display the engine analysis (evaluation, text, audio)."""
+        self._engine_visible = not self._engine_visible
+        if not self._engine_visible and self._exploring:
+            self._explore_exit()
+            return
+        self._show()
+
     def _play(self):
         self._playing = True
         self._paused = False
         self._set_play_glyph(True)
         self._start_timer()
-        if self.voice != "none" and self._sound_ready():
+        if (self._engine_visible and self.voice != "none"
+                and self._sound_ready()):
             audio.play_wav(self.gpack.wav_path(self.move["ply"], self.voice))
             self._t0 = time.time()
         self._refresh_next()
@@ -5483,6 +5636,11 @@ class AnalysisMoveScreen(kit.Screen):
             self._start_timer()
 
     def _prev(self):
+        if self._exploring:
+            if self._explore_i > 0:
+                self._explore_i -= 1
+                self._explore_draw()
+            return
         if self.idx <= 0:
             return
         self.idx -= 1
@@ -5493,6 +5651,12 @@ class AnalysisMoveScreen(kit.Screen):
             self._start_timer()
 
     def _next(self):
+        if self._exploring:
+            uci = self.move.get("next_uci") or []
+            if self._explore_i < len(uci):
+                self._explore_i += 1
+                self._explore_draw()
+            return
         if self.idx >= len(self.gpack.moves) - 1:
             return
         self._advance()
@@ -5798,6 +5962,11 @@ class GameScreen(kit.Screen):
                                  fg=kit.FG, relief="flat", font=kit.F_BODY,
                                  state="disabled", highlightthickness=0)
         self.moves_txt.pack(anchor="w")
+        # star the CURRENT move at any time during the game (2026-10-24)
+        self.star_btn = kit.big_button(side, "\u2606 Star move",
+                                       self._toggle_star, bg=kit.CARD_HI,
+                                       fg=kit.FG, width=12, height=2)
+        self.star_btn.pack(anchor="w", pady=(10, 0))
         kit.big_button(side, "Menu", self._menu, bg=kit.CARD_HI, fg=kit.FG,
                        width=12, height=2).pack(anchor="w", pady=(10, 0))
         threading.Thread(target=self._worker, daemon=True).start()
@@ -6046,12 +6215,31 @@ class GameScreen(kit.Screen):
     def _refresh_moves(self):
         self.moves_txt.configure(state="normal")
         self.moves_txt.delete("1.0", "end")
+        stars = set(self.game.stars)
         for i in range(0, len(self.game.movelist), 2):
             pair = self.game.movelist[i:i + 2]
-            self.moves_txt.insert("end", "%2d. %-6s %-6s\n" % (
-                i // 2 + 1, pair[0], pair[1] if len(pair) > 1 else ""))
+
+            def cell(uci, ply):
+                if not uci:
+                    return ""
+                return uci + ("\u2605" if ply in stars else "")
+            self.moves_txt.insert("end", "%2d. %-7s %-7s\n" % (
+                i // 2 + 1, cell(pair[0], i + 1),
+                cell(pair[1], i + 2) if len(pair) > 1 else ""))
         self.moves_txt.see("end")
         self.moves_txt.configure(state="disabled")
+        # the star button reflects the CURRENT move (the last played)
+        ply = len(self.game.movelist)
+        on = ply in stars and ply > 0
+        self.star_btn.configure(
+            text=("\u2605 Starred" if on else "\u2606 Star move"),
+            bg=(kit.ACCENT if on else kit.CARD_HI),
+            fg=("#1b1e24" if on else kit.FG),
+            state="normal" if ply > 0 else "disabled")
+
+    def _toggle_star(self):
+        self.game.toggle_star()
+        self._refresh_moves()
 
     # menu --------------------------------------------------------------------
 
