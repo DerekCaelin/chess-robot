@@ -962,24 +962,32 @@ def _contrast_pair(e, teller, s):
 
 def _reply_threat(e, teller, s):
     """What the opponent is ready to do next - only from the prediction line
-    shown on screen, and only when it carries a named tactical event."""
+    shown on screen, and saying WHAT the tactic is (2026-10-24): a pin names
+    the pinned piece and its target, a fork names both pieces. The move
+    itself is the source - 'White threatens 6.Bg5, pinning the knight on f6
+    to the queen'."""
     plies = e.get("next_plies") or []
     if not plies:
         return None
     p = plies[0]
     if p.get("color") == e["color"]:
         return None                    # should not happen - be safe
-    ev = []
-    if "check" in p.get("kinds", []) or p.get("check"):
-        ev.append("check")
-    if "fork" in p.get("kinds", []):
-        ev.append("a fork")
-    if "pin" in p.get("kinds", []):
-        ev.append("a pin")
-    if not ev:
+    parts = []
+    if p.get("check"):
+        parts.append("giving check")
+    for f in (p.get("facts") or []):
+        if f.get("kind") == "pin":
+            parts.append("pinning the %s on %s to the %s"
+                         % (f.get("piece", "piece"), f.get("square", "?"),
+                            f.get("target", "piece")))
+        elif f.get("kind") == "fork":
+            parts.append("forking the %s and the %s"
+                         % (f.get("first", "pieces"),
+                            f.get("second", "pieces")))
+    if not parts:
         return None
     move_disp = "%d%s%s" % (p["no"], p.get("dots", ""), p["san"])
-    tail = " with " + " and ".join(ev) if ev else ""
+    tail = ", " + ", ".join(parts)
     text = "%s threatens %s%s." % (s["opponent"], move_disp, tail)
     spk = "%s threatens %s%s." % (s["opponent"], spoken_san(p["san"]),
                                   tail)
@@ -1216,8 +1224,11 @@ def build_events(analysis, teller):
             th = _reply_threat(e, teller, s)
             if th:
                 extras.append(th)
-        # the other moves the engine considered
-        if not extras:
+        # the other moves the engine considered - only where the verdict is
+        # itself negative: under 'A mistake' the list reads as 'what to have
+        # considered', while under 'A good move' it second-guesses a move the
+        # analysis just approved (2026-10-24)
+        if not extras and q in ("inaccuracy", "mistake", "blunder"):
             al = _alternatives_pair(e, teller, s)
             if al:
                 extras.append(al)

@@ -506,7 +506,8 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
             try:
                 mv2 = chess.Move.from_uci(u)
                 san2 = nb.san(mv2)
-                kinds = [kk for kk, _ in CF.move_facts(nb, mv2)]
+                facts2 = [{"kind": kk, **slots}
+                          for kk, slots in CF.move_facts(nb, mv2)]
             except (ValueError, AssertionError):
                 break
             n = (plays + k) // 2 + 1
@@ -515,7 +516,7 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None):
             nxt_plies.append({"san": san2, "no": n, "dots": dots,
                               "color": ("white" if nb.turn == chess.WHITE
                                         else "black"),
-                              "kinds": kinds,
+                              "facts": facts2,
                               "check": nb.gives_check(mv2),
                               "capture": nb.is_capture(mv2)})
             nb.push(mv2)
