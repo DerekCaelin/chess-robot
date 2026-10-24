@@ -201,9 +201,19 @@ def test_pack_picks_up_cached_text():
         os.makedirs(a.dir, exist_ok=True)
         with open(a.text_path(), "w") as f:
             json.dump({"format": AP.CACHE_FORMAT,
+                       "code": AP._code_digest(),
                        "moves": [{"ply": 1}, {"ply": 2}], "analysis": {}}, f)
         b = AP.AnalysisPack(game)          # the screen's own instance
         assert b.moves, "second instance did not pick up the cached text"
+        # a text cache written by OTHER code is stale and must regenerate
+        # (2026-10-24: forgetting to bump the format kept serving old text)
+        with open(a.text_path(), "w") as f:
+            json.dump({"format": AP.CACHE_FORMAT,
+                       "code": "000000000000",
+                       "moves": [{"ply": 1}, {"ply": 2}], "analysis": {}}, f)
+        c = AP.AnalysisPack(game)
+        assert not c.moves and not c.has_text(), \
+            "a cache from other code must be treated as stale"
     finally:
         AP.CACHE = old
 

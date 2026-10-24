@@ -33,6 +33,24 @@ VOICE_LABELS = {"none": "None (fastest)", "espeak": "espeak (fast)",
 CACHE_FORMAT = 5
 
 
+def _code_digest():
+    """Digest of the sources that PRODUCE the text. A cached text.json is
+    stale the moment any of them changes - and forgetting to bump
+    CACHE_FORMAT kept serving old text after code changes (2026-10-24).
+    This makes staleness impossible: change the code, regenerate."""
+    import hashlib
+    h = hashlib.md5()
+    for name in ("analysis.py", "narrative.py", "chessfacts.py",
+                 "chesspos.py", "openings.py"):
+        try:
+            with open(os.path.join(os.path.dirname(__file__), name),
+                      "rb") as f:
+                h.update(f.read())
+        except OSError:
+            pass
+    return h.hexdigest()[:12]
+
+
 def game_hash(game):
     return hashlib.sha1(json.dumps(game, sort_keys=True).encode()
                         ).hexdigest()[:12]
@@ -98,7 +116,9 @@ class AnalysisPack:
             return False
         try:
             with open(self.text_path()) as f:
-                return json.load(f).get("format") == CACHE_FORMAT
+                data = json.load(f)
+            return (data.get("format") == CACHE_FORMAT
+                    and data.get("code") == _code_digest())
         except (OSError, ValueError):
             return False
 
@@ -139,6 +159,7 @@ class AnalysisPack:
                     self.moves = NR.per_move(self.analysis)
                     with open(self.text_path(), "w") as f:
                         json.dump({"format": CACHE_FORMAT,
+                                   "code": _code_digest(),
                                    "moves": self.moves,
                                    "analysis": AN.analysis_to_jsonable(
                                        self.analysis)},
