@@ -6004,13 +6004,19 @@ class GameScreen(kit.Screen):
                                  fg=kit.FG, relief="flat", font=kit.F_BODY,
                                  state="disabled", highlightthickness=0)
         self.moves_txt.pack(anchor="w")
-        # star the CURRENT move at any time during the game (2026-10-24)
-        self.star_btn = kit.big_button(side, "\u2606 Star move",
+        # the move list scrolls by finger drag once it outgrows the space
+        self.moves_txt.bind("<Button-1>", self._drag_start)
+        self.moves_txt.bind("<B1-Motion>", self._drag_move)
+        # Menu and Star move sit BELOW the move list (2026-10-24), standard
+        # height
+        brow = tk.Frame(side, bg=kit.BG)
+        brow.pack(anchor="w", pady=(10, 0))
+        self.star_btn = kit.big_button(brow, "\u2606 Star move",
                                        self._toggle_star, bg=kit.CARD_HI,
-                                       fg=kit.FG, width=12, height=2)
-        self.star_btn.pack(anchor="w", pady=(10, 0))
-        kit.big_button(side, "Menu", self._menu, bg=kit.CARD_HI, fg=kit.FG,
-                       width=12, height=2).pack(anchor="w", pady=(10, 0))
+                                       fg=kit.FG, width=10, height=1)
+        self.star_btn.pack(side="left")
+        kit.big_button(brow, "Menu", self._menu, bg=kit.CARD_HI, fg=kit.FG,
+                       width=8, height=1).pack(side="left", padx=(8, 0))
         threading.Thread(target=self._worker, daemon=True).start()
         self._poll()
 
@@ -6282,6 +6288,18 @@ class GameScreen(kit.Screen):
     def _toggle_star(self):
         self.game.toggle_star()
         self._refresh_moves()
+
+    def _drag_start(self, e):
+        self._drag_y = e.y
+
+    def _drag_move(self, e):
+        """Finger-drag scrolling for the move list (2026-10-24)."""
+        dy = getattr(self, "_drag_y", e.y) - e.y
+        self._drag_y = e.y
+        try:
+            self.moves_txt.yview_scroll(int(dy / 8), "units")
+        except tk.TclError:
+            pass
 
     # menu --------------------------------------------------------------------
 
