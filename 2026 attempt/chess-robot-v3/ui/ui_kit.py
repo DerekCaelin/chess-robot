@@ -103,24 +103,25 @@ def _check_photo(on):
 
 def checkbox(parent, text, variable, command=None, font=None, bg=BG,
              fg=FG):
-    """A finger-sized toggle: the drawn box left of the label."""
+    """A CHECKBOX: the drawn box + the label (2026-10-24). Not a button -
+    a flat label the player taps. Tk's own indicator never grows with the
+    font, so the box is the PIL-drawn PNG, swapped on toggle."""
     img = _check_photo(bool(variable.get()))
-    b = tk.Button(parent, text=text, image=img, compound="left",
-                  bg=bg, fg=fg, activebackground=CARD_HI,
-                  activeforeground=fg, font=font or F_BODY, relief="flat",
-                  bd=0, highlightthickness=0, anchor="w", padx=6, pady=8)
-    b.image = img
+    lbl = tk.Label(parent, text=text, image=img, compound="left",
+                   bg=bg, fg=fg, font=font or F_BODY,
+                   anchor="w", padx=6, pady=6, cursor="hand2")
+    lbl.image = img
 
-    def toggle():
+    def toggle(_event=None):
         variable.set(not bool(variable.get()))
         new = _check_photo(bool(variable.get()))
         if new is not None:
-            b.configure(image=new)
-            b.image = new
+            lbl.configure(image=new)
+            lbl.image = new
         if command:
             command()
-    b.configure(command=toggle)
-    return b
+    lbl.bind("<Button-1>", toggle)
+    return lbl
 
 
 def _info_photo(small=False):
