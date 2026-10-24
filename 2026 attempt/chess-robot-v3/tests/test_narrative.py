@@ -171,13 +171,20 @@ def test_pack_stale_sounds():
              "segments": [], "speech": "", "words": 0}]
         states = []
         pk.generate(voice="none",
-                    on_progress=lambda d, n, s: states.append((d, n, s)))
+                    on_progress=lambda d, n, s, v="": states.append(
+                        (d, n, s, v)))
         assert seen.get("wavs") == [], seen
         assert pk.has_text(), "text cache not written"
         # the engine reports its own progress under 'start'; the text stage
         # ends at n/n so the bar reads full at the handover
-        assert states[0] == (1, 2, "start"), states
-        assert states[-1] == (2, 2, "text"), states
+        assert states[0] == (1, 2, "start", ""), states
+        assert (2, 2, "text", "") in states, states
+        # BOTH voices generate in the background whatever the user picked,
+        # espeak first
+        assert any(s[2] == "audio" and s[3] == "espeak" for s in states), states
+        assert any(s[2] == "audio" and s[3] == "piper" for s in states), states
+        assert states.index((2, 2, "text", "")) < min(
+            i for i, s in enumerate(states) if s[2] == "audio"), states
     finally:
         AP.CACHE = old_cache
         AN.analyze_game = old_an

@@ -696,7 +696,8 @@ def _line_pair(teller, e, s):
     scr_series = ", ".join(scr)
     spk_series = spk[0] + (", followed by " + ", ".join(spk[1:])
                            if len(spk) > 1 else "")
-    if marks:
+    if marks and concl.get("kind") != "mate":
+        # a fork or pin on a mating line is noise - the mate says it all
         note = marks[0]
         scr_series += " (%s)" % note
         spk_series += ", with a %s" % note
@@ -987,6 +988,13 @@ def _reply_threat(e, teller, s):
     if p.get("color") == e["color"]:
         return None                    # should not happen - be safe
     parts = []
+    if p["san"].endswith("#"):
+        # checkmate says it all - a fork on the mating move helps nobody
+        text = "%s threatens checkmate with %d%s%s." % (
+            s["opponent"], p["no"], p.get("dots", ""), p["san"])
+        spk = "%s threatens checkmate with %s." % (s["opponent"],
+                                                   spoken_san(p["san"]))
+        return (text, spk, {})
     if p.get("check") and not p["san"].endswith(("+", "#")):
         # the SAN already says 'with check' / 'checkmate' when marked
         parts.append("giving check")

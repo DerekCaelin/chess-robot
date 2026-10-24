@@ -4942,6 +4942,14 @@ class AnalysisHomeScreen(kit.Screen):
                  font=("DejaVu Sans", 16, "bold"),
                  bg=kit.BG, fg=kit.ACCENT).pack(anchor="w", pady=(0, 12))
 
+        # the review MODE lives with the other options (2026-10-24): with the
+        # engine analysis off the review shows just the moves and the stars,
+        # and Begin needs no engine text at all
+        self.engine_var = tk.BooleanVar(
+            value=bool(settings.get("analysis.show_engine", True)))
+        kit.checkbox(right, "Display Engine analysis", self.engine_var,
+                     command=self._save_engine,
+                     font=("DejaVu Sans", 16)).pack(anchor="w", pady=(0, 6))
         # touch-sized checkboxes (2026-10-24): drawn boxes - Tk's checkbutton
         # INDICATOR does not grow with the font
         self.adv_var = tk.BooleanVar(
@@ -4999,19 +5007,11 @@ class AnalysisHomeScreen(kit.Screen):
         self._bar_on = True
         self._draw_prog(0.0)
 
-        # Begin lives in the right column, below the options (2026-10-24);
-        # under it, the review WITHOUT the engine overlay
+        # Begin lives in the right column, below the options (2026-10-24)
         self.begin_btn = kit.big_button(right, "Begin", self._begin,
                                         bg=kit.GREEN, fg="#1b1e24",
                                         height=2, width=16, disabled=True)
         self.begin_btn.pack(anchor="w", pady=(12, 0))
-        self.noeng_btn = kit.big_button(right, "Review without engine",
-                                        lambda: self._open(0, False),
-                                        bg=kit.CARD_HI, fg=kit.FG,
-                                        height=2, width=19,
-                                        font=("DejaVu Sans", 13),
-                                        disabled=True)
-        self.noeng_btn.pack(anchor="w", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._start_generation()
         self._poll()
@@ -5026,6 +5026,26 @@ class AnalysisHomeScreen(kit.Screen):
 
     def _save_adv(self):
         settings.set("analysis.auto_advance", bool(self.adv_var.get()))
+
+    def _save_engine(self):
+        settings.set("analysis.show_engine", bool(self.engine_var.get()))
+        self._update_begin()
+
+    def _update_begin(self):
+        """Begin: the moves-only review needs no engine text at all; the full
+        review waits for the text. The voice rule is the LOOSER one: missing
+        sounds are the 'proceed without voice' modal's business (2026-10-24)."""
+        ready = (self.gpack is not None
+                 and (not self.engine_var.get() or bool(self.gpack.moves)))
+        try:
+            if ready:
+                self.begin_btn.configure(state="normal", bg=kit.GREEN,
+                                         fg="#1b1e24")
+            else:
+                self.begin_btn.configure(state="disabled", bg=kit.CARD,
+                                         fg=kit.FG_DIM)
+        except tk.TclError:
+            pass
 
     def _depth_changed(self, _=None):
         """A new depth throws out the stored text and audio and starts over."""
@@ -5044,9 +5064,8 @@ class AnalysisHomeScreen(kit.Screen):
 
     def _voice_changed(self, _=None):
         settings.set("analysis.voice", self._voice_key())
-        # halt the old voice's run (its finished files are kept) and start
-        # the new one
-        self.gpack.cancel()
+        # the background generation covers BOTH voices - switching just picks
+        # what PLAYBACK uses, nothing to cancel or restart (2026-10-24)
         self._start_generation()
 
     # generation ------------------------------------------------------------
@@ -5086,13 +5105,7 @@ class AnalysisHomeScreen(kit.Screen):
                                        outline="")
 
     def _enable_begin(self):
-        try:
-            self.begin_btn.configure(state="normal", bg=kit.GREEN,
-                                     fg="#1b1e24")
-            self.noeng_btn.configure(state="normal", bg=kit.CARD_HI,
-                                     fg=kit.FG)
-        except tk.TclError:
-            pass
+        self._update_begin()
 
     def _poll(self):
         voice = self._voice_key()
@@ -5107,8 +5120,11 @@ class AnalysisHomeScreen(kit.Screen):
         if alive and not st.get("error"):
             d, t = st.get("done", 0), st.get("total", 0)
             if st.get("state") == "audio":
+                # BOTH voices generate in the background: name the one at
+                # work (espeak first, then piper)
+                av = st.get("voice") or voice
                 self.prog_lbl.configure(
-                    text="Generating %s audio (%d/%d)%s" % (voice, d, t, dots))
+                    text="Generating %s audio (%d/%d)%s" % (av, d, t, dots))
             else:
                 self.prog_lbl.configure(
                     text="Generating text (%d/%d)%s" % (d, t, dots))
@@ -5139,12 +5155,15 @@ class AnalysisHomeScreen(kit.Screen):
             self.app.hold_awake("analysis")   # generation must not blank the
         else:                                 # panel while the player waits
             self.app.release_awake("analysis")
-        # the evaluation chart follows the analysis as it advances
+        # the evaluation chart follows the analysis as it advances; the three
+        # turning-point marks wait for the analysis to COMPLETE (they move
+        # around while it runs)
         if self.gpack is not None:
             mv = self.gpack.live_moves or []
-            self.chart.update_moves(mv,
-                                    stars=self.gpack.game.get("stars") or [],
-                                    turning=AP.top_turning(mv))
+            done = not alive
+            self.chart.update_moves(
+                mv, stars=self.gpack.game.get("stars") or [],
+                turning=AP.top_turning(mv) if done else [])
         if self.winfo_exists() and not self.stop:
             self.after(150, self._poll)
 
@@ -5161,16 +5180,18 @@ class AnalysisHomeScreen(kit.Screen):
             return
         self._open(0)
 
-    def _open(self, idx, show_engine=True):
-        if not self.gpack or not self.gpack.moves:
-            return                      # nothing to show yet
+    def _open(self, idx):
+        if not self.gpack:
+            return
+        if not self.gpack.moves and self.engine_var.get():
+            return                      # the full review needs the text
+        # Begin loads the first move already playing (2026-10-22); the review
+        # shows the engine analysis per the checkbox (2026-10-24)
         self.stop = True
         self.app.release_awake("analysis")
-        # Begin loads the first move already playing (2026-10-22);
-        # 'Review without engine' opens the same review with the engine
-        # overlay hidden (2026-10-24)
         self.app.show(AnalysisMoveScreen, pack=self.gpack, idx=idx,
-                      autoplay=show_engine, show_engine=show_engine)
+                      autoplay=bool(self.engine_var.get()),
+                      show_engine=bool(self.engine_var.get()))
 
     def _cleanup(self):
         self.stop = True
@@ -5195,6 +5216,10 @@ class AnalysisMoveScreen(kit.Screen):
         super().__init__(app=app, title="Analysis")
         self.app = app
         self.gpack = pack
+        # the review runs on raw game data too (the moves-only mode before
+        # the analysis exists, 2026-10-24)
+        if not pack.moves:
+            pack.moves = pack.review_moves()
         self.idx = max(0, min(idx, len(pack.moves) - 1))
         self.voice = settings.get("analysis.voice", "none")
         self.adv = bool(settings.get("analysis.auto_advance", True))

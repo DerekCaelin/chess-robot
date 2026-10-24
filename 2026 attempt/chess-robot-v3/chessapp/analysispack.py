@@ -127,6 +127,37 @@ class AnalysisPack:
     def move_count(self):
         return len(self.game.get("moves", []))
 
+    def review_moves(self):
+        """The per-move packages when the analysis exists; otherwise the raw
+        game moves as minimal entries (number + notation + stars), so the
+        review runs before - or without - the engine (2026-10-24)."""
+        if self.moves:
+            return self.moves
+        out = []
+        try:
+            b = chess.Board()
+            for i, u in enumerate(self.game.get("moves") or []):
+                try:
+                    mv = chess.Move.from_uci(u)
+                    san = b.san(mv)
+                    b.push(mv)
+                except (ValueError, AssertionError):
+                    break
+                col = "white" if i % 2 == 0 else "black"
+                out.append({
+                    "ply": i + 1, "no": i // 2 + 1, "color": col,
+                    "san": san, "uci": u,
+                    "segments": [("icon", NR.glyph_of(san)),
+                                 ("move", "%d%s%s" % (i // 2 + 1,
+                                                      "." if col == "white"
+                                                      else "...", san))],
+                    "verdict": "", "next": "", "wdl": None,
+                    "quality": "", "best": None, "next_uci": [],
+                    "speech": "", "words": 0})
+        except Exception:
+            return out
+        return out
+
     def board_after(self, upto):
         """ChessBoard layout after `upto` plies (for the board widget)."""
         from ChessBoard import ChessBoard
@@ -159,7 +190,7 @@ class AnalysisPack:
                     g = game_from_state(self.game)
                     self.analysis = AN.analyze_game(
                         g, depth=depth,
-                        progress=((lambda i, n: on_progress(i, n, "start"))
+                        progress=((lambda i, n: on_progress(i, n, "start", ""))
                                   if on_progress else None),
                         on_entry=self.live_moves.append)
                     self.moves = NR.per_move(self.analysis)
@@ -174,29 +205,31 @@ class AnalysisPack:
             self._load_text()
         if on_progress:
             n = max(1, len(self.moves))
-            on_progress(n, n, "text")     # the text stage ends at n/n
-        if voice in ("espeak", "piper"):
+            on_progress(n, n, "text", "")   # the text stage ends at n/n
+        # THE VOICES GENERATE IN THE BACKGROUND WHATEVER THE USER PICKED -
+        # espeak first (it is fast), then piper - so switching to voice
+        # analysis later finds the work already done (2026-10-24)
+        for v in ("espeak", "piper"):
             total = max(1, len(self.moves))
             for i, m in enumerate(self.moves):
                 if self._run_id != token:
-                    break
-                out = self.wav_path(m["ply"], voice)
+                    return self.moves
+                out = self.wav_path(m["ply"], v)
                 if not os.path.exists(out):
                     speech = (m.get("speech") or "").strip()
-                    if not speech:
-                        continue
-                    try:
-                        if voice == "espeak":
-                            VO.synth_espeak(speech, out)
-                        else:
-                            VO.synth_piper(speech, out,
-                                           model=VO.PIPER_MODELS["alba"])
-                    except Exception as e:
-                        # one bad line must not stop the rest of the game
-                        print("voice: move %d failed: %s" % (m["ply"], e))
-                        continue
+                    if speech:
+                        try:
+                            if v == "espeak":
+                                VO.synth_espeak(speech, out)
+                            else:
+                                VO.synth_piper(speech, out,
+                                               model=VO.PIPER_MODELS["alba"])
+                        except Exception as e:
+                            # one bad line must not stop the rest of the game
+                            print("voice: move %d failed: %s" % (m["ply"], e))
+                            continue
                 if on_progress:
-                    on_progress(i + 1, total, "audio")
+                    on_progress(i + 1, total, "audio", v)
         return self.moves
 
     def _load_text(self):
@@ -265,12 +298,12 @@ def generate_async(pack, voice, depth=None):
         if st is not None and st.get("alive"):
             return st
         st = {"done": 0, "total": max(1, pack.move_count()),
-              "state": "start", "error": None, "alive": True}
+              "state": "start", "voice": "", "error": None, "alive": True}
         _RUNS[key] = st
 
     def run():
-        def prog(d, n, s):
-            st.update(done=d, total=n, state=s)
+        def prog(d, n, s, v=""):
+            st.update(done=d, total=n, state=s, voice=v)
             if s in ("start", "text"):
                 ts = _TEXT_STATE.setdefault(
                     pack.hash, {"done": 0,
@@ -329,9 +362,10 @@ def prewarm(voice=None):
         # stale analysis/commentary (old cache format) is work too
         if not pack.has_text():
             return generate_async(pack, voice)
-        # already complete?
+        # already complete? BOTH voices are generated in the background now
         n = pack.move_count()
-        if n and all(pack.ready(i + 1, voice) for i in range(n)):
+        if n and all(pack.ready(i + 1, v) for i in range(n)
+                     for v in ("espeak", "piper")):
             return None
         return generate_async(pack, voice)
     except Exception:
