@@ -462,6 +462,13 @@ LINE_LEAD = [
     ("{Color} could have played",),
     ("Better was",),
 ]
+# a VARIATION leads differently: the series includes the opponent's replies,
+# so "White could have played e4, e6, Nc3..." is not true of it (2026-10-24)
+LINE_LEAD_LONG = [
+    ("A better line would have been",),
+    ("A better continuation was",),
+    ("The line was",),
+]
 
 # phase transitions
 PHASE_TO_MID = ["As the early game transitions to the mid game,",
@@ -510,7 +517,8 @@ TEMPLATES = {"intro": INTRO, "quiet": QUIET, "praise": PRAISE,
              "blunder_swing_wdl": BLUNDER_SWING_WDL,
              "turning_good": TURNING_GOOD, "turning_bad": TURNING_BAD,
              "decision": DECISION, "finish": FINISH,
-             "opening": OPENING_LINES, "line_lead": LINE_LEAD}
+             "opening": OPENING_LINES, "line_lead": LINE_LEAD,
+             "line_lead_long": LINE_LEAD_LONG}
 for _k, _v in VERDICT_SHORT.items():
     TEMPLATES["verdict_" + _k] = _v
 for _arc in OUTRO_MATE:
@@ -666,10 +674,16 @@ def _line_pair(teller, e, s):
     if len(plies) < 2:
         return None
     concl = bl.get("concl") or {}
-    lead = teller.pick("line_lead", 1)[0].format(**s)
+    # the series is a VARIATION with both sides replying: lead it as a line
+    # and number the moves, matching the prediction style
+    lead = teller.pick("line_lead_long", 1)[0].format(**s)
     scr, spk, marks = [], [], []
+    base_no = e["no"]
     for i, pl in enumerate(plies):
-        w_scr, w_spk = pl["san"], spoken_san(pl["san"])
+        num = base_no + i // 2
+        dots = "." if pl.get("color") == "white" else "..."
+        w_scr = "%d%s%s" % (num, dots, pl["san"])
+        w_spk = spoken_san(pl["san"])
         if pl.get("forced"):
             w_scr += " (forced)"
             if i:
@@ -973,7 +987,8 @@ def _reply_threat(e, teller, s):
     if p.get("color") == e["color"]:
         return None                    # should not happen - be safe
     parts = []
-    if p.get("check"):
+    if p.get("check") and not p["san"].endswith(("+", "#")):
+        # the SAN already says 'with check' / 'checkmate' when marked
         parts.append("giving check")
     for f in (p.get("facts") or []):
         if f.get("kind") == "pin":

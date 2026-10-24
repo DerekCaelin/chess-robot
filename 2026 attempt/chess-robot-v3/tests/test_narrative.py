@@ -271,10 +271,16 @@ def test_no_it_and_verifiable_claims():
     if "threatens" in joined:
         # every threatened move must appear in that move's prediction line
         for m, text in zip(pm, texts):
+            head = "".join(v for k, v in m["segments"] if k == "move")
             for mm in re.findall(r"threatens ([A-Z][^ ,.]+)", text):
                 assert mm in (m.get("next") or "") or \
                     mm.replace("+", "") in (m.get("next") or ""), \
                     (mm, m.get("next"), text)
+            # a 'with [move]' at the end may also be the move on screen
+            # itself ('Black enters the King's Pawn Game with 1...e5')
+            for mm in re.findall(r"with (\d+\.\S+?)[.!?]?$", text, re.M):
+                assert mm in (m.get("next") or "") or mm in head, \
+                    (mm, m.get("next"), head, text)
 
 
 def test_shared_text_state():
