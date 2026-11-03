@@ -174,7 +174,11 @@ def _capture_opencv(path):
         cap.read()
 
     ok, frame = cap.read()
-    cap.release()
+    close_camera(cap)      # NOT cap.release(): only close_camera frees the
+                           # process lock - a bare release left the lock held
+                           # and every later capture failed 'camera
+                           # unavailable' (2026-11-03, the soak test: 1 of 40
+                           # captures succeeded)
 
     if not ok:
         print("camera.capture_still: read() returned no frame")
