@@ -431,6 +431,114 @@ def _resolve_windows(img, windows):
     return outer if _valid(outer, w, h) else None
 
 
+def _lattice(peaks, n_lines=9):
+    """Fit the 9 evenly-spaced lattice lines of a chessboard axis to the
+    detected seam positions, tolerating lines the grain ate. Returns the
+    full 9-line list or None."""
+    peaks = sorted(int(p) for p in peaks)
+    if len(peaks) < 4:
+        return None
+    span = peaks[-1] - peaks[0]
+    n = n_lines - 1
+    pitch = span / float(n)
+    err = 0.0
+    for p in peaks:
+        err += abs(peaks[0] + round((p - peaks[0]) / pitch) * pitch - p)
+    if err > 1.0 * pitch:             # the peaks are not this lattice
+        return None
+    return [peaks[0] + k * pitch for k in range(n_lines)]
+
+
+def _line_peaks(mask, axis):
+    """The line positions of a seam mask along one axis (the seams are
+    closed first so the dashed grain gaps do not split a line)."""
+    kern = (1, 25) if axis == 0 else (25, 1)
+    closed = cv2.morphologyEx(
+        mask, cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_RECT, kern))
+    v = closed.sum(axis=axis).astype(float)
+    thr = float(v.max()) * 0.25      # the table's grain raises the max
+    out = []
+    for i in range(1, len(v) - 1):
+        if v[i] > thr and v[i] >= v[i - 1] and v[i] >= v[i + 1]:
+            if not out or i - out[-1] > 50:   # one peak per seam
+                out.append(i)
+    return out
+
+
+def _seam_parity(grey, pts):
+    """How checkerboard-like the lattice's squares actually are (0..1):
+    the share of adjacent square pairs that agree on light/dark parity.
+    A seam grid in ordinary wood scores near 0.5; the gold board's tone
+    parity scores ~0.98 even though its brightness contrast is tiny."""
+    v = pts.reshape(7, 7, 2)
+    cells = []
+    for r in range(8):
+        row = []
+        for c in range(8):
+            # the cell's corners from the lattice (extrapolating the edges)
+            def gx(rr, cc):
+                rr = min(6, max(0, rr))
+                cc = min(6, max(0, cc))
+                return v[rr][cc]
+            p = [gx(r - 1, c - 1), gx(r - 1, c), gx(r, c - 1), gx(r, c)]
+            xs = [q[0] for q in p]
+            ys = [q[1] for q in p]
+            x0, x1 = int(min(xs) + 6), int(max(xs) - 6)
+            y0, y1 = int(min(ys) + 6), int(max(ys) - 6)
+            if x1 <= x0 or y1 <= y0 or y0 < 0 or x0 < 0 \
+                    or y1 >= grey.shape[0] or x1 >= grey.shape[1]:
+                row.append(None)
+                continue
+            row.append(float(np.median(grey[y0:y1, x0:x1])))
+        cells.append(row)
+    ok = tot = 0
+    for r in range(8):
+        for c in range(8):
+            for dr, dc in ((0, 1), (1, 0)):
+                rr, cc = r + dr, c + dc
+                if rr < 8 and cc < 8 and cells[r][c] is not None \
+                        and cells[rr][cc] is not None:
+                    tot += 1
+                    if (cells[r][c] > cells[rr][cc]) == ((r + c) % 2 == 0):
+                        ok += 1
+    return ok / float(tot) if tot else 0.0
+
+
+def _detect_seam_lattice(img):
+    """Thin-dark-seam lattice (2026-11-03).
+
+    A board whose squares differ in WOOD TONE rather than light/dark (the
+    gold board) has no usable checkerboard contrast: the grain swings more
+    within a square than the parity does between squares, so every
+    checkerboard detector - classic or SB - sees only noise.  The SEAMS
+    between the squares, however, binarise cleanly.  Extract the seam grid,
+    fit the 9x9 lattice through it (tolerating lines the grain ate), and
+    intersect it into the 7x7 internal corners."""
+    grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # the seams are thin dark lines: the adaptive threshold sees them (the
+    # square tones are too close to split, and that is exactly the point)
+    th = cv2.adaptiveThreshold(cv2.GaussianBlur(grey, (0, 0), 3), 255,
+                               cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                               cv2.THRESH_BINARY, 31, 5)
+    seams = 255 - th                  # seam pixels are white now
+    vert = _lattice(_line_peaks(seams, 0))
+    horiz = _lattice(_line_peaks(seams, 1))
+    if vert is None or horiz is None:
+        return None
+    # the 7x7 INTERNAL corners: the inner grid lines' intersections
+    vx, hy = vert[1:-1], horiz[1:-1]
+    pts = np.array([[x, y] for y in hy for x in vx], dtype=np.float32)
+    cv2.cornerSubPix(grey, pts, (11, 11), (-1, -1),
+                     (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+                      30, 0.001))
+    # the lattice must BE a checkerboard, not just a grid: ordinary wood
+    # seams score near 0.5, tone-parity boards score high
+    if _seam_parity(grey, pts) < 0.62:
+        return None
+    return pts
+
+
 def detect_corners(img):
     """Return the 4 board corners (ordered, pixel coords) or None."""
     h, w = img.shape[:2]
@@ -442,6 +550,20 @@ def detect_corners(img):
             corners = None
         if corners is not None and _valid(corners, w, h):
             return corners
+    # Stage 1b: the seam lattice (tone-boards: gold wood squares whose grain
+    # drowns the checkerboard contrast, 2026-11-03).
+    try:
+        pts = _detect_seam_lattice(img)
+        if pts is not None:
+            corners = _outer_from_homography(
+                pts, [float(i) for i in range(1, 8)],
+                [float(i) for i in range(1, 8)])
+        else:
+            corners = None
+    except Exception:
+        corners = None
+    if corners is not None and _valid(corners, w, h):
+        return corners
     # Stage 2: partial-window lattice solver (shadows / glare / big squares).
     try:
         corners = _resolve_windows(img, _detect_windows(img))
