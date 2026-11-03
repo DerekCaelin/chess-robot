@@ -226,6 +226,8 @@ class CalibrationEngine:
         self._shape = frame.shape
         h, w = frame.shape[:2]
         res = bd.detect_board(frame)
+        if res is None:
+            self._dump_fail(frame)
         if res is not None:
             res = name_by_position(res)
         self.raw_found = res is not None
@@ -235,6 +237,35 @@ class CalibrationEngine:
                                                self.pending_click,
                                                self._shape))
             self.pending_click = None
+
+    def _dump_fail(self, frame):
+        """Debug (2026-11-03): keep a failing frame and say which detection
+        stage gave up - the tone board's live failures were invisible
+        without it."""
+        n = getattr(self, "_fail_n", 0)
+        self._fail_n = n + 1
+        if n % 30 != 0:
+            return
+        try:
+            cv2.imwrite("/tmp/live_detect_fail.png", frame)
+            grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            th = cv2.adaptiveThreshold(
+                cv2.GaussianBlur(grey, (0, 0), 3), 255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 5)
+            seams = 255 - th
+            vp = bd._line_peaks(seams, 0)
+            hp = bd._line_peaks(seams, 1)
+            vl = bd._lattice(vp)
+            hl = bd._lattice(hp)
+            pts = bd._detect_seam_lattice(frame)
+            print("live_calibrate: no detection - seam peaks v=%d h=%d | "
+                  "lattice v=%s h=%s | validated=%s | frame saved to "
+                  "/tmp/live_detect_fail.png"
+                  % (len(vp), len(hp), "ok" if vl else "no",
+                     "ok" if hl else "no", "ok" if pts is not None else "no"),
+                  flush=True)
+        except Exception as e:
+            print("live_calibrate: debug dump failed:", e, flush=True)
 
     def overlay(self, frame):
         return _draw_overlay(frame, self.stab.committed, self.click_pos,
