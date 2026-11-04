@@ -539,6 +539,41 @@ def _detect_seam_lattice(img):
     return pts
 
 
+_DEBUG_FAILS = [0]
+
+
+def _debug_dump(img):
+    """Keep a failing frame and say which stage gave up (2026-11-04): the
+    live failures were invisible without a look at the frame. Every 30th
+    failure, so a stuck loop does not fill the disk."""
+    _DEBUG_FAILS[0] += 1
+    if _DEBUG_FAILS[0] % 30 != 1:
+        return
+    try:
+        path = "/tmp/board_detect_fail.png"
+        cv2.imwrite(path, img)
+        grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        th = cv2.adaptiveThreshold(cv2.GaussianBlur(grey, (0, 0), 3), 255,
+                                   cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                   cv2.THRESH_BINARY, 31, 5)
+        seams = 255 - th
+        vp = _line_peaks(seams, 0)
+        hp = _line_peaks(seams, 1)
+        vl, hl = _lattice(vp), _lattice(hp)
+        pts = None
+        try:
+            pts = _detect_seam_lattice(img)
+        except Exception:
+            pass
+        print("board_autodetect: no board found - seam peaks v=%d h=%d | "
+              "lattice v=%s h=%s | validated=%s | frame saved to %s"
+              % (len(vp), len(hp), "ok" if vl else "no",
+                 "ok" if hl else "no", "ok" if pts is not None else "no",
+              path), flush=True)
+    except Exception as e:
+        print("board_autodetect: debug dump failed:", e, flush=True)
+
+
 def detect_corners(img):
     """Return the 4 board corners (ordered, pixel coords) or None."""
     h, w = img.shape[:2]
@@ -571,6 +606,7 @@ def detect_corners(img):
         corners = None
     if corners is not None and _valid(corners, w, h):
         return corners
+    _debug_dump(img)
     return None
 
 
