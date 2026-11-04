@@ -5243,6 +5243,13 @@ class AnalysisMoveScreen(kit.Screen):
         self._engine_visible = bool(show_engine)
         self._exploring = False
         self._explore_i = 0
+        # the what-if board (2026-11-04): test an alternate move from the
+        # position before the reviewed move and watch the engine react
+        self._testing = False
+        self._test_from = None
+        self._test_board = None
+        self._test_engine = None
+        self._test_stop = False
 
         # thin playback progress along the top
         self.bar = tk.Canvas(self.body, height=6, bg="#181b21",
@@ -5324,15 +5331,19 @@ class AnalysisMoveScreen(kit.Screen):
                                  bg=kit.BG, fg=kit.FG_DIM, justify="left",
                                  anchor="w", wraplength=340)
         self.next_lbl.pack(anchor="w", pady=(6, 0))
-        # 'Explore engine line' and the engine-analysis toggle (2026-10-24):
-        # the 'Show recommended line' checkbox is replaced by the explore
-        # mode, which walks the line itself on the board
-        self.explore_btn = kit.big_button(right, "Explore engine line",
+        # 'Engine' mode (2026-11-04): the engine's own line, and a what-if
+        # board where the player can test an alternate move
+        self.explore_btn = kit.big_button(right, "Engine",
                                           self._explore_toggle,
                                           bg=kit.CARD_HI, fg=kit.FG,
                                           width=18, height=2,
                                           font=("DejaVu Sans", 13))
         self.explore_btn.pack(anchor="w", pady=(6, 0))
+        self.test_btn = kit.big_button(right, "Test alternate",
+                                       self._test_start,
+                                       bg=kit.CARD_HI, fg=kit.FG,
+                                       width=18, height=2,
+                                       font=("DejaVu Sans", 13))
         self.engine_btn = kit.big_button(right, "Hide analysis",
                                          self._toggle_engine,
                                          bg=kit.CARD_HI, fg=kit.FG,
@@ -5525,13 +5536,23 @@ class AnalysisMoveScreen(kit.Screen):
         self._set_bg("#2c313b")         # lighter grey: this is the ENGINE's
         self.explore_btn.configure(text="Back to game",
                                    bg=kit.ACCENT, fg="#1b1e24")
+        self.test_btn.pack(anchor="w", pady=(6, 0))
         self._show()
 
     def _explore_exit(self):
         """One-button escape back to the actual game."""
+        self._stop_test_engine()
+        self._testing = False
+        self._test_from = None
+        try:
+            self.board.unbind("<Button-1>")
+            self.reset_btn.pack_forget()
+        except Exception:
+            pass
+        self.test_btn.pack_forget()
         self._exploring = False
         self._set_bg(kit.BG)
-        self.explore_btn.configure(text="Explore engine line",
+        self.explore_btn.configure(text="Engine",
                                    bg=kit.CARD_HI, fg=kit.FG)
         self._show()
 
@@ -5592,6 +5613,150 @@ class AnalysisMoveScreen(kit.Screen):
         if not self._engine_visible and self._exploring:
             self._explore_exit()
             return
+        self._show()
+
+    # the what-if board (2026-11-04) -----------------------------------------
+    def _test_start(self):
+        """Reset the board to just after the previous player moved - the
+        position the reviewed move was made from - and let the player try
+        an alternate. The engine answers live."""
+        if not self._exploring:
+            return
+        self._stop_test_engine()
+        self._testing = True
+        self._test_from = None
+        m = self.move
+        import chess
+        b = chess.Board()
+        for u in (self.gpack.game.get("moves") or [])[:m["ply"] - 1]:
+            try:
+                b.push_uci(u)
+            except ValueError:
+                break
+        self._test_board = b
+        self.test_btn.pack_forget()
+        self.reset_btn = kit.big_button(self._right_col, "Reset",
+                                        self._test_reset, bg=kit.CARD_HI,
+                                        fg=kit.FG, width=18, height=2,
+                                        font=("DejaVu Sans", 13))
+        self.reset_btn.pack(anchor="w", pady=(6, 0))
+        self.board.bind("<Button-1>", self._board_tap)
+        self.verdict_lbl.configure(text="Your move:")
+        self._test_draw()
+        self._test_info(None)
+
+    def _test_draw(self, hl=None):
+        import ChessBoard
+        cb = ChessBoard.ChessBoard()
+        for u in self._test_board.move_stack:
+            cb.addTextMove(u.uci())
+        self.board.draw(cb.getBoard(), hl)
+
+    def _board_tap(self, ev):
+        """Tap a piece, then its destination - the engine replies live."""
+        if not self._testing or self._test_board is None:
+            return
+        sq = self.board.sq
+        col, row = ev.x // sq, ev.y // sq
+        if not (0 <= col < 8 and 0 <= row < 8):
+            return
+        import chess
+        to = chess.square(col, 7 - row)
+
+        def hl_of(square):
+            r, c = 7 - chess.square_rank(square), chess.square_file(square)
+            return (r, c, r, c)
+        if self._test_from is None:
+            p = self._test_board.piece_at(to)
+            if p is not None and p.color == self._test_board.turn:
+                self._test_from = to
+                self._test_draw(hl=hl_of(to))
+            return
+        mv = chess.Move(self._test_from, to)
+        if mv not in self._test_board.legal_moves:
+            # an illegal destination: treat it as a new selection
+            p = self._test_board.piece_at(to)
+            self._test_from = (to if p is not None
+                               and p.color == self._test_board.turn else None)
+            self._test_draw(hl=hl_of(to) if self._test_from else None)
+            return
+        self._test_from = None
+        self._test_board.push(mv)
+        self._test_draw(hl=hl_of(mv.to_square))
+        self._test_engine_run()
+
+    def _test_info(self, rec, depth=None):
+        """The engine's reaction: the impact of the move, the projected line
+        and the depth it is reading at - updated as the depth progresses."""
+        b = self._test_board
+        if b is None:
+            return
+        words = AN._eval_words(rec.get("cp", 0)) if rec else ""
+        pv = ""
+        if rec and rec.get("pv"):
+            import chess
+            nb = b.copy()
+            parts = []
+            for u in rec["pv"][:8]:
+                try:
+                    mv = chess.Move.from_uci(u)
+                    parts.append(nb.san(mv))
+                    nb.push(mv)
+                except Exception:
+                    break
+            pv = " ".join(parts)
+        self.verdict_lbl.configure(
+            text="Engine (depth %s):" % (depth if depth else "..."))
+        self.txt.configure(state="normal")
+        self.txt.delete("1.0", "end")
+        lines = []
+        if words:
+            lines.append("The move leaves the position at %s." % words)
+        if pv:
+            lines.append("The projected line: " + pv + ".")
+        self.txt.insert("end", "  ".join(lines))
+        self.txt.configure(state="disabled")
+
+    def _test_engine_run(self):
+        """Deepening search on the what-if position, reporting as it goes."""
+        self._stop_test_engine()
+        import chess
+        fen = self._test_board.fen()
+        depth_box = {}
+
+        def on_info(depth, rec):
+            depth_box["d"] = depth
+            depth_box["rec"] = rec
+            try:
+                self.after(0, lambda: self._test_info(rec, depth))
+            except Exception:
+                pass
+
+        def run():
+            try:
+                eng = AN.Engine(multipv=1)
+                depth_box["eng"] = eng
+                eng.analyse_live(fen, on_info, max_depth=30,
+                                 stop=lambda: self._test_stop)
+                eng.close()
+            except Exception as e:
+                print("test-alternate engine:", e)
+        self._test_stop = False
+        threading.Thread(target=run, daemon=True).start()
+
+    def _stop_test_engine(self):
+        self._test_stop = True
+
+    def _test_reset(self):
+        """Back to the initial state - the position the move was played from."""
+        self._stop_test_engine()
+        self._testing = False
+        self._test_from = None
+        try:
+            self.reset_btn.pack_forget()
+        except Exception:
+            pass
+        self.test_btn.pack(anchor="w", pady=(6, 0))
         self._show()
 
     def _play(self):
@@ -5716,6 +5881,7 @@ class AnalysisMoveScreen(kit.Screen):
 
     def _cleanup(self):
         self.stop = True
+        self._stop_test_engine()
         self._stop_timer()
         audio.stop_wav()
         self.app.release_awake("analysis-move")

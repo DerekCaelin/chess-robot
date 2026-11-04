@@ -131,7 +131,40 @@ class Engine:
             if wdl is not None:
                 wdl = (wdl[2], wdl[1], wdl[0])
         return {"multipv": mp, "cp": cp, "mate": mate, "wdl": wdl,
+                "depth": (int(parts[parts.index("depth") + 1])
+                          if "depth" in parts else 0),
                 "pv": parts[parts.index("pv") + 1:]}
+
+    def analyse_live(self, fen, on_info, max_depth=30, stop=None):
+        """Deepening search with live reports (2026-11-04). on_info(depth,
+        rec) is called as the engine goes deeper; rec is the usual
+        {cp, mate, wdl, pv} in WHITE POV. Stops at max_depth, when stop()
+        says so, or when the engine finishes."""
+        self._put("ucinewgame")
+        self._put("isready")
+        self._wait("readyok")
+        self._put("position fen " + fen)
+        self._put("go infinite")
+        turn = chess.WHITE if fen.split()[1] == "w" else chess.BLACK
+        try:
+            while True:
+                if stop is not None and stop():
+                    self._put("stop")
+                line = self.p.stdout.readline()
+                if not line:
+                    raise RuntimeError("engine died mid-search")
+                line = line.strip()
+                if line.startswith("bestmove"):
+                    return
+                rec = self._parse_info(line, turn)
+                if rec is None:
+                    continue
+                on_info(rec.get("depth", 0), rec)
+                if max_depth and rec.get("depth", 0) >= max_depth:
+                    self._put("stop")
+        finally:
+            # drain whatever the engine still owes after 'stop'
+            pass
 
     def close(self):
         try:
