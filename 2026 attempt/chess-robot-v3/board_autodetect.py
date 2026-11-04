@@ -577,16 +577,11 @@ def _debug_dump(img):
 def detect_corners(img):
     """Return the 4 board corners (ordered, pixel coords) or None."""
     h, w = img.shape[:2]
-    # Stage 1: classic full-band paths (fast, exact when they work).
-    for fn in (_detect_chessboard, _detect_middle_band):
-        try:
-            corners = fn(img)
-        except Exception:
-            corners = None
-        if corners is not None and _valid(corners, w, h):
-            return corners
-    # Stage 1b: the seam lattice (tone-boards: gold wood squares whose grain
-    # drowns the checkerboard contrast, 2026-11-03).
+    # Stage 1: the seam lattice FIRST (2026-11-04). It costs ~20 ms and is
+    # the only thing that sees a tone board; the classic checkerboard
+    # attempts cost ~1 s per frame and were being paid BEFORE it, which made
+    # the calibration take minutes. The parity validation keeps ordinary
+    # wood from false-triggering, so the classic paths still get their turn.
     try:
         pts = _detect_seam_lattice(img)
         if pts is not None:
@@ -599,7 +594,15 @@ def detect_corners(img):
         corners = None
     if corners is not None and _valid(corners, w, h):
         return corners
-    # Stage 2: partial-window lattice solver (shadows / glare / big squares).
+    # Stage 2: classic full-band paths (exact when they work).
+    for fn in (_detect_chessboard, _detect_middle_band):
+        try:
+            corners = fn(img)
+        except Exception:
+            corners = None
+        if corners is not None and _valid(corners, w, h):
+            return corners
+    # Stage 3: partial-window lattice solver (shadows / glare / big squares).
     try:
         corners = _resolve_windows(img, _detect_windows(img))
     except Exception:
