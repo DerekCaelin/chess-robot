@@ -666,7 +666,10 @@ class CalibCameraScreen(kit.Screen):
             return          # screen closed; _pump shows "Waiting for camera"
         self._cap = cap
         try:
-            for _ in range(20):
+            # exposure/wb are PINNED by lock_camera, so the warm-up only has
+            # to flush stale frames - 20 was seconds of standing around
+            # (2026-11-04)
+            for _ in range(8):
                 cap.read()
 
             # Board detection is EXPENSIVE (seconds on the 3B).  Running it
@@ -684,7 +687,7 @@ class CalibCameraScreen(kit.Screen):
                             self.engine.detect(f)
                         except Exception as e:
                             print("camera screen detect failed:", e)
-                    time.sleep(0.5)
+                    time.sleep(0.15)   # the seam detector is fast - keep up
 
             threading.Thread(target=detect_loop, daemon=True).start()
             while not self._stop:
