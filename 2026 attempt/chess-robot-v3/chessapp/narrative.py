@@ -1451,19 +1451,21 @@ def per_move(analysis, seed=None):
             if ev["kind"] == "finish":
                 line = head_spk
             elif body_sp and not head_spk.endswith("!") \
-                    and teller.rng.random() < 0.35:
+                    and say_verdict and teller.rng.random() < 0.35:
                 # vary when the move is mentioned: 'with [move]' ends the
-                # first sentence instead of the move leading it
+                # VERDICT instead of the move leading it. Only the verdict -
+                # appending it to a threat note produced nonsense like
+                # 'pinning the pawn on a2 to the rook with pawn to c3'
+                # (2026-11-04).
                 first, _dot, rest = body_sp.partition(". ")
                 first = first.rstrip(".").strip()
-                if " with " in first:
-                    # the sentence already names a move - leave the move in
-                    # front rather than say 'with' twice
-                    line = head_spk + ". " + body_sp
-                else:
+                v = (m.get("verdict") or "").rstrip(".").strip()
+                if v and first == v:
                     line = "%s with %s." % (first, spoken_san(m["san"]))
                     if rest:
                         line += " " + rest
+                else:
+                    line = head_spk + ". " + body_sp
             elif body_sp:
                 line = head_spk + (" " if head_spk.endswith("!") else ". ") \
                     + body_sp
