@@ -4900,7 +4900,7 @@ class AnalysisHomeScreen(kit.Screen):
     then one sound file per move starting with the first."""
 
     VOICE_KEYS = ("none", "espeak", "piper")
-    DEPTH_KEYS = ("12", "15", "18", "21")
+    DEPTH_KEYS = ("12", "15", "18", "21", "24", "27", "30")
 
     def __init__(self, app):
         super().__init__(app=app, title="Analysis")
@@ -5453,7 +5453,7 @@ class AnalysisMoveScreen(kit.Screen):
                                         else "Show analysis"))
         # 'Explore engine line' is disabled without engine analysis
         if not self._exploring:
-            ok = bool(self.move.get("next_uci") or [])
+            ok = bool(self._line_uci())
             self.explore_btn.configure(
                 state="normal" if ok else "disabled",
                 bg=kit.CARD_HI if ok else kit.CARD,
@@ -5470,7 +5470,10 @@ class AnalysisMoveScreen(kit.Screen):
         self._draw_bar(0.0)
 
     def _refresh_next(self):
-        ok = self.idx < len(self.gpack.moves) - 1
+        if self._exploring:
+            ok = self._explore_i < len(self._line_uci())
+        else:
+            ok = self.idx < len(self.gpack.moves) - 1
         self.next_btn.configure(state="normal" if ok else "disabled",
                                 bg=kit.CARD_HI if ok else kit.CARD,
                                 fg=kit.FG if ok else kit.FG_DIM)
@@ -5503,11 +5506,16 @@ class AnalysisMoveScreen(kit.Screen):
             self._play()
 
     # engine line exploration (2026-10-24) ----------------------------------
+    def _line_uci(self):
+        """The engine's OWN line: the best play from the end of the previous
+        turn - what the player should have moved (2026-11-04)."""
+        return self.move.get("best_uci") or []
+
     def _explore_toggle(self):
         if self._exploring:
             self._explore_exit()
             return
-        if not (self.move.get("next_uci") or []):
+        if not self._line_uci():
             return                      # no engine analysis to explore
         self._exploring = True
         self._explore_i = 0
@@ -5533,10 +5541,14 @@ class AnalysisMoveScreen(kit.Screen):
                 pass
 
     def _explore_draw(self):
-        """The engine's continuation on the board, step by step."""
+        """The engine's own line on the board, step by step - the best play
+        from the end of the previous turn - with the FULL line in the text
+        window, the examined move bold (2026-11-04)."""
         m = self.move
-        uci = m.get("next_uci") or []
-        b = self.gpack.board_after(m["ply"])
+        uci = self._line_uci()
+        # the line starts BEFORE the player's move: the engine's answer to
+        # 'what should have been played'
+        b = self.gpack.board_after(max(0, m["ply"] - 1))
         hl = None
         for u in uci[:self._explore_i]:
             if b.addTextMove(u) is False:
@@ -5546,16 +5558,30 @@ class AnalysisMoveScreen(kit.Screen):
                 tc, tr = ord(u[2]) - 97, 8 - int(u[3])
                 hl = (fr, fc, tr, tc)
         self.board.draw(b.getBoard(), hl)
-        pl = m.get("next_plies") or []
+        pl = (m.get("best_line") or {}).get("plies") or []
+        base, col0 = m.get("no", 1), m.get("color", "white")
+        # the whole projected line in the window where the player's move is
+        # listed, with the move being examined in bold
+        self.txt.configure(state="normal")
+        self.txt.delete("1.0", "end")
+        self.txt.insert("end", "Engine line:  ", ("icon",))
+        for i, p in enumerate(pl):
+            num = base + i // 2
+            dots = "." if p.get("color", col0) == "white" else "..."
+            tag = ("move",) if i == self._explore_i - 1 else ()
+            self.txt.insert("end", "%d%s%s " % (num, dots, p["san"]), tag)
+        self.txt.configure(state="disabled")
         if self._explore_i == 0:
             self.verdict_lbl.configure(text="Engine line:")
         elif self._explore_i <= len(pl):
             p = pl[self._explore_i - 1]
+            num = base + (self._explore_i - 1) // 2
+            dots = "." if p.get("color", col0) == "white" else "..."
             self.verdict_lbl.configure(
                 text="Engine line %d/%d: %d%s%s"
-                     % (self._explore_i, len(uci), p["no"],
-                        p.get("dots", ""), p["san"]))
-        self.score_bar.delete("all")
+                     % (self._explore_i, len(uci), num, dots, p["san"]))
+        self._draw_eval(m)
+        self._refresh_next()
 
     def _toggle_engine(self):
         """Hide / display the engine analysis (evaluation, text, audio)."""
@@ -5661,7 +5687,7 @@ class AnalysisMoveScreen(kit.Screen):
 
     def _next(self):
         if self._exploring:
-            uci = self.move.get("next_uci") or []
+            uci = self._line_uci()
             if self._explore_i < len(uci):
                 self._explore_i += 1
                 self._explore_draw()
@@ -6142,7 +6168,7 @@ class GameScreen(kit.Screen):
                 if res.get("robot_error"):
                     q.put(("toast", "Robot problem: " + res["robot_error"]))
                 if res["error"] and not res["accepted"]:
-                    q.put(("toast", res["error"]))
+                    q.put(("illegal", res["error"], res.get("player_move", "")))
                     continue
                 self.last = res.get("computer_move") or res.get("player_move")
                 q.put(("board",))
@@ -6227,6 +6253,8 @@ class GameScreen(kit.Screen):
                     self._result_modal(hl)
                 elif kind == "boardlost":
                     self._boardlost_modal()
+                elif kind == "illegal":
+                    self._illegal_modal(ev[1], ev[2])
                 elif kind == "camlost":
                     self._camera_lost_modal()
                 elif kind == "camok":
@@ -6264,13 +6292,14 @@ class GameScreen(kit.Screen):
         self.moves_txt.configure(state="normal")
         self.moves_txt.delete("1.0", "end")
         stars = set(self.game.stars)
+        sans = game_state.sans_of(self.game.movelist)   # '+', '#' included
         for i in range(0, len(self.game.movelist), 2):
-            pair = self.game.movelist[i:i + 2]
+            pair = sans[i:i + 2]
 
-            def cell(uci, ply):
-                if not uci:
+            def cell(txt, ply):
+                if not txt:
                     return ""
-                return uci + ("\u2605" if ply in stars else "")
+                return txt + ("\u2605" if ply in stars else "")
             self.moves_txt.insert("end", "%2d. %-7s %-7s\n" % (
                 i // 2 + 1, cell(pair[0], i + 1),
                 cell(pair[1], i + 2) if len(pair) > 1 else ""))
@@ -6346,6 +6375,33 @@ class GameScreen(kit.Screen):
                 m.close()
             except Exception:
                 pass
+
+    def _illegal_modal(self, error, mv):
+        """The player moved illegally (2026-11-04): name the move and ask for
+        the board to be reset. The engine's board never changed - the
+        physical pieces no longer match it, so nothing continues until the
+        player says the board is back."""
+        if getattr(self, "_illegal_m", None) is not None:
+            return
+        m = kit.Modal(self.app, "Illegal move")
+        self._illegal_m = m
+        try:
+            san = game_state.sans_of([mv])[0] if mv else "?"
+        except Exception:
+            san = mv or "?"
+        tk.Label(m.body,
+                 text="%s is not legal here.\n\n%s\n\n"
+                      "Please reset the board to the position before the "
+                      "move, then continue." % (san, error),
+                 font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
+                 wraplength=400, justify="left").pack(anchor="w")
+
+        def ok():
+            self._illegal_m = None
+            m.close()
+        kit.big_button(m.body, "Board reset - continue", ok,
+                       bg=kit.GREEN, fg="#1b1e24", width=20,
+                       height=2).pack(pady=(12, 0))
 
     def _boardlost_modal(self):
         if getattr(self, "_lost_m", None) is not None:

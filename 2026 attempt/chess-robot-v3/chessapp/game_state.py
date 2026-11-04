@@ -99,3 +99,19 @@ def summary():
         return "Finished game (%d moves)" % n
     side = "You" if (n % 2 == 0) == (d.get("player_color") == "white") else "Robot"
     return "%d moves - %s to play" % (n, side)
+
+
+def sans_of(ucis):
+    """The moves as readable notation WITH check and checkmate (2026-11-04:
+    the in-game list showed raw UCI - 'e2e4', never 'Bxb5+')."""
+    import chess
+    out = []
+    b = chess.Board()
+    for u in ucis or []:
+        try:
+            mv = chess.Move.from_uci(u)
+            out.append(b.san(mv))
+            b.push(mv)
+        except Exception:
+            out.append(u)
+    return out

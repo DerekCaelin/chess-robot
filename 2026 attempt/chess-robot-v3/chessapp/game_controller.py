@@ -319,11 +319,28 @@ class ChessGame:
                      "Draw by 50 moves rule", "Draw by threefold repetition")
             rt = texts[codes] if 0 <= codes < len(texts) else "Game over."
             self.game_over = True
+            self.result_code = codes
             out["game_over"] = True
             out["result_text"] = rt
             out["result_code"] = codes
             self._speak(rt)
             self._status(rt)
+
+    def _snapshot(self):
+        """The finished game as the analysis module stores it - including
+        the RESULT (2026-11-04: the finished game used to reach the analysis
+        with result=None and could not be titled or graded)."""
+        code = getattr(self, "result_code", None)
+        result = {1: "1-0", 2: "0-1"}.get(code, "1/2-1/2" if code else None)
+        data = game_state.load() or {}
+        return {
+            "moves": list(self.movelist),
+            "player_color": settings.get("player.color", "white"),
+            "level": settings.get("stockfish.level", 5),
+            "result": result,
+            "started": data.get("started"),
+            "stars": sorted(set(self.stars)),
+        }
 
     # ── persistence ──────────────────────────────────────────────────────────
 
@@ -345,9 +362,15 @@ class ChessGame:
         return ply in self.stars
 
     def _persist(self):
-        """Save progress after every move; a finished game clears the save."""
+        """Save progress after every move. A finished game is SNAPSHOTSHOTTED
+        for the analysis BEFORE game.json is cleared - the clear is what makes
+        the next game start fresh, but save_last() used to run after it and
+        find nothing, so the analysis kept the previous game (2026-11-04)."""
         if self.game_over:
-            game_state.clear()
+            try:
+                game_state.save_last(self._snapshot())
+            finally:
+                game_state.clear()
             return
         game_state.save(self.movelist, settings.get("player.color", "white"),
                         settings.get("stockfish.level", 5), stars=self.stars)

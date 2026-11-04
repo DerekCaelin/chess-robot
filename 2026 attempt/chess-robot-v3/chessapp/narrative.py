@@ -886,6 +886,11 @@ def _achievement_pair(e, teller, s):
     if c.get("kind") == "mate":
         return teller.rng.choice(ACHIEVE_MATE) + ({},)
     if c.get("kind") == "wins":
+        # only name a material threat when the NET gain at the end of the
+        # line is more than a pawn: a capture the opponent recaptures is a
+        # TRADE, not 'the threat is to win a pawn' (2026-11-04)
+        if (nl.get("total") or 0) <= 1:
+            return None
         what = c.get("what") or "material"
         at = c.get("at")
         mv = c.get("move") or ""
@@ -1432,8 +1437,15 @@ def per_move(analysis, seed=None):
             elif body_s:
                 segs.append(("text", body_s))
             # the verdict lives in the LABEL on screen; the speech says it
-            # except in the opening phase
-            say_verdict = not (quality_ev and m["ply"] < opening_until)
+            # only when the engine attributes a SIGNIFICANT positional change
+            # to the move (2026-11-04) - 'the best move' over a quiet move is
+            # noise - and never in the opening phase
+            swing = abs((m.get("eval_cp") or 0)
+                        - (m.get("eval_before_cp") or 0))
+            sig = (m.get("quality") in ("great", "brilliant", "inaccuracy",
+                                        "mistake", "blunder") or swing >= 80)
+            say_verdict = not (quality_ev and
+                               (m["ply"] < opening_until or not sig))
             body_sp = _body(ev, "speech", skip_pack=not say_verdict)
             head_spk = _head(ev, "speech")
             if ev["kind"] == "finish":
@@ -1480,8 +1492,12 @@ def per_move(analysis, seed=None):
                     "verdict": verdict, "next": m.get("next", ""),
                     "next_uci": m.get("next_uci", []),
                     "next_plies": m.get("next_plies", []),
+                    "best_uci": m.get("best_uci", []),
+                    "best_line": m.get("best_line") or {},
                     "wdl": m.get("wdl"), "quality": m.get("quality", ""),
                     "best": m.get("best"),
+                    "eval_cp": m.get("eval_cp", 0),
+                    "eval_before_cp": m.get("eval_before_cp", 0),
                     "speech": speech, "words": len(speech.split())})
     return out
 
