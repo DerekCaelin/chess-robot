@@ -60,7 +60,12 @@ AL5D_extraheight   = 0.0   # LEGACY - retired; kept only so old files resolve
 # gripper_len to get the wrist height it commands.
 AL5D_cruise_height = 3.6   # inches — gripper-tip travel height
 AL5D_extrawidth    = 10     # degrees (-30 + 35 + 5)
-AL5D_park_reach   = 6.9    # inches — IK reach (X) of the park/rest pose (~ the droop)
+AL5D_park_reach   = 8.0    # inches — IK reach (X) of the park/rest pose.
+                           # EXTENDED past the measured droop (6.9) on
+                           # 2026-11-05: at 6.9 the arm's mass sat behind the
+                           # shoulder and it collapsed BACKWARDS at park and
+                           # energise.  At 8.0 the mass rests in front of the
+                           # shoulder pivot so the arm leans forward and holds.
 AL5D_park_height  = 0.4    # inches — gripper-tip height at the rest pose (~ the
                            #  droop; lower = falls less when torque is cut)
 AL5D_cruise_margin = 0.15  # inches — safety inset from the A+B link ceiling used

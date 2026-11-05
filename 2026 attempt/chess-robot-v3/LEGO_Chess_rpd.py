@@ -59,9 +59,11 @@ READY_REACH = 8.5
 # The arm's measured UNPOWERED rest (the pose it droops to when torque is cut):
 # base ~perpendicular to the board, elbow ~10 deg, wrist dropped back, jaws
 # open.  channels: base,shoulder,elbow,wrist,gripper,wristrot.  This is the
-# REFERENCE for the park pose: arm.park_reach / arm.park_height default to the
-# IK pose that reproduces these pulses, so park() sits at the droop and cutting
-# torque barely moves the arm.
+# REFERENCE the park pose was built from - but arm.park_reach now EXTENDS past
+# it (8.0 vs the droop's 6.9, 2026-11-05): matching the droop exactly left the
+# arm's mass behind the shoulder and it collapsed backwards at park/energise.
+# The extended reach keeps the mass in front of the pivot; the pose still sits
+# at the droop's height and base angle.
 REST_PULSES = {0: 611, 1: 1755, 2: 1995, 3: 739, 4: 1077, 5: 1500}
 
 # ── Physical constants ────────────────────────────────────────────────────────
@@ -894,8 +896,9 @@ def park():
       2. retract the reach to arm.park_reach (base still at the square)
       3. rotate the base to the side (arm tucked in, at cruise height)
       4. lower onto arm.park_height, then idleall() (servos off).
-    The rest pose defaults to the measured droop, so cutting torque at the end
-    barely moves; the next action wakes into the REST pose via energise()."""
+    The rest pose EXTENDS past the measured droop (arm.park_reach 8.0,
+    2026-11-05) so the arm's mass stays in front of the shoulder: it no
+    longer collapses backwards at park or at the next energise()."""
     global targetXYZGWAWR
     if sp is None and not arm_open():
         return
