@@ -5653,7 +5653,8 @@ class AnalysisMoveScreen(kit.Screen):
                                         font=("DejaVu Sans", 13))
         self.reset_btn.pack(anchor="w", pady=(6, 0))
         self.board.bind("<Button-1>", self._board_tap)
-        self.verdict_lbl.configure(text="Your move:")
+        side = "White" if b.turn else "Black"
+        self.verdict_lbl.configure(text="Your move (%s):" % side)
         self._test_draw()
         self._test_info(None)
 
@@ -5665,32 +5666,38 @@ class AnalysisMoveScreen(kit.Screen):
         self.board.draw(cb.getBoard(), hl)
 
     def _board_tap(self, ev):
-        """Tap a piece, then its destination - the engine replies live."""
+        """Tap a piece, then tap where it would go (2026-11-05). Tapping off
+        the board or on another piece of your own cancels the pending move."""
         if not self._testing or self._test_board is None:
             return
-        sq = self.board.sq
+        sq = max(1, self.board.sq)
         col, row = ev.x // sq, ev.y // sq
-        if not (0 <= col < 8 and 0 <= row < 8):
-            return
         import chess
+        if not (0 <= col < 8 and 0 <= row < 8):
+            # off the board: cancel
+            self._test_from = None
+            self._test_draw()
+            return
         to = chess.square(col, 7 - row)
 
         def hl_of(square):
             r, c = 7 - chess.square_rank(square), chess.square_file(square)
             return (r, c, r, c)
+        piece = self._test_board.piece_at(to)
         if self._test_from is None:
-            p = self._test_board.piece_at(to)
-            if p is not None and p.color == self._test_board.turn:
+            if piece is not None and piece.color == self._test_board.turn:
                 self._test_from = to
                 self._test_draw(hl=hl_of(to))
             return
+        if piece is not None and piece.color == self._test_board.turn:
+            # another piece of your own: cancel the pending move
+            self._test_from = None
+            self._test_draw()
+            return
         mv = chess.Move(self._test_from, to)
         if mv not in self._test_board.legal_moves:
-            # an illegal destination: treat it as a new selection
-            p = self._test_board.piece_at(to)
-            self._test_from = (to if p is not None
-                               and p.color == self._test_board.turn else None)
-            self._test_draw(hl=hl_of(to) if self._test_from else None)
+            self._test_from = None
+            self._test_draw()
             return
         self._test_from = None
         self._test_board.push(mv)
