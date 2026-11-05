@@ -47,6 +47,21 @@ mydir = CBstate.mydir
 
 LABELS = ("A1", "H1", "A8", "H8")
 
+# Timing log (2026-11-05): the UI's stdout dies with the kiosk X session, so
+# the calibration timing prints were invisible exactly when needed - the
+# in-app detection was reported at 30-120s while the same flow locked in 2s
+# standalone.  Append every stage to a file the deploy can read back.
+_TIMING_LOG = mydir + "/data/calib_timing.log"
+
+
+def tlog(msg, fresh=False):
+    """Append a timing line; fresh=True truncates (a new calibration run)."""
+    try:
+        with open(_TIMING_LOG, "w" if fresh else "a") as fh:
+            fh.write("%.1f %s\n" % (time.time(), msg))
+    except Exception:
+        pass
+
 CONSIST_PX = 25.0   # per-corner distance within which detections agree
 K_LOCK = 4          # consistent detections to lock / to adopt a new position
 
@@ -243,6 +258,9 @@ class CalibrationEngine:
             res = name_by_position(res)
         self.raw_found = res is not None
         self.stab.feed(res, w, h)
+        tlog("detect #%d: %.0f ms | found=%s | committed=%s | misses=%d"
+             % (n, dt * 1000, res is not None,
+                self.stab.committed is not None, self.stab.misses))
         if self.pending_click is not None and self.stab.committed is not None:
             self.stab.reorient(_apply_a1_click(self.stab.committed,
                                                self.pending_click,

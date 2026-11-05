@@ -614,6 +614,7 @@ class CalibCameraScreen(kit.Screen):
         self.snap = settings.snapshot()
         self.engine = LC.CalibrationEngine()
         self.engine.status_overlay = False
+        LC.tlog("calib: screen open", fresh=True)
         self._lock = threading.Lock()
         self._frame = None
         self._stop = False
@@ -661,21 +662,26 @@ class CalibCameraScreen(kit.Screen):
             cap = camera.open_camera()
             if cap is not None:
                 break
+            LC.tlog("calib: camera open FAILED (held by another process: "
+                    "%s) - retrying in 1.5s" % camera._held_by_other())
             time.sleep(1.5)
         if cap is None:
             return          # screen closed; _pump shows "Waiting for camera"
         self._cap = cap
+        LC.tlog("calib: camera open ok")
         try:
             # exposure/wb are PINNED by lock_camera, so the warm-up only has
             # to flush stale frames - 20 was seconds of standing around
             # (2026-11-04)
             for _ in range(8):
                 cap.read()
+            LC.tlog("calib: warmup done")
 
             # Board detection is EXPENSIVE (seconds on the 3B).  Running it
             # inline in the capture loop froze the preview between
             # detections; run it on its own thread so the feed stays live.
             def detect_loop():
+                LC.tlog("calib: detect loop running")
                 while not self._stop:
                     if not self._searching:
                         time.sleep(0.2)
@@ -762,6 +768,7 @@ class CalibCameraScreen(kit.Screen):
     def _start(self):
         # Auto-detect/locking only runs once the player starts, so re-entering
         # this screen can't clobber a just-completed manual corner set.
+        LC.tlog("calib: Start tapped")
         self.engine.reset()
         self._searching = True
         try:
