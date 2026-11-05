@@ -828,6 +828,18 @@ class CalibCameraScreen(kit.Screen):
             self.app.toast("No stable detection yet - nothing saved")
             return
         LC._write_points_txt(self.engine.committed)
+        # the board is LOCKED from here on out (2026-11-05): keep the mapping
+        # as the default the arm calibration goes to, so a missing
+        # points.txt restores the board as it is now
+        try:
+            vals = [float(v) for v in
+                    open(CBstate.mydir + "points.txt").read().rstrip()
+                    .split(",")]
+            settings.set("points_file", {
+                "A1": (vals[0], vals[1]), "H1": (vals[2], vals[3]),
+                "A8": (vals[4], vals[5]), "H8": (vals[6], vals[7])})
+        except Exception as e:
+            print("calibration: could not save the default mapping:", e)
 
         def after():
             settings.set("board.stale", 0)

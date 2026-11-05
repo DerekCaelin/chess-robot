@@ -225,7 +225,18 @@ class CalibrationEngine:
     def detect(self, frame):
         self._shape = frame.shape
         h, w = frame.shape[:2]
+        t0 = time.time()
         res = bd.detect_board(frame)
+        dt = time.time() - t0
+        # timing + stage report (2026-11-05): the empty-board detection was
+        # slow and nothing said where the time went
+        n = getattr(self, "_log_n", 0)
+        self._log_n = n + 1
+        if n % 10 == 0:
+            print("calibration.detect: %.0f ms | found=%s | committed=%s "
+                  "| misses=%d" % (dt * 1000, res is not None,
+                                   self.stab.committed is not None,
+                                   self.stab.misses), flush=True)
         if res is None:
             self._dump_fail(frame)
         if res is not None:
