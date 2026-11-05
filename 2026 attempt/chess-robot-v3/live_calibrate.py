@@ -34,6 +34,7 @@
 #
 # Usage:  python live_calibrate.py
 
+import os
 import threading
 import time
 
@@ -51,7 +52,9 @@ LABELS = ("A1", "H1", "A8", "H8")
 # the calibration timing prints were invisible exactly when needed - the
 # in-app detection was reported at 30-120s while the same flow locked in 2s
 # standalone.  Append every stage to a file the deploy can read back.
-_TIMING_LOG = mydir + "/data/calib_timing.log"
+# (Path from THIS file, not CBstate.mydir - that is the images/ dir.)
+_TIMING_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "data", "calib_timing.log")
 
 
 def tlog(msg, fresh=False):
