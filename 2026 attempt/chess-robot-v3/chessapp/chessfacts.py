@@ -149,17 +149,24 @@ def move_facts(board, move):
             facts.append(("fork", {"first": names[0], "second": second,
                                    "piece": piece_name(mover_piece)}))
 
-        # pin: a slider looking through a piece onto a worthier one
+        # pin: a slider looking through EXACTLY ONE piece onto a worthier
+        # one. With more than one piece in between there is no pin at all -
+        # 'bishop to g7 pins the pawn to the rook' with three pawns in
+        # between is nonsense (2026-11-05).
         for direction in ((1, 0), (-1, 0), (0, 1), (0, -1),
                           (1, 1), (1, -1), (-1, 1), (-1, -1)):
             ray = _ray(after, move.to_square, direction)
             seen = [sq for sq in ray if after.piece_at(sq) is not None]
-            if len(seen) >= 2:
+            if len(seen) == 2:
                 first, second = seen[0], seen[1]
                 p1, p2 = after.piece_at(first), after.piece_at(second)
+                # the king is the ULTIMATE pin target (the absolute pin) -
+                # VALUES[king] is 0, so the worthier-than test missed it
+                worthier = (p2.piece_type == chess.KING
+                            or VALUES[p2.piece_type] > VALUES[p1.piece_type])
                 if (p1.color == foe and p2.color == foe
                         and p1.piece_type != chess.KING
-                        and VALUES[p2.piece_type] > VALUES[p1.piece_type]
+                        and worthier
                         and mover_piece.piece_type in (chess.BISHOP,
                                                        chess.ROOK,
                                                        chess.QUEEN)):
