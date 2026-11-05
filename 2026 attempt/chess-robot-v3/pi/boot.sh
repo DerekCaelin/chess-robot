@@ -1,7 +1,11 @@
 #!/bin/bash
 # boot.sh - console entry (from .bash_profile): while the mode file says
-# "ui", keep relaunching the X kiosk; when the UI exits in "terminal" mode
-# (or the file says terminal/off), drop to the normal shell.
+# "ui", keep relaunching the X kiosk; in "terminal" mode hold the console
+# and wait (Ctrl-C here still drops to the normal shell); on "off" power
+# down.  Terminal mode HOLDS rather than exiting (2026-11-05): exiting
+# dropped the supervision chain and left the kiosk dead after
+# 'appctl stop' with no way to restart it over SSH - X only starts from
+# this console.  'appctl restart' now always finds us waiting.
 DIR="$HOME/chess/chess-robot-v3"
 MODE="$DIR/data/.chess_mode"
 
@@ -17,7 +21,10 @@ while :; do
         sudo systemctl poweroff
         exit
     fi
-    [ "$mode" != "ui" ] && break
+    if [ "$mode" != "ui" ]; then
+        sleep 2
+        continue
+    fi
     if [ ! -x /usr/bin/X ]; then
         # X server package missing (e.g. fresh Lite image): say so once,
         # then stop relaunching instead of printing an infinite error loop.
