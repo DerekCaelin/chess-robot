@@ -1022,12 +1022,16 @@ class ArmGrabScreen(kit.Screen):
         self._zoomi = 0                       # index into ZOOM_LEVELS (jog step)
 
         row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
+        cols = kit.BoardCols(self.body)
         # LEFT: chess board showing the target square to place the piece on.
-        board_col = tk.Frame(row, bg=kit.BG)
-        board_col.pack(side="left", padx=(0, 8))
+        board_col = tk.Frame(cols.board_col, bg=kit.BG)
+        board_col.pack()
         self.board = kit.BoardView(board_col, px=192)
         self.board.pack()
+        cols.set_board(self.board, redraw=self._draw_board)
+        # controls row: everything pressable (jog, height bar, buttons) first
+        row = tk.Frame(cols.right, bg=kit.BG)
+        row.pack(fill="x")
         # MIDDLE: big directional jog pad (dial removed - the tap was too coarse
         # to be useful). Steps get finer as the zoom increases (below).
         pad_col = tk.Frame(row, bg=kit.BG)
@@ -1099,7 +1103,7 @@ class ArmGrabScreen(kit.Screen):
         self._side = side                      # parent for phase show/hide
         self._verify_btns = (self.ready_btn, self.good_btn, self.off_btn)
 
-        self.instr_lbl = tk.Text(self.body, height=1, width=40,
+        self.instr_lbl = tk.Text(cols.right, height=1, width=40,
                                  bg=kit.BG, fg=kit.FG, relief="flat",
                                  wrap="word", font=("DejaVu Sans", 17),
                                  padx=0, pady=0, highlightthickness=0,
@@ -1140,12 +1144,23 @@ class ArmGrabScreen(kit.Screen):
         """Size the instruction box to its WRAPPED height so the test
         instructions wrap and stay fully visible (2026-10-20: a height=1 box
         showed only the first line - the rest of each instruction was
-        clipped)."""
+        clipped).  The font scales down (2026-11-05) so the block never runs
+        outside the window."""
         try:
             w = self.instr_lbl
-            n = w.count("1.0", "end-1c", "displaylines")
-            n = n[0] if isinstance(n, tuple) else n
-            n = max(1, int(n or 1))
+            avail = kit.avail_h(w) or 140
+            n = 1
+            for sz in (17, 15, 13, 11, 10):
+                cur = str(w.cget("font"))
+                w.configure(font=("DejaVu Sans", sz))
+                w.tag_config("b", font=("DejaVu Sans", sz, "bold"))
+                n = w.count("1.0", "end-1c", "displaylines")
+                n = n[0] if isinstance(n, tuple) else n
+                n = max(1, int(n or 1))
+                lh = kit.tkfont.Font(family="DejaVu Sans",
+                                     size=sz).metrics("linespace")
+                if n * lh <= avail or sz == 10:
+                    break
             if int(w.cget("height")) != n:
                 w.configure(height=n)
         except tk.TclError:
@@ -2052,11 +2067,12 @@ class CalibTestScreen(kit.Screen):
         self._prec = 0            # index into PREC_LEVELS (jog step ÷ level)
         self.squares = self._resolve(cfg["squares"])
 
-        row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
-        self.board = kit.BoardView(row, px=192)
-        self.board.pack(side="left", padx=(0, 10))
+        cols = kit.BoardCols(self.body)
+        self.board = kit.BoardView(cols.board_col, px=192)
+        cols.set_board(self.board, redraw=self._draw_board)
 
+        row = tk.Frame(cols.right, bg=kit.BG)
+        row.pack(fill="x")
         pad = tk.Frame(row, bg=kit.BG)
         pad.pack(side="left")
         self._build_jog(pad, cfg["axis"])
@@ -2073,7 +2089,7 @@ class CalibTestScreen(kit.Screen):
                                         height=2, width=10, disabled=True)
         self.save_btn.pack(pady=3)
 
-        self.instr_lbl = kit.instr_label(self.body, font=("DejaVu Sans", 16))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 16))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -2479,11 +2495,12 @@ class GfudgeScreen(kit.Screen):
         self.hover = max(2.0, RD.cruise_for_reach(self.center_reach) - 2.0)
         self.cur = [self.center_reach, self.hover, self.gfudge + 90.0]
 
-        row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
-        self.board = kit.BoardView(row, px=192)
-        self.board.pack(side="left", padx=(0, 10))
+        cols = kit.BoardCols(self.body)
+        self.board = kit.BoardView(cols.board_col, px=192)
+        cols.set_board(self.board, redraw=self._draw_board)
         self._draw_board()
+        row = tk.Frame(cols.right, bg=kit.BG)
+        row.pack(fill="x")
         pad = tk.Frame(row, bg=kit.BG)
         pad.pack(side="left")
         self._build_jog(pad)
@@ -2496,7 +2513,7 @@ class GfudgeScreen(kit.Screen):
                                        height=2, width=10)
         self.save_btn.pack(pady=3)
 
-        self.instr_lbl = kit.instr_label(self.body, font=("DejaVu Sans", 16))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 16))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -2696,21 +2713,23 @@ class ReachSettingsScreen(kit.Screen):
         self.cur = [X0, self._hover_y(X0), Z0]
 
         row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
+        row.pack(fill="both", expand=True)
         self.file_c = tk.Canvas(row, width=self.F_W, height=8 * self.CELL,
                                 bg="#181b21", highlightthickness=0)
         self.file_c.pack(side="left", padx=(0, 12))
         self.file_c.bind("<Button-1>", self._on_file_tap)
         self._draw_file()
 
-        ctl = tk.Frame(row, bg=kit.BG)
-        ctl.pack(side="left", fill="y", padx=8)
+        right = tk.Frame(row, bg=kit.BG)
+        right.pack(side="left", fill="both", expand=True, padx=8)
+        ctl = tk.Frame(right, bg=kit.BG)
+        ctl.pack(fill="x")
         for k in self.KEYS:
             self._build_tuner(ctl, self.LABELS[k], k)
         kit.big_button(ctl, "Save", self._save, bg=kit.GREEN,
                        height=2, width=10).pack(anchor="w", pady=(10, 0))
 
-        self.instr_lbl = kit.instr_label(self.body, font=("DejaVu Sans", 14))
+        self.instr_lbl = kit.FitLabel(right, font=("DejaVu Sans", 14))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self._set_instr()
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
@@ -2932,11 +2951,12 @@ class StickoutScreen(kit.Screen):
         self.hover = max(2.0, RD.cruise_for_reach(self._reach()) - 2.0)
         self.cur = [self._reach(), self.hover, self._angle()]
 
-        row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
-        self.board = kit.BoardView(row, px=192)
-        self.board.pack(side="left", padx=(0, 10))
+        cols = kit.BoardCols(self.body)
+        self.board = kit.BoardView(cols.board_col, px=192)
+        cols.set_board(self.board, redraw=self._draw_board)
         self._draw_board()
+        row = tk.Frame(cols.right, bg=kit.BG)
+        row.pack(fill="x")
         pad = tk.Frame(row, bg=kit.BG)
         pad.pack(side="left")
         self._build_jog(pad)
@@ -2949,7 +2969,7 @@ class StickoutScreen(kit.Screen):
                                        height=2, width=10)
         self.save_btn.pack(pady=3)
 
-        self.instr_lbl = kit.instr_label(self.body, font=("DejaVu Sans", 16))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 16))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -3157,11 +3177,12 @@ class RadscaleScreen(kit.Screen):
         self.hover = max(2.0, RD.cruise_for_reach(self._reach()) - 2.0)
         self.cur = [self._reach(), self.hover, self._angle()]
 
-        row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
-        self.board = kit.BoardView(row, px=192)
-        self.board.pack(side="left", padx=(0, 10))
+        cols = kit.BoardCols(self.body)
+        self.board = kit.BoardView(cols.board_col, px=192)
+        cols.set_board(self.board, redraw=self._draw_board)
         self._draw_board()
+        row = tk.Frame(cols.right, bg=kit.BG)
+        row.pack(fill="x")
         pad = tk.Frame(row, bg=kit.BG)
         pad.pack(side="left")
         self._build_jog(pad)
@@ -3174,7 +3195,7 @@ class RadscaleScreen(kit.Screen):
                                        height=2, width=10)
         self.save_btn.pack(pady=3)
 
-        self.instr_lbl = kit.instr_label(self.body, font=("DejaVu Sans", 16))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 16))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -3403,10 +3424,11 @@ class CornerCalibScreen(kit.Screen):
         X0, Z0 = RD.parametric_pose(self.ORDER[0])
         self.cur = [X0, self._grip_Y(X0), Z0]
 
-        row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
-        self.board = kit.BoardView(row, px=192)
-        self.board.pack(side="left", padx=(0, 10))
+        cols = kit.BoardCols(self.body)
+        self.board = kit.BoardView(cols.board_col, px=192)
+        cols.set_board(self.board, redraw=self._refresh)
+        row = tk.Frame(cols.right, bg=kit.BG)
+        row.pack(fill="x")
         pad = tk.Frame(row, bg=kit.BG)
         pad.pack(side="left")
         self._build_jog(pad)
@@ -3429,7 +3451,7 @@ class CornerCalibScreen(kit.Screen):
                                         disabled=True)
         self.match_btn.pack(side="left")
 
-        self.instr_lbl = kit.instr_label(self.body)
+        self.instr_lbl = kit.FitLabel(cols.right)
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -4172,15 +4194,17 @@ class PickHeightSettingsScreen(kit.Screen):
         self._tuners = {}
 
         row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
+        row.pack(fill="both", expand=True)
         self.file_c = tk.Canvas(row, width=self.F_W, height=8 * self.CELL,
                                 bg="#181b21", highlightthickness=0)
         self.file_c.pack(side="left", padx=(0, 12))
         self.file_c.bind("<Button-1>", self._on_file_tap)
         self._draw_file()
 
-        ctl = tk.Frame(row, bg=kit.BG)
-        ctl.pack(side="left", fill="y", padx=8)
+        right = tk.Frame(row, bg=kit.BG)
+        right.pack(side="left", fill="both", expand=True, padx=8)
+        ctl = tk.Frame(right, bg=kit.BG)
+        ctl.pack(fill="x")
         self._build_tuner(ctl, "pickheightadj", "adj")
         self._build_tuner(ctl, "pickheightreachslope", "slope")
         btns = tk.Frame(ctl, bg=kit.BG)
@@ -4192,7 +4216,7 @@ class PickHeightSettingsScreen(kit.Screen):
                        bg=kit.CARD, fg=kit.FG, height=2, width=12).pack(
             side="left")
 
-        self.instr_lbl = kit.instr_label(self.body, font=("DejaVu Sans", 14))
+        self.instr_lbl = kit.FitLabel(right, font=("DejaVu Sans", 14))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self._set_instr()
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
@@ -4497,20 +4521,19 @@ class CalibrationTestScreen(kit.Screen):
         self.target = None
         RD.STRICT_IK = True   # IK failures raise instead of a silent fallback
 
-        row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
-        self.board = kit.BoardView(row, px=320)
-        self.board.pack(side="left", padx=(0, 12))
+        cols = kit.BoardCols(self.body)
+        self.board = kit.BoardView(cols.board_col, px=320)
+        cols.set_board(self.board, redraw=self._draw_board)
         self.board.bind("<Button-1>", self._on_tap)
         self._draw_board()
 
-        side = tk.Frame(row, bg=kit.BG, width=120)
-        side.pack(side="left", fill="y", padx=8)
+        side = tk.Frame(cols.right, bg=kit.BG)
+        side.pack(fill="x")
         self.go_btn = kit.big_button(side, "Go", self._go, bg=kit.GREEN,
                                      fg="#1b1e24", height=2, width=8)
-        self.go_btn.pack(anchor="w", pady=(60, 0))
+        self.go_btn.pack(anchor="w", pady=(6, 0))
 
-        self.instr_lbl = kit.instr_label(self.body, font=("DejaVu Sans", 15))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 15))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self._set_instr()
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
@@ -4661,13 +4684,15 @@ class ArmSagScreen(kit.Screen):
         self.reach = {sq: RD.armlength(sq) for sq in self.SERIES}
 
         row = tk.Frame(self.body, bg=kit.BG)
-        row.pack()
+        row.pack(fill="both", expand=True)
         self.chart = tk.Canvas(row, width=self.CH_W, height=self.CH_H,
                                bg="#181b21", highlightthickness=0)
         self.chart.pack(side="left")
         self.chart.bind("<Button-1>", self._on_tap)
-        side = tk.Frame(row, bg=kit.BG)
-        side.pack(side="left", fill="y", padx=(12, 0))
+        right = tk.Frame(row, bg=kit.BG)
+        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        side = tk.Frame(right, bg=kit.BG)
+        side.pack(fill="x")
         arrows = tk.Frame(side, bg=kit.BG)
         arrows.pack()
         self.up_btn = kit.big_button(arrows, "\u25B2",
@@ -4693,7 +4718,7 @@ class ArmSagScreen(kit.Screen):
         kit.big_button(side, "Save", self._save, bg=kit.GREEN, fg="#1b1e24",
                        height=2, width=10).pack(pady=(14, 0), anchor="w")
 
-        self.instr_lbl = kit.instr_label(self.body, font=("DejaVu Sans", 15))
+        self.instr_lbl = kit.FitLabel(right, font=("DejaVu Sans", 15))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.instr_lbl.configure(
             text="Tap a box to adjust the compensation for arm sag at that "

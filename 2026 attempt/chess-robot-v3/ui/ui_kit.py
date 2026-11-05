@@ -8,6 +8,7 @@
 
 import os
 import tkinter as tk
+from tkinter import font as tkfont
 
 # ── palette / typography ─────────────────────────────────────────────────────
 BG        = "#232730"   # app background (slate)
@@ -357,6 +358,14 @@ class BoardView(tk.Canvas):
         super().__init__(master, width=self.px, height=self.px,
                          bg=BG, highlightthickness=0, bd=0, **kw)
 
+    def resize(self, px):
+        """Grow/shrink in place (BoardCols refits the board to its column;
+        bindings survive because the widget is not recreated)."""
+        px = (max(64, px) // 8) * 8
+        self.px = px
+        self.sq = px // 8
+        self.configure(width=px, height=px)
+
     def draw(self, board, last_move=None, arrow=None, arrow_fg=None):
         self.delete("all")
         for r in range(8):
@@ -416,6 +425,165 @@ class BoardView(tk.Canvas):
                                          shape[2] + 5))
             self.create_line(x0, y0, x1, y1, fill=fg, width=w,
                              arrow=tk.LAST, arrowshape=shape)
+
+
+# ── two-column board layout + scaling text (2026-11-05) ─────────────────
+#
+# The analysis screens' layout (big board in the left column, controls and
+# text right) is now the standard for every board screen: the board fills
+# the left column at MAX HEIGHT, the right column holds the pressable
+# controls first and the text block after them, and the text scales down
+# so nothing runs outside the window.
+
+def avail_h(widget):
+    """Pixels left for widget vertically: its master's height minus the
+    height of the master's other (mapped) children."""
+    try:
+        m = widget.master
+        h = m.winfo_height()
+        if h < 40:
+            return 0
+        used = 0
+        for c in m.winfo_children():
+            if c is not widget and c.winfo_ismapped():
+                used += c.winfo_height() + 6
+        return max(0, h - used - 6)
+    except tk.TclError:
+        return 0
+
+
+def _wrap_lines(text, width, font):
+    lines = []
+    for para in text.split("\n"):
+        cur = ""
+        for word in para.split(" "):
+            trial = word if not cur else cur + " " + word
+            if not cur or font.measure(trial) <= width:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = word
+        lines.append(cur)
+    return lines
+
+
+class FitLabel(tk.Label):
+    """Instruction text that scales itself (2026-11-05): wrapped at the
+    label's width and shrunk from its base font until the block fits the
+    space left under the controls - the text must never run outside the
+    window.  Drop-in for instr_label; set text with configure(text=...) or
+    set().  <Configure> re-fits."""
+
+    MIN_SIZE = 9
+
+    def __init__(self, parent, text="", font=None, **kw):
+        self._full = text
+        self._font = tuple(font or F_BODY)
+        kw.setdefault("bg", BG)
+        kw.setdefault("fg", FG)
+        kw.setdefault("justify", "left")
+        kw.setdefault("anchor", "w")
+        # pre-refit wrap: an unwrapped Label requests the whole text on one
+        # line and would blow the column's width request out
+        kw.setdefault("wraplength", 420)
+        super().__init__(parent, text=text, font=self._font, **kw)
+        self.bind("<Configure>", lambda *_: self._refit(), add="+")
+        parent.bind("<Configure>", lambda *_: self._refit(), add="+")
+        self.after_idle(self._refit)
+
+    def set(self, text, color=None):
+        self._full = text
+        if color is not None:
+            self.configure(fg=color)
+        self._refit()
+
+    def configure(self, cnf=None, **kw):
+        changed = False
+        if isinstance(cnf, dict) and "text" in cnf:
+            self._full = cnf["text"]
+            changed = True
+        if "text" in kw:
+            self._full = kw["text"]
+            changed = True
+        super().configure(cnf, **kw)
+        if changed:
+            self.after_idle(self._refit)
+
+    config = configure
+
+    def _refit(self):
+        if not self.winfo_exists():
+            return
+        try:
+            text = self._full or ""
+            width = max(60, self.winfo_width() - 6)
+            avail = avail_h(self) or 120
+            fam = self._font[0]
+            bold = "bold" in self._font[2:]
+            base = int(self._font[1])
+            pick = None
+            for sz in range(base, self.MIN_SIZE - 1, -1):
+                f = tkfont.Font(family=fam, size=sz,
+                                weight="bold" if bold else "normal")
+                need = (len(_wrap_lines(text, width, f))
+                        * f.metrics("linespace"))
+                if need <= avail:
+                    pick = sz
+                    break
+            if pick is None:
+                pick = self.MIN_SIZE
+            self.configure(font=(fam, pick) + (("bold",) if bold else ()),
+                           wraplength=width)
+        except tk.TclError:
+            pass
+
+
+class BoardCols:
+    """Two-column layout for board screens (2026-11-05): the board fills
+    the LEFT column at max height (re-fitted whenever the layout changes),
+    every other element goes in .right - pressable controls first, then
+    the text block.  Usage:
+
+        cols = kit.BoardCols(self.body)
+        self.board = kit.BoardView(cols.board_col, px=256)
+        cols.set_board(self.board, redraw=self._draw)
+        ... controls packed into cols.right ...
+    """
+
+    def __init__(self, parent):
+        self.frame = tk.Frame(parent, bg=BG)
+        self.frame.pack(fill="both", expand=True)
+        self.board_col = tk.Frame(self.frame, bg=BG)
+        self.board_col.pack(side="left", fill="y")
+        self.right = tk.Frame(self.frame, bg=BG)
+        self.right.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        self._board = None
+        self._redraw = None
+
+    def set_board(self, board, redraw=None):
+        """board must be a BoardView whose master is board_col (or a frame
+        inside it), already packed by the caller."""
+        self._board = board
+        self._redraw = redraw
+        if board.master is self.board_col:
+            board.pack()
+        self.board_col.bind("<Configure>", lambda *_: self._fit(), add="+")
+        self.frame.after_idle(self._fit)
+
+    def _fit(self, _e=None):
+        b = self._board
+        if b is None or not b.winfo_exists():
+            return
+        h = self.board_col.winfo_height()
+        if h < 120:                      # not realized yet
+            return
+        avail = 780 - 12 - self.right.winfo_reqwidth()
+        px = (max(192, min(h - 6, avail)) // 8) * 8
+        if px == b.px:
+            return
+        b.resize(px)
+        if self._redraw is not None:
+            self._redraw()
 
 
 class EvalChart(tk.Canvas):
