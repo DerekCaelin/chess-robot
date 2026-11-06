@@ -34,11 +34,19 @@ VOICE_LABELS = {"none": "None (fastest)", "espeak": "espeak (fast)",
 CACHE_FORMAT = 5
 
 
+_CODE_DIGEST = None
+
+
 def _code_digest():
     """Digest of the sources that PRODUCE the text. A cached text.json is
     stale the moment any of them changes - and forgetting to bump
     CACHE_FORMAT kept serving old text after code changes (2026-10-24).
-    This makes staleness impossible: change the code, regenerate."""
+    This makes staleness impossible: change the code, regenerate.
+    Memoized (2026-11-06): the sources cannot change at runtime, and the
+    analysis home now probes for late-arriving text every poll."""
+    global _CODE_DIGEST
+    if _CODE_DIGEST is not None:
+        return _CODE_DIGEST
     import hashlib
     h = hashlib.md5()
     for name in ("analysis.py", "narrative.py", "chessfacts.py",
@@ -49,7 +57,8 @@ def _code_digest():
                 h.update(f.read())
         except OSError:
             pass
-    return h.hexdigest()[:12]
+    _CODE_DIGEST = h.hexdigest()[:12]
+    return _CODE_DIGEST
 
 
 def game_hash(game):
@@ -94,13 +103,25 @@ class AnalysisPack:
         self.dir = os.path.join(CACHE, self.hash)
         self.moves = []
         self.analysis = None
-        self.live_moves = []    # grows as the analysis advances (the chart)
         self._run_id = 0
         # pick up cached text right away: another instance's background run
         # (pre-warm) may have produced it - the analysis home's Begin button
         # waits on this list (2026-10-23)
         if self.has_text():
             self._load_text()
+
+    @property
+    def live_moves(self):
+        """The per-move analysis entries as they land.  SHARED across pack
+        instances of the same game (2026-11-06): the idle prewarm runs the
+        generation on ITS instance while the analysis screen holds another,
+        and the position-strength graph read the screen's empty list - no
+        graph at all.  One store per game fixes every reader."""
+        return _LIVE.setdefault(self.hash, [])
+
+    @live_moves.setter
+    def live_moves(self, value):
+        _LIVE[self.hash] = value
 
     def cancel(self):
         """Stop the current generation run. Files already written are kept -
@@ -270,6 +291,10 @@ def auto_advance_seconds(words, sound_len):
 
 _LOCK = threading.Lock()
 _RUNS = {}
+# The live per-move entries, keyed by game hash: shared by every pack
+# instance of that game (the chart and the turning-point stars must see the
+# entries whichever instance the generation runs on).
+_LIVE = {}
 _TEXT_LOCKS = {}
 # The written/spoken TEXT is identical for every voice ('there will just be
 # nothing to play it in voice-only mode') - so its generation is ONE shared

@@ -366,6 +366,23 @@ def main():
         fails.append("auto-advance ON: Begin does not start playing")
     app.show = saved_show
 
+    # the position-strength graph draws from the LIVE analysis entries -
+    # and those are SHARED across pack instances (2026-11-06): the idle
+    # prewarm generates on its own instance, and the chart used to read a
+    # different instance's empty list - no graph at all
+    pkA = A.AP.AnalysisPack(fake.game)
+    pkB = A.AP.AnalysisPack(fake.game)
+    pkA.live_moves = [{"ply": 1, "eval_cp": 30, "eval_before_cp": 20}]
+    if not pkB.live_moves:
+        fails.append("chart data is not shared across pack instances")
+    fake.live_moves = [{"ply": 1, "eval_cp": 30, "eval_before_cp": 20},
+                       {"ply": 2, "eval_cp": -40, "eval_before_cp": 30}]
+    home._poll()
+    settle(root)
+    if len(home.chart.find_all()) < 4:
+        fails.append("home: position-strength graph not drawn (%d items)"
+                     % len(home.chart.find_all()))
+
     A.AP.load_pack, A.AP.generate_async = _real_load, _real_gen
     A.AP.generation_state = _real_state
     settings.set("analysis.voice", "none")

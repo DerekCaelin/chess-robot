@@ -5214,6 +5214,11 @@ class AnalysisHomeScreen(kit.Screen):
         # turning-point marks wait for the analysis to COMPLETE (they move
         # around while it runs)
         if self.gpack is not None:
+            # text that landed on ANOTHER instance's run (the idle prewarm)
+            # must still appear here once the run finishes
+            if (not self.gpack.moves and not alive and self.gpack.has_text()):
+                self.gpack._load_text()
+                self._update_begin()
             mv = self.gpack.live_moves or []
             player = self.gpack.game.get("player_color") or "white"
             done = not alive
