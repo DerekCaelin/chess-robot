@@ -5578,6 +5578,10 @@ class AnalysisMoveScreen(kit.Screen):
             return
         if not self._line_uci():
             return                      # no engine analysis to explore
+        # entering ENGINE mode pauses the auto-advance (2026-11-06): the
+        # tour must not advance away while the player studies the line.
+        # Exiting stays paused - Play resumes explicitly.
+        self._pause()
         self._exploring = True
         self._explore_i = 0
         self._set_bg("#2c313b")         # lighter grey: this is the ENGINE's

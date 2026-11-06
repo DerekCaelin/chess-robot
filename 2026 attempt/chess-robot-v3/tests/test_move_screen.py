@@ -31,12 +31,18 @@ def _fake_pack():
          "segments": [("icon", "\u265f"), ("move", "1.e4"),
                       ("text", " A quiet start.")],
          "verdict": "The best move.",
-         "speech": "Pawn to e4. A quiet start.", "words": 6},
+         "speech": "Pawn to e4. A quiet start.", "words": 6,
+         "next_uci": [], "next_plies": [], "best_uci": ["e7e5"],
+         "best_line": {}, "wdl": None, "quality": "good", "best": "e7e5",
+         "eval_cp": 20, "eval_before_cp": 20},
         {"ply": 2, "no": 1, "color": "black", "san": "e5", "uci": "e7e5",
          "segments": [("icon", "\u265f"), ("move", "1...e5"),
                       ("text", " Symmetrical.")],
          "verdict": "Solid.",
-         "speech": "Pawn to e5. Symmetrical.", "words": 5}]
+         "speech": "Pawn to e5. Symmetrical.", "words": 5,
+         "next_uci": [], "next_plies": [], "best_uci": ["g1f3"],
+         "best_line": {}, "wdl": None, "quality": "good", "best": "g1f3",
+         "eval_cp": 20, "eval_before_cp": 20}]
     pk.generate = lambda *a, **k: pk.moves
     return pk
 
@@ -124,6 +130,20 @@ def main():
         fails.append("play: did not clear the paused state")
     if scr._timer is None:
         fails.append("play: auto-advance timer not restarted")
+
+    # ---- tapping "Engine" pauses the auto-advance (2026-11-06) ----------
+    scr._explore_toggle()
+    if not scr._exploring:
+        fails.append("engine: mode did not open")
+    if scr._playing or scr._timer is not None:
+        fails.append("engine: auto-advance still running in Engine mode")
+    if not scr._paused:
+        fails.append("engine: not marked paused")
+    scr._explore_toggle()       # back to game - must STAY paused
+    if scr._exploring:
+        fails.append("engine: mode did not close")
+    if scr._playing or scr._timer is not None:
+        fails.append("engine: leaving Engine mode resumed the auto-advance")
 
     # ---- the play/pause button carries an icon or a visible fallback ------
     try:
