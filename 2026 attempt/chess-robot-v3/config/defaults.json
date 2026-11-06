@@ -5,6 +5,7 @@
         "stickout": 3.878,
         "gfudge": -8.171,
         "axistorow0": 3.875,
+        "board_height": 0.5,
         "shoulder_height": 2.5,
         "wrist_sign": 1,
         "wrist_offset": 0.0,

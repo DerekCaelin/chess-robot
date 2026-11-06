@@ -28,6 +28,7 @@ ARM_TO_CBSTATE = {
     "gfudge":        "AL5D_Gfudge",
     "axistorow0":    "AL5D_axistorow0",
     "shoulder_height": "AL5D_shoulder_height",
+    "board_height":  "AL5D_board_height",
     "wrist_sign":    "AL5D_wrist_sign",
     "wrist_offset":  "AL5D_wrist_offset",
     "radscale":      "AL5D_radscale",
@@ -143,6 +144,7 @@ def apply():
         lego.stickout = CBstate.AL5D_stickout
         lego.Gfudge = CBstate.AL5D_Gfudge
         lego.axistorow0 = CBstate.AL5D_axistorow0
+        lego.board_height = CBstate.AL5D_board_height
         lego.shoulder_height = CBstate.AL5D_shoulder_height
         lego.radscale = CBstate.AL5D_radscale
         lego.gripper_len = gl
@@ -219,7 +221,8 @@ def snapshot():
 # constants its screen changed (radscale/gfudge/pick…), but must NEVER roll back
 # these — otherwise a stale snapshot silently reverts the square size / axis /
 # piece heights you've set on the bench.
-BOARD_KEEP_KEYS = ("squaresize", "axistorow0", "piece_heights")
+BOARD_KEEP_KEYS = ("squaresize", "axistorow0", "piece_heights",
+                   "board_height")
 
 
 def restore(snap):

@@ -90,6 +90,10 @@ PICK_REF = 6.0         # legacy reference reach (kept for tooling/tests)
 extrawidth    = CBstate.AL5D_extrawidth
 park_reach    = CBstate.AL5D_park_reach
 park_height   = CBstate.AL5D_park_height + gripper_len   # wrist height
+# The board's SURFACE sits this far above the table (in).  The height model
+# is board-relative - fine on the board - but the graveyard is on the TABLE,
+# so a captured piece is deposited board_height LOWER (2026-11-06).
+board_height  = getattr(CBstate, "AL5D_board_height", 0.5)
 # Reach-aware cruise (1.5" board): at a long reach the arm cannot rise all the
 # way to CRUISE_HEIGHT without leaving the work annulus (radius sqrt(reach^2 +
 # height^2) must stay under A+B). cruise_margin is the safety inset from A+B
@@ -734,14 +738,17 @@ def pickuppiece(piecetype, armlen):
     _lift_clear(armlen, targetXYZGWAWR[2], targetXYZGWAWR[1])
 
 
-def droppiece(piecetype, armlen):
+def droppiece(piecetype, armlen, surface=0.0):
     """Release at the PICK height: at grip height the piece's base is already
     sitting on the board (that is where the pick gripped it), so the release is
     a pure unclamp - no drop, no bounce. (It used to descend 0.1 in LOWER and
     press the piece into the board while the wrist finished its swing - the
     piece dragged, 2026-10-21.) The release is servo-only: no IK re-solve can
-    move the arm at the unclamp instant."""
-    moveXY(grip_y(piecetype, armlen))
+    move the arm at the unclamp instant.
+    surface: how far the deposit surface sits BELOW the board surface (the
+    graveyard is on the table = board_height lower, 2026-11-06); zero for
+    every square on the board."""
+    moveXY(grip_y(piecetype, armlen) - surface)
     set_gripper(grip_open_width())
     _lift_clear(armlen, targetXYZGWAWR[2], targetXYZGWAWR[1])
 
@@ -763,7 +770,10 @@ def takepiece(X, Z, targetpiece, source_square=None):
         Zgraveyard = armangle("h9")
     movearm(Xgraveyard, Zgraveyard)
     time.sleep(0.5)      # was 1.5: the wrist tracking keeps the piece still now
-    droppiece(targetpiece, Xgraveyard)
+    # the graveyard is on the TABLE, board_height below the board surface -
+    # without the offset the arm opened its jaws board_height too high and
+    # dropped the piece (2026-11-06)
+    droppiece(targetpiece, Xgraveyard, surface=board_height)
 
 def iscastling(sourcesquarename):
     if CBstate.cbstate == 4:

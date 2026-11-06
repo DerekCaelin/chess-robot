@@ -4215,7 +4215,7 @@ class PickHeightSettingsScreen(kit.Screen):
         btns.pack(fill="x", pady=(10, 0))
         kit.big_button(btns, "Save", self._save, bg=kit.GREEN,
                        height=2, width=10).pack(side="left", padx=(0, 6))
-        kit.big_button(btns, "Piece heights",
+        kit.big_button(btns, "Heights",
                        lambda: app.show(PieceHeightScreen),
                        bg=kit.CARD, fg=kit.FG, height=2, width=12).pack(
             side="left")
@@ -4410,45 +4410,95 @@ class PickHeightSettingsScreen(kit.Screen):
 # ── piece heights ─────────────────────────────────────────────────────────────
 
 class PieceHeightScreen(kit.Screen):
-    """Edit the grip height of each piece type directly, in inches. The descent
-    uses pieceheights[piece] (inches) as the piece's height above the board; a
-    taller piece grips higher, a shorter one lower."""
+    """Heights (2026-11-06): the grip height of each piece type and the
+    BOARD height, in inches, on the Calibration-settings row template -
+    name, (unit), info button where it helps, and a tappable value field
+    that opens the standard slider.  The board height is the surface of the
+    board off the table; it lowers the graveyard deposit, which sits on the
+    table.  The pieces are self-explanatory - no info buttons."""
 
-    PIECES = (("p", "Pawn"), ("r", "Rook"), ("n", "Knight"),
-              ("b", "Bishop"), ("q", "Queen"), ("k", "King"))
+    ROWS = (
+        ("board", "Board (in)", 0.0, 2.0, 0.1,
+         "Height of the surface of the board off the table. This value "
+         "sets the height adjust when moving pieces to the graveyard."),
+        ("p", "Pawn (in)", 0.5, 3.5, 0.05, None),
+        ("r", "Rook (in)", 0.5, 3.5, 0.05, None),
+        ("n", "Knight (in)", 0.5, 3.5, 0.05, None),
+        ("b", "Bishop (in)", 0.5, 3.5, 0.05, None),
+        ("q", "Queen (in)", 0.5, 3.5, 0.05, None),
+        ("k", "King (in)", 0.5, 3.5, 0.05, None),
+    )
 
     def __init__(self, app):
-        super().__init__(app=app, title="Piece heights (in)")
+        super().__init__(app=app, title="Heights")
         self.app = app
         self.rows = {}
         grid = tk.Frame(self.body, bg=kit.BG)
         grid.pack(fill="both", expand=True)
-        for i, (pc, name) in enumerate(self.PIECES):
-            r, c = i // 2, i % 2
+        per_col = (len(self.ROWS) + 1) // 2
+        grid.columnconfigure(2, minsize=6)       # gutter between pairs
+        for col in range(4):                     # name | value | name | value
+            grid.columnconfigure(col, weight=3 if col % 2 == 0 else 2)
+        for r in range(per_col):
             grid.rowconfigure(r, weight=1)
-            grid.columnconfigure(c, weight=1, uniform="ph")
-            btn = kit.big_button(grid, "", lambda pc=pc: self._edit(pc),
-                                 bg=kit.CARD_HI, fg=kit.ACCENT, width=16,
-                                 height=3, font=kit.F_BODY)
-            btn.grid(row=r, column=c, sticky="nsew", padx=8, pady=6)
-            self.rows[pc] = (name, btn)
+        for i, (key, label, lo, hi, step, definition) in enumerate(self.ROWS):
+            r = i % per_col
+            pair = i // per_col
+            name_cell = tk.Frame(grid, bg=kit.BG)
+            name_cell.grid(row=r, column=pair * 2, sticky="nsew", pady=1)
+            tk.Label(name_cell, text=label, font=("DejaVu Sans", 12),
+                     bg=kit.BG, fg=kit.FG, anchor="w").pack(side="left")
+            if definition:          # info button ONLY where it helps
+                kit.info_button(
+                    name_cell,
+                    lambda t=label, d=definition: self._info(t, d),
+                    small=True, bg=kit.BG).pack(side="left", padx=(4, 0))
+            cell = tk.Frame(grid, bg=kit.BG)
+            cell.grid(row=r, column=pair * 2 + 1, sticky="nsew", padx=(8, 0))
+            btn = kit.big_button(cell, "",
+                                 lambda k=key, l=label, lo=lo, hi=hi, st=step:
+                                 self._edit(k, l, lo, hi, st),
+                                 bg=kit.CARD_HI, fg=kit.ACCENT, width=5,
+                                 height=2, font=("DejaVu Sans", 12))
+            btn.pack(side="left", fill="both", expand=True)
+            self.rows[key] = btn
         self.refresh_labels()
 
     def refresh_labels(self):
         ph = settings.get("arm.piece_heights") or RD.pieceheights
-        for pc, (name, btn) in self.rows.items():
-            btn.configure(text="%s  %.2f in" % (name, float(ph.get(pc, 0))))
+        bh = float(settings.get("arm.board_height", 0.5))
+        for key, btn in self.rows.items():
+            if key == "board":
+                btn.configure(text=_fmt(bh))
+            else:
+                btn.configure(text=_fmt(float(ph.get(key, 0))))
 
-    def _edit(self, pc):
-        ph = dict(settings.get("arm.piece_heights") or RD.pieceheights)
-        cur = float(ph.get(pc, 0.0))
+    def _info(self, title, definition):
+        m = kit.Modal(self.app, title)
+        tk.Label(m.body, text=definition, font=kit.F_BODY, bg=kit.CARD,
+                 fg=kit.FG, wraplength=560, justify="left").pack(anchor="w")
+        kit.big_button(m.body, "Back", m.close, bg=kit.CARD_HI, fg=kit.FG,
+                       width=12, height=2).pack(pady=(10, 0))
+
+    def _edit(self, key, label, lo, hi, step):
+        """The standard set-value experience: the slider modal."""
+        if key == "board":
+            def change(v):
+                settings.set("arm.board_height", round(v, 2))
+                self.refresh_labels()
+            kit.slider(self.app, label + "\narm.board_height", lo, hi, step,
+                       float(settings.get("arm.board_height", 0.5)), change,
+                       confirm_msg="are you sure?")
+            return
 
         def change(v):
             ph = dict(settings.get("arm.piece_heights") or RD.pieceheights)
-            ph[pc] = round(v, 2)
+            ph[key] = round(v, 2)
             settings.set("arm.piece_heights", ph)
             self.refresh_labels()
-        kit.slider(self.app, "Piece height (in)", 0.5, 3.5, 0.05, cur, change,
+        cur = dict(settings.get("arm.piece_heights") or RD.pieceheights)
+        kit.slider(self.app, label + "\narm.piece_heights." + key, lo, hi,
+                   step, float(cur.get(key, 0.0)), change,
                    confirm_msg="are you sure?")
 
 
@@ -6101,7 +6151,7 @@ class DirectScreen(kit.Screen):
         # Full-width nav buttons (2026-10-21): every button stretches to fill
         # the screen width, the row is DOUBLE height and the label wraps inside
         # the button so two-line names fit. "Board size" is hidden here.
-        for label, tgt in (("Piece heights", PieceHeightScreen),
+        for label, tgt in (("Heights", PieceHeightScreen),
                            ("Manual corners", ManualCalibScreen),
                            ("Calibration test", CalibrationTestScreen),
                            ("Arm sag", ArmSagScreen)):

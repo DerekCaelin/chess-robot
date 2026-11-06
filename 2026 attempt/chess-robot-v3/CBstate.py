@@ -31,6 +31,12 @@ AL5D_Gfudge      = 5.749  # 2026-09-16 fit (09-18 rebake -0.566 reverted
                           # with the rest: probe data predated the white-side camera)
 AL5D_axistorow0  = 3.875  # axis -> CENTERLINE of near rank-8 row (3 7/8" measured,
                            # 1 3/16" board).  (grey: 4.4)
+AL5D_board_height = 0.5   # inches - the board's SURFACE above the table.
+                           # Piece heights are board-relative (the calibrated
+                           # pick/drop works on the board), but the graveyard
+                           # sits on the TABLE: depositing a captured piece
+                           # subtracts this from the movement height
+                           # (2026-11-06).
 AL5D_radscale    = 1.0     # planar->IK radius scale (1.0 = wrist radius equals the
                            #  planar board distance; re-fit with arm_probe)
 # Board-labelling orientation vs the arm model (axis beside rank 8, x>0
