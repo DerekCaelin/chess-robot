@@ -72,16 +72,65 @@ _INFO_PHOTOS = {}
 _GLYPH_PHOTOS = {}
 
 
-def glyph_photo(name):
-    """PIL-drawn icon from ui/assets/<name>.png ('pause', 'play', ...)."""
-    if name not in _GLYPH_PHOTOS:
-        path = os.path.join(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__))), "ui", "assets", name + ".png")
+def glyph_photo(name, size=None):
+    """PIL-drawn icon from ui/assets/<name>.png ('pause', 'play', ...).
+    size= rescales the asset smoothly (PIL) for tall buttons."""
+    key = (name, size)
+    if key in _GLYPH_PHOTOS:
+        return _GLYPH_PHOTOS[key] or None
+    path = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "ui", "assets", name + ".png")
+    photo = None
+    try:
+        if size:
+            from PIL import Image, ImageTk
+            img = Image.open(path)
+            w, h = img.size
+            img = img.resize((max(1, round(size * w / h)), size),
+                             Image.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+        else:
+            photo = tk.PhotoImage(file=path)
+    except Exception:
         try:
-            _GLYPH_PHOTOS[name] = tk.PhotoImage(file=path)
+            photo = tk.PhotoImage(file=path)
         except tk.TclError:
-            _GLYPH_PHOTOS[name] = False
-    return _GLYPH_PHOTOS[name] or None
+            photo = None
+    _GLYPH_PHOTOS[key] = photo or False
+    return photo
+
+
+# Black piece icons with a white outline (2026-11-06): the filled black
+# glyphs are nearly invisible on the dark text background.  PIL renders the
+# glyph with a stroke - the same trick the board uses for its pieces.
+_PIECE_PHOTOS = {}
+
+
+def piece_photo(glyph, size=22):
+    key = (glyph, size)
+    if key in _PIECE_PHOTOS:
+        return _PIECE_PHOTOS[key] or None
+    photo = None
+    try:
+        from PIL import Image, ImageDraw, ImageFont, ImageTk
+        font = None
+        for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                     "/usr/share/fonts/TTF/DejaVuSans.ttf"):
+            if os.path.exists(path):
+                font = ImageFont.truetype(path, size)
+                break
+        if font is None:
+            font = ImageFont.load_default()
+        img = Image.new("RGBA", (size + 10, size + 12), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.text((5, 1), glyph, font=font, fill=(18, 20, 25, 255),
+               stroke_width=max(1, size // 12),
+               stroke_fill=(240, 240, 240, 255))
+        photo = ImageTk.PhotoImage(img)
+    except Exception:
+        photo = None
+    _PIECE_PHOTOS[key] = photo or False
+    return photo
 
 
 # Touch-sized checkboxes (2026-10-24): Tk's checkbutton INDICATOR does not

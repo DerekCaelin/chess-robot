@@ -32,6 +32,7 @@ def _fake_pack():
                       ("text", " A quiet start.")],
          "verdict": "The best move.",
          "speech": "Pawn to e4. A quiet start.", "words": 6,
+         "next": "e5 Nf3",
          "next_uci": [], "next_plies": [], "best_uci": ["e7e5"],
          "best_line": {}, "wdl": None, "quality": "good", "best": "e7e5",
          "eval_cp": 20, "eval_before_cp": 20},
@@ -40,6 +41,7 @@ def _fake_pack():
                       ("text", " Symmetrical.")],
          "verdict": "Solid.",
          "speech": "Pawn to e5. Symmetrical.", "words": 5,
+         "next": "Nf3",
          "next_uci": [], "next_plies": [], "best_uci": ["g1f3"],
          "best_line": {}, "wdl": None, "quality": "good", "best": "g1f3",
          "eval_cp": 20, "eval_before_cp": 20}]
@@ -220,6 +222,45 @@ def main():
     scr._test_reset()
     scr._explore_toggle()
     A.AN.Engine = _real_engine
+
+    # ---- analysis UI (2026-11-06) ---------------------------------------
+    # transport: back / play-pause / advance all the SAME size
+    hs = [scr.back_btn.winfo_reqheight(), scr.play_btn.winfo_reqheight(),
+          scr.next_btn.winfo_reqheight()]
+    if max(hs) - min(hs) > 2:
+        fails.append("transport heights differ: %s" % hs)
+    ws = [scr.back_btn.winfo_reqwidth(), scr.play_btn.winfo_reqwidth(),
+          scr.next_btn.winfo_reqwidth()]
+    if max(ws) - min(ws) > 2:
+        fails.append("transport widths differ: %s" % ws)
+    # the engine line label reads 'Engine:' (was 'Next:')
+    if not str(scr.next_lbl.cget("text")).startswith("Engine:"):
+        fails.append("engine line label wrong (got %r)"
+                     % scr.next_lbl.cget("text"))
+    # black moves use a black piece icon with a white outline (an IMAGE -
+    # the filled glyph vanishes on the dark box); white keeps the glyph
+    saved_idx = scr.idx
+    scr.idx = 1
+    scr._show()
+    settle(root)
+    if not any(d[0] == "image" for d in scr.txt.dump("1.0", "end")):
+        fails.append("black move: no piece icon image")
+    scr.idx = saved_idx
+    scr._show()
+    settle(root)
+    if any(d[0] == "image" for d in scr.txt.dump("1.0", "end")):
+        fails.append("white move: icon should stay a text glyph")
+    # hide analysis: the move text takes over the eval + engine-line rows
+    h1 = scr.txt.winfo_height()
+    scr._toggle_engine()
+    settle(root)
+    if scr.verdict_lbl.winfo_ismapped() or scr.next_lbl.winfo_ismapped():
+        fails.append("hide analysis: eval/engine-line rows still mapped")
+    if scr.txt.winfo_height() <= h1:
+        fails.append("hide analysis: the move text did not grow (%d -> %d)"
+                     % (h1, scr.txt.winfo_height()))
+    scr._toggle_engine()
+    settle(root)
 
     # ---- the play/pause button carries an icon or a visible fallback ------
     try:

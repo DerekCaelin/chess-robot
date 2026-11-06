@@ -5333,30 +5333,41 @@ class AnalysisMoveScreen(kit.Screen):
 
         nav = tk.Frame(right, bg=kit.BG)
         nav.pack(fill="x")
-        self.back_btn = kit.big_button(nav, "\u25C0", self._prev,
+        # uniform side columns keep the transport TRIO exactly centred while
+        # Finish sits at the right edge on the last move (a mixed pack here
+        # doubled the row's requested height)
+        nav.grid_columnconfigure(0, weight=1, uniform="navpad")
+        nav.grid_columnconfigure(2, weight=1, uniform="navpad")
+        # transport: back / play-pause / advance - 50% taller (2026-11-06)
+        # and all EXACTLY the same size (the play button's icon sits over
+        # sizing text so it keeps the same text-unit box as the arrows),
+        # centred in the column
+        trio = tk.Frame(nav, bg=kit.BG)
+        trio.grid(row=0, column=1)
+        self.back_btn = kit.big_button(trio, "\u25C0", self._prev,
                                        bg=kit.CARD_HI, fg=kit.FG, width=3,
-                                       height=2, font=kit.F_BTN)
+                                       height=3, font=kit.F_BTN)
         self.back_btn.pack(side="left", padx=(0, 6))
-        # play/pause: PIL-drawn icons (DejaVu Sans has no pause glyph). An
-        # image button takes its size from padding - tk width is in PIXELS
-        # for images, so big_button's width must not be used here.
-        self._icon_play = kit.glyph_photo("play")
-        self._icon_pause = kit.glyph_photo("pause")
-        self.play_btn = tk.Button(nav, text="\u25B6", command=self._toggle,
+        # play/pause: PIL-drawn icons (DejaVu Sans has no pause glyph),
+        # scaled up for the tall transport buttons
+        self._icon_play = kit.glyph_photo("play", size=44)
+        self._icon_pause = kit.glyph_photo("pause", size=44)
+        self.play_btn = tk.Button(trio, text=" ", command=self._toggle,
                                   bg=kit.GREEN, fg="#1b1e24",
                                   activebackground=kit.GREEN,
                                   activeforeground="#1b1e24", font=kit.F_BTN,
                                   relief="flat", bd=0, highlightthickness=0,
-                                  padx=10, pady=8)
+                                  width=3, height=3, compound="center")
         self.play_btn.pack(side="left", padx=6)
         self._set_play_glyph(False)
-        self.next_btn = kit.big_button(nav, "\u25B6", self._next,
+        self.next_btn = kit.big_button(trio, "\u25B6", self._next,
                                        bg=kit.CARD_HI, fg=kit.FG, width=3,
-                                       height=2, font=kit.F_BTN)
+                                       height=3, font=kit.F_BTN)
         self.next_btn.pack(side="left", padx=6)
+        self.after_idle(self._match_transport_heights)
         self.finish_btn = kit.big_button(nav, "Finish", self._finish_to_home,
                                          bg=kit.ACCENT, fg="#1b1e24",
-                                         width=6, height=2, font=kit.F_BTN)
+                                         width=6, height=3, font=kit.F_BTN)
         # the quality verdict is a LABEL above the text box (2026-10-23)
         self.verdict_lbl = tk.Label(right, text="", font=("DejaVu Sans", 16,
                                                           "bold"),
@@ -5385,24 +5396,35 @@ class AnalysisMoveScreen(kit.Screen):
                                  anchor="w", wraplength=340)
         self.next_lbl.pack(anchor="w", pady=(6, 0))
         # 'Engine' mode (2026-11-04): the engine's own line, and a what-if
-        # board where the player can test an alternate move
-        self.explore_btn = kit.big_button(right, "Engine",
+        # board where the player can test an alternate move.  The buttons
+        # beneath the engine line form TWO equal columns with equal heights
+        # (2026-11-06); Test alternate and Reset share a cell - they swap
+        # and are never visible together.
+        btns = tk.Frame(right, bg=kit.BG)
+        btns.pack(anchor="w", pady=(6, 0))
+        btns.grid_columnconfigure(0, weight=1, uniform="mcol")
+        btns.grid_columnconfigure(1, weight=1, uniform="mcol")
+        self.explore_btn = kit.big_button(btns, "Engine",
                                           self._explore_toggle,
                                           bg=kit.CARD_HI, fg=kit.FG,
-                                          width=18, height=2,
+                                          width=15, height=2,
                                           font=("DejaVu Sans", 13))
-        self.explore_btn.pack(anchor="w", pady=(6, 0))
-        self.test_btn = kit.big_button(right, "Test alternate",
+        self.explore_btn.grid(row=0, column=0, padx=(0, 6), pady=3)
+        self.test_btn = kit.big_button(btns, "Test alternate",
                                        self._test_start,
                                        bg=kit.CARD_HI, fg=kit.FG,
-                                       width=18, height=2,
+                                       width=15, height=2,
                                        font=("DejaVu Sans", 13))
-        self.engine_btn = kit.big_button(right, "Hide analysis",
+        self.reset_btn = kit.big_button(btns, "Reset", self._test_reset,
+                                        bg=kit.CARD_HI, fg=kit.FG,
+                                        width=15, height=2,
+                                        font=("DejaVu Sans", 13))
+        self.engine_btn = kit.big_button(btns, "Hide analysis",
                                          self._toggle_engine,
                                          bg=kit.CARD_HI, fg=kit.FG,
-                                         width=18, height=2,
+                                         width=15, height=2,
                                          font=("DejaVu Sans", 13))
-        self.engine_btn.pack(anchor="w", pady=(6, 0))
+        self.engine_btn.grid(row=1, column=0, padx=(0, 6), pady=3)
 
         # the board fills its column's height once the layout is realized
         left.bind("<Configure>", self._fit_board)
@@ -5494,9 +5516,20 @@ class AnalysisMoveScreen(kit.Screen):
         eng = self._engine_visible
         self.verdict_lbl.configure(text=(m.get("verdict") or "") if eng
                                    else "")
-        self.next_lbl.configure(text=("Next: " + m["next"])
+        self.next_lbl.configure(text=("Engine: " + m["next"])
                                 if (eng and m.get("next") and
                                     not self._exploring) else "")
+        # Hide analysis (2026-11-06): the move text takes over the space of
+        # the evaluation sentence and the engine line - both are UNPACKED,
+        # not just emptied, so the text box grows into their rows
+        if eng or self._testing:
+            self.verdict_lbl.pack(anchor="w", pady=(8, 0), before=self.txt)
+        else:
+            self.verdict_lbl.pack_forget()
+        if eng and m.get("next") and not self._exploring and not self._testing:
+            self.next_lbl.pack(anchor="w", pady=(6, 0), after=self.txt)
+        else:
+            self.next_lbl.pack_forget()
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
         pstar, tstar = self._stars()
@@ -5508,6 +5541,15 @@ class AnalysisMoveScreen(kit.Screen):
             self.txt.insert("end", " ")
         for kind, val in m["segments"]:
             if kind == "icon":
+                # black moves use a black piece icon with a WHITE outline
+                # (2026-11-06): the filled glyphs vanish on the dark box
+                if m.get("color") == "black":
+                    ph = kit.piece_photo(val)
+                    if ph is not None:
+                        self.txt.image_create("end", image=ph,
+                                              align="center")
+                        self.txt.insert("end", " ")
+                        continue
                 self.txt.insert("end", val + " ", ("icon",))
             elif kind == "move":
                 self.txt.insert("end", val, ("move",))
@@ -5529,9 +5571,9 @@ class AnalysisMoveScreen(kit.Screen):
                                 bg=kit.CARD_HI if self.idx > 0 else kit.CARD,
                                 fg=kit.FG if self.idx > 0 else kit.FG_DIM)
         last = self.idx >= len(self.gpack.moves) - 1
-        self.finish_btn.pack_forget()
+        self.finish_btn.grid_remove()
         if last and not self._exploring:
-            self.finish_btn.pack(side="left", padx=6)
+            self.finish_btn.grid(row=0, column=2, sticky="e", padx=6)
         self._refresh_next()
         self._fit_board()      # the Finish button changes the width budget
         self._draw_bar(0.0)
@@ -5554,12 +5596,34 @@ class AnalysisMoveScreen(kit.Screen):
         self.bar.create_rectangle(0, 0, w, 6, fill=kit.ACCENT, outline="")
 
     # transport -------------------------------------------------------------
+    def _match_transport_heights(self):
+        """All three transport buttons the SAME size (2026-11-06): the image
+        button sizes to its icon (tk's width/height options are ignored for
+        images), so pad it up to the arrow buttons' box - both dimensions.
+        Note cget('pady') returns screen units ('1m'), so measure with the
+        padding zeroed instead of parsing it."""
+        try:
+            want_h = max(self.back_btn.winfo_reqheight(),
+                         self.next_btn.winfo_reqheight())
+            want_w = max(self.back_btn.winfo_reqwidth(),
+                         self.next_btn.winfo_reqwidth())
+            self.play_btn.configure(pady=0, padx=0)
+            bare_h = self.play_btn.winfo_reqheight()
+            bare_w = self.play_btn.winfo_reqwidth()
+            self.play_btn.configure(
+                pady=max(0, (want_h - bare_h + 1) // 2),
+                padx=max(0, (want_w - bare_w + 1) // 2))
+        except tk.TclError:
+            pass
+
     def _set_play_glyph(self, playing):
         """PIL-drawn play/pause icons; the pause glyph is missing from the
         Pi's DejaVu, so the text fallback uses two filled bars."""
         icon = self._icon_pause if playing else self._icon_play
         if icon is not None:
-            self.play_btn.configure(image=icon, text="")
+            # keep the sizing text so the button stays the same size as the
+            # arrow buttons (2026-11-06)
+            self.play_btn.configure(image=icon, text=" ")
             self.play_btn.image = icon          # keep a reference alive
         else:
             self.play_btn.configure(image="",
@@ -5593,7 +5657,7 @@ class AnalysisMoveScreen(kit.Screen):
         self._set_bg("#2c313b")         # lighter grey: this is the ENGINE's
         self.explore_btn.configure(text="Back to game",
                                    bg=kit.ACCENT, fg="#1b1e24")
-        self.test_btn.pack(anchor="w", pady=(6, 0))
+        self.test_btn.grid(row=0, column=1, padx=6, pady=3)
         self._show()
 
     def _explore_exit(self):
@@ -5603,10 +5667,10 @@ class AnalysisMoveScreen(kit.Screen):
         self._test_from = None
         try:
             self.board.unbind("<Button-1>")
-            self.reset_btn.pack_forget()
         except Exception:
             pass
-        self.test_btn.pack_forget()
+        self.test_btn.grid_remove()
+        self.reset_btn.grid_remove()
         self._exploring = False
         self._set_bg(kit.BG)
         self.explore_btn.configure(text="Engine",
@@ -5694,16 +5758,13 @@ class AnalysisMoveScreen(kit.Screen):
             except ValueError:
                 break
         self._test_board = b
-        self.test_btn.pack_forget()
-        self.reset_btn = kit.big_button(self._right_col, "Reset",
-                                        self._test_reset, bg=kit.CARD_HI,
-                                        fg=kit.FG, width=18, height=2,
-                                        font=("DejaVu Sans", 13))
-        self.reset_btn.pack(anchor="w", pady=(6, 0))
+        self.test_btn.grid_remove()
+        self.reset_btn.grid(row=0, column=1, padx=6, pady=3)
         self.board.bind("<Button-1>", self._board_tap)
         side = "White" if b.turn else "Black"
         self.verdict_lbl.configure(text="Your move (%s):" % side)
         self.next_lbl.configure(text="")    # no pre-baked line posing live
+        self.next_lbl.pack_forget()
         self._test_draw()
         self._test_info(None)
         self._test_engine_run()             # the line from THIS position
@@ -5824,11 +5885,8 @@ class AnalysisMoveScreen(kit.Screen):
         self._stop_test_engine()
         self._testing = False
         self._test_from = None
-        try:
-            self.reset_btn.pack_forget()
-        except Exception:
-            pass
-        self.test_btn.pack(anchor="w", pady=(6, 0))
+        self.reset_btn.grid_remove()
+        self.test_btn.grid(row=0, column=1, padx=6, pady=3)
         self._show()
 
     def _play(self):
