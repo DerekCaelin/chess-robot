@@ -169,7 +169,8 @@ class ChessGame:
         if stop is not None and stop():
             return ""
         return RDpm.getplayermove(self.cb.getBoard(), valid, stop=stop,
-                                  status=status, on_ready=on_ready)
+                                  status=status, on_ready=on_ready,
+                                  mover_white=self.cb._turn == self.cb.WHITE)
 
     def handle_jostle(self):
         """Board/camera moved. Try automatic mid-game re-detection."""

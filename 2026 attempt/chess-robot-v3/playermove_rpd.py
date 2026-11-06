@@ -253,12 +253,14 @@ def registerclicks(x, y):
 # ── Move detection via temporal differencing ─────────────────────────────────
 
 def getplayermove(board, validkingmoves, stop=None, status=None,
-                  on_ready=None):
+                  on_ready=None, mover_white=True):
     """Detect the human's move by diffing the current frame against the
     reference captured after the computer's last move.
 
     board[x][y] is the engine's board state: '.' empty, lowercase = black,
-    uppercase = white.  The human plays white.
+    uppercase = white.  mover_white is the HUMAN's colour (2026-11-06: the
+    matcher used to assume the human plays white and misfiled every square
+    of a Black player's move).
     stop: optional callable checked while watching (UI abandons the turn).
     """
     changes = piece_detect.monitor(stop=stop, status=status,
@@ -287,19 +289,27 @@ def getplayermove(board, validkingmoves, stop=None, status=None,
     to_sqs = []
     for (r, c, d) in changes:
         cur = board[r][c]
-        if cur.isupper():
+        # a changed square that HELD the mover's piece is the from-square;
+        # anything else (empty or a captured enemy) is a to-square
+        if cur != "." and (cur.isupper() == mover_white):
             from_sqs.append((r, c))
-        elif cur == "." or cur.islower():
+        else:
             to_sqs.append((r, c))
 
     # Castling: the king and a rook both left their home squares.
-    if (7, 4) in from_sqs:
-        if (7, 7) in from_sqs:
+    if mover_white:
+        king_home, kingside, queenside = (7, 4), (7, 7), (7, 0)
+        castle = "me1g1", "me1c1"
+    else:
+        king_home, kingside, queenside = (0, 4), (0, 7), (0, 0)
+        castle = "me8g8", "me8c8"
+    if king_home in from_sqs:
+        if kingside in from_sqs:
             print("castled king side")
-            return "me1g1"
-        if (7, 0) in from_sqs:
+            return castle[0]
+        if queenside in from_sqs:
             print("castled queen side")
-            return "me1c1"
+            return castle[1]
 
     if not from_sqs or not to_sqs:
         print("no move detected")
@@ -307,6 +317,22 @@ def getplayermove(board, validkingmoves, stop=None, status=None,
         return "m    "
 
     fr, fc = from_sqs[0]
+
+    # En passant (2026-11-06): the capture removes the pawn NEXT TO the
+    # mover, so THREE squares change - and the captured pawn's square (it
+    # held a black piece before) lands in to_sqs beside the real
+    # destination.  'd5xe6' built 'd5e5' and the game called a legal en
+    # passant illegal.  A pawn's capture destination is the DIAGONAL
+    # square; when two candidates exist keep that one and drop the
+    # captured pawn's square.  Which candidate came first in the scan used
+    # to decide the outcome at random.
+    if len(from_sqs) == 1 and len(to_sqs) == 2 \
+            and board[fr][fc].lower() == "p":
+        diag = [sq for sq in to_sqs
+                if abs(sq[0] - fr) == 1 and abs(sq[1] - fc) == 1]
+        if len(diag) == 1:
+            to_sqs = diag
+
     tr, tc = to_sqs[0]
 
     constructmove = list("ma1a1")
