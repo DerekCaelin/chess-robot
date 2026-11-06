@@ -6600,27 +6600,27 @@ class GameScreen(kit.Screen):
         """The player moved illegally (2026-11-04): name the move and ask for
         the board to be reset. The engine's board never changed - the
         physical pieces no longer match it, so nothing continues until the
-        player says the board is back."""
+        player says the board is back.  Copy kept short (2026-11-06)."""
         if getattr(self, "_illegal_m", None) is not None:
             return
-        m = kit.Modal(self.app, "Illegal move")
+        m = kit.Modal(self.app, "Illegal Move")
         self._illegal_m = m
         try:
-            san = game_state.sans_of([mv])[0] if mv else "?"
+            san = game_state.sans_of([mv])[0] if mv else ""
         except Exception:
-            san = mv or "?"
+            san = mv or ""
+        said = ("Invalid move in %s." % san) if san else "Invalid move."
         tk.Label(m.body,
-                 text="%s is not legal here.\n\n%s\n\n"
-                      "Please reset the board to the position before the "
-                      "move, then continue." % (san, error),
+                 text=said + "\nPlease reset the board, then press "
+                      "\"Continue\".",
                  font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
                  wraplength=400, justify="left").pack(anchor="w")
 
         def ok():
             self._illegal_m = None
             m.close()
-        kit.big_button(m.body, "Board reset - continue", ok,
-                       bg=kit.GREEN, fg="#1b1e24", width=20,
+        kit.big_button(m.body, "Continue", ok,
+                       bg=kit.GREEN, fg="#1b1e24", width=14,
                        height=2).pack(pady=(12, 0))
 
     def _boardlost_modal(self):
