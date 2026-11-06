@@ -39,6 +39,10 @@ import camera                                    # noqa: E402
 from chessapp import game_state, audio, verify_log
 from chessapp import levels as LV  # noqa: E402
 from chessapp import analysispack as AP  # noqa: E402
+from chessapp import analysis as AN  # noqa: E402  (the what-if engine:
+#   AN was referenced but NEVER IMPORTED - the test-alternate engine thread
+#   died on NameError and its print went to the kiosk's invisible stdout,
+#   so the live line/depth silently never existed, 2026-11-06)
 from chessapp.game_controller import ChessGame  # noqa: E402
 from ui import ui_kit as kit                     # noqa: E402
 from ui.toolrun import ToolRun, parse_fit       # noqa: E402
@@ -5296,6 +5300,8 @@ class AnalysisMoveScreen(kit.Screen):
         self._test_from = None
         self._test_board = None
         self._test_engine = None
+        self._test_q = queue.Queue()   # live engine reports (Tk-thread drain)
+        self._test_gen = 0             # search generation (stale runs drop)
         self._test_stop = False
 
         # thin playback progress along the top
@@ -5668,9 +5674,12 @@ class AnalysisMoveScreen(kit.Screen):
 
     # the what-if board (2026-11-04) -----------------------------------------
     def _test_start(self):
-        """Reset the board to just after the previous player moved - the
-        position the reviewed move was made from - and let the player try
-        an alternate. The engine answers live."""
+        """The what-if board opens at the CURRENT move's position - the one
+        the screen is showing - and the player branches from there
+        (2026-11-06: it used to rewind to before the reviewed move, a whole
+        'new board').  The live engine answers from this position
+        immediately, and its line is genuinely live - the pre-baked review
+        line is hidden while testing."""
         if not self._exploring:
             return
         self._stop_test_engine()
@@ -5679,7 +5688,7 @@ class AnalysisMoveScreen(kit.Screen):
         m = self.move
         import chess
         b = chess.Board()
-        for u in (self.gpack.game.get("moves") or [])[:m["ply"] - 1]:
+        for u in (self.gpack.game.get("moves") or [])[:m["ply"]]:
             try:
                 b.push_uci(u)
             except ValueError:
@@ -5694,8 +5703,10 @@ class AnalysisMoveScreen(kit.Screen):
         self.board.bind("<Button-1>", self._board_tap)
         side = "White" if b.turn else "Black"
         self.verdict_lbl.configure(text="Your move (%s):" % side)
+        self.next_lbl.configure(text="")    # no pre-baked line posing live
         self._test_draw()
         self._test_info(None)
+        self._test_engine_run()             # the line from THIS position
 
     def _test_draw(self, hl=None):
         import ChessBoard
@@ -5772,30 +5783,33 @@ class AnalysisMoveScreen(kit.Screen):
             lines.append("The move leaves the position at %s." % words)
         if pv:
             lines.append("The projected line: " + pv + ".")
+        if not lines:
+            lines.append("Reading the position...")
         self.txt.insert("end", "  ".join(lines))
         self.txt.configure(state="disabled")
 
     def _test_engine_run(self):
-        """Deepening search on the what-if position, reporting as it goes."""
+        """Deepening search on the what-if position, reporting as it goes.
+        Reports travel through a QUEUE that _poll drains on the Tk thread
+        (2026-11-06): calling self.after() from the engine thread was
+        unreliable and the updates silently died - the depth stayed '...'
+        and the line never refreshed.  Each run is generation-stamped so a
+        superseded search can never overwrite the current one."""
         self._stop_test_engine()
         import chess
         fen = self._test_board.fen()
-        depth_box = {}
+        self._test_gen = getattr(self, "_test_gen", 0) + 1
+        gen = self._test_gen
 
         def on_info(depth, rec):
-            depth_box["d"] = depth
-            depth_box["rec"] = rec
-            try:
-                self.after(0, lambda: self._test_info(rec, depth))
-            except Exception:
-                pass
+            self._test_q.put((gen, depth, rec))
 
         def run():
             try:
                 eng = AN.Engine(multipv=1)
-                depth_box["eng"] = eng
-                eng.analyse_live(fen, on_info, max_depth=30,
-                                 stop=lambda: self._test_stop)
+                eng.analyse_live(
+                    fen, on_info, max_depth=30,
+                    stop=lambda: self._test_stop or self._test_gen != gen)
                 eng.close()
             except Exception as e:
                 print("test-alternate engine:", e)
@@ -5924,6 +5938,16 @@ class AnalysisMoveScreen(kit.Screen):
 
     # progress / lifecycle --------------------------------------------------
     def _poll(self):
+        # live what-if engine reports come via the queue: Tk widget calls
+        # must happen on the main thread (the engine runs in a worker)
+        if self._testing:
+            try:
+                while True:
+                    gen, depth, rec = self._test_q.get_nowait()
+                    if gen == getattr(self, "_test_gen", 0):
+                        self._test_info(rec, depth)
+            except queue.Empty:
+                pass
         if self._playing and self.voice != "none":
             d = self.gpack.sound_len(self.move["ply"], self.voice)
             frac = (time.time() - self._t0) / d if d > 0 else 0.0

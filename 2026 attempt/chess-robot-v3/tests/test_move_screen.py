@@ -145,6 +145,82 @@ def main():
     if scr._playing or scr._timer is not None:
         fails.append("engine: leaving Engine mode resumed the auto-advance")
 
+    # ---- Test alternate (2026-11-06) ------------------------------------
+    # the board must open at the CURRENT move's position (not a rewind to
+    # before it), the live engine must start immediately, the pre-baked
+    # review line must not pose as the live one, and depth reports must
+    # actually apply - they used to die in an after() call from the engine
+    # thread ('depth...' forever).
+    scr._explore_toggle()          # test-alternate lives in Engine mode
+    fake_eng = {}
+
+    class FakeEng:
+        def __init__(self, **kw):
+            pass
+
+        def analyse_live(self, fen, on_info, max_depth=0, stop=None):
+            fake_eng["fen"] = fen
+            fake_eng["calls"] = fake_eng.get("calls", 0) + 1
+
+        def close(self):
+            pass
+
+    _real_engine = A.AN.Engine
+    A.AN.Engine = FakeEng
+    scr._test_start()
+    settle(root)
+    if [m.uci() for m in scr._test_board.move_stack] != ["e2e4"]:
+        fails.append("test-alt: board is not the current move's position "
+                     "(%s)" % [m.uci() for m in scr._test_board.move_stack])
+    if fake_eng.get("calls", 0) < 1:
+        fails.append("test-alt: no engine run on entry")
+    if str(scr.next_lbl.cget("text")).strip():
+        fails.append("test-alt: pre-baked next line still shown")
+    if "Reading the position" not in scr.txt.get("1.0", "end"):
+        fails.append("test-alt: no reading placeholder while waiting")
+    # a live depth report applies on the Tk thread
+    scr._test_q.put((scr._test_gen, 12,
+                     {"cp": 30, "depth": 12, "pv": ["e7e5", "g1f3"]}))
+    scr._poll()
+    settle(root)
+    if "depth 12" not in str(scr.verdict_lbl.cget("text")):
+        fails.append("test-alt: depth not shown (got %r)"
+                     % scr.verdict_lbl.cget("text"))
+    body = scr.txt.get("1.0", "end")
+    if "projected line" not in body or "e5" not in body:
+        fails.append("test-alt: projected line not rendered (got %r)" % body)
+    # a superseded search must never overwrite the current one
+    scr._test_q.put((scr._test_gen - 1, 30,
+                     {"cp": -500, "depth": 30, "pv": []}))
+    scr._poll()
+    settle(root)
+    if "depth 30" in str(scr.verdict_lbl.cget("text")):
+        fails.append("test-alt: stale search report was applied")
+    # tapping a move re-runs the engine from the new position
+    n0 = fake_eng.get("calls", 0)
+
+    class Ev:
+        pass
+
+    tap_sq = scr.board.sq
+
+    def tap(f, r):
+        e = Ev()
+        e.x = f * tap_sq + 2
+        e.y = r * tap_sq + 2
+        scr._board_tap(e)
+    tap(4, 1)                 # e7 - select the black pawn (black to move)
+    tap(4, 3)                 # e5 - play it
+    settle(root)
+    if [m.uci() for m in scr._test_board.move_stack] != ["e2e4", "e7e5"]:
+        fails.append("test-alt: tap did not play e7e5 (%s)"
+                     % [m.uci() for m in scr._test_board.move_stack])
+    if fake_eng.get("calls", 0) <= n0:
+        fails.append("test-alt: no fresh engine run after a move")
+    scr._test_reset()
+    scr._explore_toggle()
+    A.AN.Engine = _real_engine
+
     # ---- the play/pause button carries an icon or a visible fallback ------
     try:
         img = scr.play_btn.cget("image")
