@@ -37,6 +37,14 @@ AL5D_board_height = 0.5   # inches - the board's SURFACE above the table.
                            # sits on the TABLE: depositing a captured piece
                            # subtracts this from the movement height
                            # (2026-11-06).
+# The user-defined GRIP HEIGHT of each piece (2026-11-06) and the per-piece
+# jaw adjust: see LEGO_Chess_rpd.grip_y.  piece_grips = piece_heights -
+# pickheightadj at migration time; piece_jaws defaults to the old global
+# gripper jaws adjust.
+AL5D_piece_grips = {"p": 1.26, "r": 1.42, "n": 1.57, "b": 1.93, "q": 2.24,
+                    "k": 2.48}
+AL5D_piece_jaws  = {"p": -9.0, "r": -9.0, "n": -9.0, "b": -9.0, "q": -9.0,
+                    "k": -9.0}
 AL5D_radscale    = 1.0     # planar->IK radius scale (1.0 = wrist radius equals the
                            #  planar board distance; re-fit with arm_probe)
 # Board-labelling orientation vs the arm model (axis beside rank 8, x>0

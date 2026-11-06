@@ -1,99 +1,114 @@
 {
-    "_comment": "GOLDEN defaults - baked 2026-09-18 14:17 by arm_probe --bake after confirmed arm calibration.",
-    "arm": {
-        "squaresize": 1.1875,
-        "stickout": 3.878,
-        "gfudge": -8.171,
-        "axistorow0": 3.875,
-        "board_height": 0.5,
-        "park_reach": 8.0,
-        "shoulder_height": 2.5,
-        "wrist_sign": 1,
-        "wrist_offset": 0.0,
-        "radscale": 1.0,
-        "gripper_len": 4.5,
-        "pickheightadj": 0.0,
-        "pickheightreachslope": 0.0,
-        "extraheight": 0.0,
-        "park_reach": 6.9,
-        "park_height": 0.4,
-        "cruise_margin": 0.15,
-        "grave_gap": 1.0,
-        "calib_mode": "A",
-        "frame_px": 4.0,
-        "frame_py": -2.75,
-        "frame_scale": 1.0,
-        "frame_offset": 3.878,
-        "frame_a0": 81.829,
-        "piece_heights": {
-            "p": 1.26,
-            "r": 1.42,
-            "n": 1.57,
-            "b": 1.93,
-            "q": 2.24,
-            "k": 2.48
-        },
-        "cruise_height": 3.6,
-        "extrawidth": 10,
-        "A": 5.875,
-        "B": 8.875,
-        "flip_rank": 0,
-        "flip_file": 0,
-        "po_offsets": [
-            [
-                3,
-                33
-            ],
-            [
-                4,
-                66
-            ],
-            [
-                5,
-                66
-            ]
-        ]
+  "_comment": "GOLDEN defaults - baked 2026-09-18 14:17 by arm_probe --bake after confirmed arm calibration.",
+  "arm": {
+    "squaresize": 1.1875,
+    "stickout": 3.878,
+    "gfudge": -8.171,
+    "axistorow0": 3.875,
+    "board_height": 0.5,
+    "park_reach": 6.9,
+    "shoulder_height": 2.5,
+    "wrist_sign": 1,
+    "wrist_offset": 0.0,
+    "radscale": 1.0,
+    "gripper_len": 4.5,
+    "pickheightadj": 0.0,
+    "pickheightreachslope": 0.0,
+    "extraheight": 0.0,
+    "park_height": 0.4,
+    "cruise_margin": 0.15,
+    "grave_gap": 1.0,
+    "calib_mode": "A",
+    "frame_px": 4.0,
+    "frame_py": -2.75,
+    "frame_scale": 1.0,
+    "frame_offset": 3.878,
+    "frame_a0": 81.829,
+    "piece_heights": {
+      "p": 1.26,
+      "r": 1.42,
+      "n": 1.57,
+      "b": 1.93,
+      "q": 2.24,
+      "k": 2.48
     },
-    "points_file": {
-        "A1": [
-            0.300878,
-            0.984821
-        ],
-        "H1": [
-            0.816288,
-            0.9627
-        ],
-        "A8": [
-            0.28258,
-            0.076284
-        ],
-        "H8": [
-            0.795505,
-            0.042385
-        ]
+    "cruise_height": 3.6,
+    "extrawidth": 10,
+    "A": 5.875,
+    "B": 8.875,
+    "flip_rank": 0,
+    "flip_file": 0,
+    "po_offsets": [
+      [
+        3,
+        33
+      ],
+      [
+        4,
+        66
+      ],
+      [
+        5,
+        66
+      ]
+    ],
+    "piece_grips": {
+      "p": 1.26,
+      "r": 1.42,
+      "n": 1.57,
+      "b": 1.93,
+      "q": 2.24,
+      "k": 2.48
     },
-    "stockfish": {
-        "level": 5,
-        "levels_elo": [
-            450,
-            600,
-            750,
-            900,
-            1050,
-            1200,
-            1400,
-            1650,
-            1950,
-            2400
-        ],
-        "movetime_ms": 6000
-    },
-    "audio": {
-        "volume": 80,
-        "muted": false,
-        "rate": 125
-    },
-    "player": {
-        "color": "white"
+    "piece_jaws": {
+      "p": -9.0,
+      "r": -9.0,
+      "n": -9.0,
+      "b": -9.0,
+      "q": -9.0,
+      "k": -9.0
     }
+  },
+  "points_file": {
+    "A1": [
+      0.300878,
+      0.984821
+    ],
+    "H1": [
+      0.816288,
+      0.9627
+    ],
+    "A8": [
+      0.28258,
+      0.076284
+    ],
+    "H8": [
+      0.795505,
+      0.042385
+    ]
+  },
+  "stockfish": {
+    "level": 5,
+    "levels_elo": [
+      450,
+      600,
+      750,
+      900,
+      1050,
+      1200,
+      1400,
+      1650,
+      1950,
+      2400
+    ],
+    "movetime_ms": 6000
+  },
+  "audio": {
+    "volume": 80,
+    "muted": false,
+    "rate": 125
+  },
+  "player": {
+    "color": "white"
+  }
 }

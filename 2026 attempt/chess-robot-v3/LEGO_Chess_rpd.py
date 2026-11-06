@@ -173,8 +173,25 @@ xtrans = {
     "e": 4, "f": 5, "g": 6, "h": 7
 }
 pieceheights = {"p": 1.26, "r": 1.42, "n": 1.57, "b": 1.93, "q": 2.24,
-                "k": 2.48}   # inches (piece height above the board)
+                "k": 2.48}   # inches (piece height above the board) - LEGACY
 piecewidths  = {"p": 85,  "r": 81,  "n": 95,  "b": 80,  "q": 75,  "k": 77}
+
+# The user-defined GRIP HEIGHT of each piece (2026-11-06): the height of the
+# grab point above the piece's own sitting surface - the value you jog to and
+# read, no derived math.  The model:
+#     grip height = piece grip height + board height + arm sag compensation
+# (the sag is added inside ik_Y at command time).  The arm's Y is board-
+# referenced, so on the board the +board height cancels against the reference
+# and the grip lands at the piece grip height; for a piece on the TABLE (the
+# graveyard) the surface term is 0 and the grip lands exactly board_height
+# lower - 'subtract the height of the board from the movement height when
+# depositing a piece in the graveyard'.
+piecegrips = dict(getattr(CBstate, "AL5D_piece_grips", {}) or
+                  {k: float(v) - getattr(CBstate, "AL5D_pickheightadj", 0.0)
+                   for k, v in pieceheights.items()})
+# Per-piece jaw adjust (2026-11-06): narrow pieces grip tighter.  Defaults to
+# the old global gripper jaws adjust.
+piecejaws = dict(getattr(CBstate, "AL5D_piece_jaws", {}) or {})
 
 startrobotbtntext1 = "Start robot"
 startrobotbtntext2 = "Initialise AL5D arm"
@@ -292,12 +309,23 @@ def parametric_pose(squarename):
 # fingertip's true height drifts with reach NON-LINEARLY, so a single linear
 # slope can't express it. Values below are the old (working) arm's hand-fitted
 # steps; re-tune after the shoulder-height fix.
-def grip_y(piecetype, reach):
-    """Board-relative WRIST height for the gripper tip to land at the piece's
-    grip point: Grip_height = piece_h + pickheightadj + pickheightreachslope*reach,
-    Y_wrist = Grip_height + gripper_len. 'piece_h' is in inches."""
-    piece_h = pieceheights[piecetype]
-    return piece_h + pickheightadj + pickheightreachslope * reach + gripper_len
+def grip_y(piecetype, reach=None, surface=None):
+    """WRIST height for the gripper tip to land at the piece's GRIP POINT.
+    The user defines the grip height of each piece directly (2026-11-06):
+        grip height = piece grip height + board height + arm sag compensation
+    - 'piece grip height' is the grab point's height above the piece's own
+      sitting surface (piecegrips) - what you jog to and read.
+    - the board height term is the piece's sitting surface above the table:
+      surface=None -> the board (the term cancels against the board-referenced
+      Y and the grip lands at the piece grip height); surface=0 for the
+      graveyard, which lands board_height lower.
+    - the sag compensation is added inside ik_Y() at command time.
+    'reach' is accepted for call-site compatibility (the old reach slope is
+    retired in favour of the sag curve and no longer applies)."""
+    if surface is None:
+        surface = board_height
+    grip = piecegrips[piecetype] + surface - board_height
+    return grip + gripper_len
 
 
 # ── Arm sag compensation ─────────────────────────────────────────────────────
@@ -572,7 +600,8 @@ def openjaws():
 
 def closejaws(piecetype):
     global targetXYZGWAWR
-    jawsize = piecewidths[piecetype] + 15 + extrawidth
+    jawsize = piecewidths[piecetype] + 15 + piecejaws.get(piecetype,
+                                                          extrawidth)
     targetXYZGWAWR = (targetXYZGWAWR[0], targetXYZGWAWR[1],
                       targetXYZGWAWR[2], jawsize,
                       targetXYZGWAWR[4], targetXYZGWAWR[5])
@@ -628,8 +657,9 @@ def grip_open_width():
 
 
 def grip_width(piece="p"):
-    """Jaw width that closes on a piece of this type (as closejaws uses)."""
-    return piecewidths[piece] + 15 + extrawidth
+    """Jaw width that closes on a piece of this type - a per-piece jaw adjust
+    (2026-11-06) so narrow pieces can be gripped tighter."""
+    return piecewidths[piece] + 15 + piecejaws.get(piece, extrawidth)
 
 
 
@@ -738,17 +768,17 @@ def pickuppiece(piecetype, armlen):
     _lift_clear(armlen, targetXYZGWAWR[2], targetXYZGWAWR[1])
 
 
-def droppiece(piecetype, armlen, surface=0.0):
+def droppiece(piecetype, armlen, surface=None):
     """Release at the PICK height: at grip height the piece's base is already
-    sitting on the board (that is where the pick gripped it), so the release is
-    a pure unclamp - no drop, no bounce. (It used to descend 0.1 in LOWER and
-    press the piece into the board while the wrist finished its swing - the
-    piece dragged, 2026-10-21.) The release is servo-only: no IK re-solve can
-    move the arm at the unclamp instant.
-    surface: how far the deposit surface sits BELOW the board surface (the
-    graveyard is on the table = board_height lower, 2026-11-06); zero for
-    every square on the board."""
-    moveXY(grip_y(piecetype, armlen) - surface)
+    sitting on the surface (that is where the pick gripped it), so the release
+    is a pure unclamp - no drop, no bounce. (It used to descend 0.1 in LOWER
+    and press the piece into the board while the wrist finished its swing -
+    the piece dragged, 2026-10-21.) The release is servo-only: no IK re-solve
+    can move the arm at the unclamp instant.
+    surface: the height of the deposit surface above the TABLE - None = the
+    board, 0 = the table (the graveyard), which lands exactly board_height
+    lower (2026-11-06)."""
+    moveXY(grip_y(piecetype, surface=surface))
     set_gripper(grip_open_width())
     _lift_clear(armlen, targetXYZGWAWR[2], targetXYZGWAWR[1])
 
@@ -770,10 +800,9 @@ def takepiece(X, Z, targetpiece, source_square=None):
         Zgraveyard = armangle("h9")
     movearm(Xgraveyard, Zgraveyard)
     time.sleep(0.5)      # was 1.5: the wrist tracking keeps the piece still now
-    # the graveyard is on the TABLE, board_height below the board surface -
-    # without the offset the arm opened its jaws board_height too high and
-    # dropped the piece (2026-11-06)
-    droppiece(targetpiece, Xgraveyard, surface=board_height)
+    # the graveyard is on the TABLE (surface=0): the grip lands exactly
+    # board_height lower than for a board-sitting piece (2026-11-06)
+    droppiece(targetpiece, Xgraveyard, surface=0.0)
 
 def iscastling(sourcesquarename):
     if CBstate.cbstate == 4:

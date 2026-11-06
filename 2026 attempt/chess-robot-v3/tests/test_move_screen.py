@@ -262,6 +262,7 @@ def main():
     scr._toggle_engine()
     settle(root)
 
+
     # ---- the play/pause button carries an icon or a visible fallback ------
     try:
         img = scr.play_btn.cget("image")
@@ -270,6 +271,47 @@ def main():
     txt = str(scr.play_btn.cget("text"))
     if not img and not txt.strip():
         fails.append("play button shows neither an icon nor a glyph")
+
+    scr._cleanup()
+
+    # ---- Board & Pieces (2026-11-06) ------------------------------------
+    # grip heights (left) and per-piece jaw adjusts (right) on the same
+    # rows; info button on the board height and on each piece's jaws, none
+    # on the piece heights
+    scr._cleanup()
+    app.show(A.PieceHeightScreen)
+    bp = app.current
+    settle(root)
+    if bp.title_text != "Board & Pieces":
+        fails.append("Board & Pieces: title is %r" % bp.title_text)
+    if sorted(bp.rows) != ["b", "board", "k", "n", "p", "q", "r"]:
+        fails.append("Board & Pieces: height rows %s" % sorted(bp.rows))
+    if sorted(bp.jaws) != ["b", "k", "n", "p", "q", "r"]:
+        fails.append("Board & Pieces: jaw rows %s" % sorted(bp.jaws))
+    for pc in ("p", "r", "n", "b", "q", "k"):
+        if (bp.rows[pc].grid_info().get("row")
+                != bp.jaws[pc].master.grid_info().get("row")):
+            fails.append("Board & Pieces: %s height/jaw not one row" % pc)
+    # the sliders save through to the value fields
+    def _set_board(v):
+        settings.set("arm.board_height", v)
+        bp.refresh_labels()
+    _set_board(0.7)
+    if str(bp.rows["board"].cget("text")) != "0.7":
+        fails.append("Board & Pieces: board height did not save")
+    _set_board(0.5)
+
+    def _set_jaw(v):
+        settings.set("arm.piece_jaws",
+                     dict(settings.get("arm.piece_jaws"), n=v))
+        bp.refresh_labels()
+    _set_jaw(-14)
+    if str(bp.jaws["n"].cget("text")) != "-14":
+        fails.append("Board & Pieces: jaw adjust did not save")
+    _set_jaw(-9)
+    # pick height adjust is gone from the settings list
+    if any(e[0] == "arm.pickheightadj" for e in A.settings.EDITABLE):
+        fails.append("pick height adjust still listed in the settings")
 
     scr._cleanup()
 

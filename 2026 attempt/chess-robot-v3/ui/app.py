@@ -4410,68 +4410,98 @@ class PickHeightSettingsScreen(kit.Screen):
 # ── piece heights ─────────────────────────────────────────────────────────────
 
 class PieceHeightScreen(kit.Screen):
-    """Heights (2026-11-06): the grip height of each piece type and the
-    BOARD height, in inches, on the Calibration-settings row template -
-    name, (unit), info button where it helps, and a tappable value field
-    that opens the standard slider.  The board height is the surface of the
-    board off the table; it lowers the graveyard deposit, which sits on the
-    table.  The pieces are self-explanatory - no info buttons."""
+    """Board & Pieces (2026-11-06): the GRIP HEIGHT of each piece and the
+    board height (LEFT column), and a per-piece jaw adjust (RIGHT column),
+    each piece on one row.  The grip height is the grab point's height above
+    the piece's own sitting surface - the value you jog to and read; the
+    model adds the board height and the arm sag compensation.  Rows follow
+    the Calibration-settings template: name (unit), info button where it
+    helps, tappable value -> the standard slider.  No info buttons on the
+    piece heights (self-explanatory); the board height and each piece's jaw
+    adjust carry one."""
 
     ROWS = (
+        # key,   name,           lo,   hi,   step, height info (or None)
         ("board", "Board (in)", 0.0, 2.0, 0.1,
          "Height of the surface of the board off the table. This value "
          "sets the height adjust when moving pieces to the graveyard."),
-        ("p", "Pawn (in)", 0.5, 3.5, 0.05, None),
-        ("r", "Rook (in)", 0.5, 3.5, 0.05, None),
-        ("n", "Knight (in)", 0.5, 3.5, 0.05, None),
-        ("b", "Bishop (in)", 0.5, 3.5, 0.05, None),
-        ("q", "Queen (in)", 0.5, 3.5, 0.05, None),
-        ("k", "King (in)", 0.5, 3.5, 0.05, None),
+        ("p", "Pawn (in)", 0.2, 3.5, 0.05, None),
+        ("r", "Rook (in)", 0.2, 3.5, 0.05, None),
+        ("n", "Knight (in)", 0.2, 3.5, 0.05, None),
+        ("b", "Bishop (in)", 0.2, 3.5, 0.05, None),
+        ("q", "Queen (in)", 0.2, 3.5, 0.05, None),
+        ("k", "King (in)", 0.2, 3.5, 0.05, None),
     )
+    NAMES = {"p": "Pawn", "r": "Rook", "n": "Knight", "b": "Bishop",
+             "q": "Queen", "k": "King"}
+    JAW_LO, JAW_HI, JAW_STEP = -20.0, 60.0, 1.0
 
     def __init__(self, app):
-        super().__init__(app=app, title="Heights")
+        super().__init__(app=app, title="Board & Pieces")
         self.app = app
         self.rows = {}
+        self.jaws = {}
         grid = tk.Frame(self.body, bg=kit.BG)
         grid.pack(fill="both", expand=True)
-        per_col = (len(self.ROWS) + 1) // 2
-        grid.columnconfigure(2, minsize=6)       # gutter between pairs
-        for col in range(4):                     # name | value | name | value
-            grid.columnconfigure(col, weight=3 if col % 2 == 0 else 2)
-        for r in range(per_col):
+        # name | grip height (left) | jaw adjust (right)
+        grid.columnconfigure(0, weight=3)
+        grid.columnconfigure(1, weight=2)
+        grid.columnconfigure(2, weight=3)
+        for r in range(len(self.ROWS)):
             grid.rowconfigure(r, weight=1)
-        for i, (key, label, lo, hi, step, definition) in enumerate(self.ROWS):
-            r = i % per_col
-            pair = i // per_col
+        for r, (key, label, lo, hi, step, definition) in enumerate(self.ROWS):
             name_cell = tk.Frame(grid, bg=kit.BG)
-            name_cell.grid(row=r, column=pair * 2, sticky="nsew", pady=1)
+            name_cell.grid(row=r, column=0, sticky="nsew", pady=1)
             tk.Label(name_cell, text=label, font=("DejaVu Sans", 12),
                      bg=kit.BG, fg=kit.FG, anchor="w").pack(side="left")
-            if definition:          # info button ONLY where it helps
+            if definition:          # the board's info button
                 kit.info_button(
                     name_cell,
                     lambda t=label, d=definition: self._info(t, d),
                     small=True, bg=kit.BG).pack(side="left", padx=(4, 0))
+            hbtn = kit.big_button(
+                grid, "",
+                lambda k=key, l=label, lo=lo, hi=hi, st=step:
+                self._edit_height(k, l, lo, hi, st),
+                bg=kit.CARD_HI, fg=kit.ACCENT, width=5, height=2,
+                font=("DejaVu Sans", 12))
+            hbtn.grid(row=r, column=1, sticky="nsew", padx=(8, 0), pady=1)
+            self.rows[key] = hbtn
+            if key == "board":      # the board has no jaws
+                continue
             cell = tk.Frame(grid, bg=kit.BG)
-            cell.grid(row=r, column=pair * 2 + 1, sticky="nsew", padx=(8, 0))
-            btn = kit.big_button(cell, "",
-                                 lambda k=key, l=label, lo=lo, hi=hi, st=step:
-                                 self._edit(k, l, lo, hi, st),
-                                 bg=kit.CARD_HI, fg=kit.ACCENT, width=5,
-                                 height=2, font=("DejaVu Sans", 12))
-            btn.pack(side="left", fill="both", expand=True)
-            self.rows[key] = btn
+            cell.grid(row=r, column=2, sticky="nsew", padx=(8, 0), pady=1)
+            jbtn = kit.big_button(
+                cell, "", lambda k=key: self._edit_jaw(k),
+                bg=kit.CARD_HI, fg=kit.ACCENT, width=5, height=2,
+                font=("DejaVu Sans", 12))
+            jbtn.pack(side="left", fill="both", expand=True)
+            kit.info_button(cell, self._jaw_info_cb(key), small=True,
+                            bg=kit.BG).pack(side="left", padx=(4, 0))
+            self.jaws[key] = jbtn
         self.refresh_labels()
 
+    def _jaw_info_cb(self, key):
+        name = self.NAMES.get(key, key).lower()
+        text = ("Controls the jaw width when gripping the %s (servo "
+                "degrees). Lower values grip the %s tighter, higher values "
+                "looser. Increase if the jaws fail to grip the %s; decrease "
+                "if they pinch the sides or knock it over."
+                % (name, name, name))
+        return lambda t=self.NAMES.get(key, key) + " jaws", d=text: \
+            self._info(t, d)
+
     def refresh_labels(self):
-        ph = settings.get("arm.piece_heights") or RD.pieceheights
+        ph = settings.get("arm.piece_grips") or RD.piecegrips
+        pj = settings.get("arm.piece_jaws") or RD.piecejaws
         bh = float(settings.get("arm.board_height", 0.5))
         for key, btn in self.rows.items():
             if key == "board":
                 btn.configure(text=_fmt(bh))
             else:
                 btn.configure(text=_fmt(float(ph.get(key, 0))))
+        for key, btn in self.jaws.items():
+            btn.configure(text=_fmt(float(pj.get(key, 0))))
 
     def _info(self, title, definition):
         m = kit.Modal(self.app, title)
@@ -4480,7 +4510,7 @@ class PieceHeightScreen(kit.Screen):
         kit.big_button(m.body, "Back", m.close, bg=kit.CARD_HI, fg=kit.FG,
                        width=12, height=2).pack(pady=(10, 0))
 
-    def _edit(self, key, label, lo, hi, step):
+    def _edit_height(self, key, label, lo, hi, step):
         """The standard set-value experience: the slider modal."""
         if key == "board":
             def change(v):
@@ -4492,13 +4522,26 @@ class PieceHeightScreen(kit.Screen):
             return
 
         def change(v):
-            ph = dict(settings.get("arm.piece_heights") or RD.pieceheights)
-            ph[key] = round(v, 2)
-            settings.set("arm.piece_heights", ph)
+            pg = dict(settings.get("arm.piece_grips") or RD.piecegrips)
+            pg[key] = round(v, 2)
+            settings.set("arm.piece_grips", pg)
             self.refresh_labels()
-        cur = dict(settings.get("arm.piece_heights") or RD.pieceheights)
-        kit.slider(self.app, label + "\narm.piece_heights." + key, lo, hi,
+        cur = dict(settings.get("arm.piece_grips") or RD.piecegrips)
+        kit.slider(self.app, label + "\narm.piece_grips." + key, lo, hi,
                    step, float(cur.get(key, 0.0)), change,
+                   confirm_msg="are you sure?")
+
+    def _edit_jaw(self, key):
+        def change(v):
+            pj = dict(settings.get("arm.piece_jaws") or RD.piecejaws)
+            pj[key] = round(v, 1)
+            settings.set("arm.piece_jaws", pj)
+            self.refresh_labels()
+        cur = dict(settings.get("arm.piece_jaws") or RD.piecejaws)
+        kit.slider(self.app,
+                   self.NAMES.get(key, key) + " jaws\narm.piece_jaws." + key,
+                   self.JAW_LO, self.JAW_HI, self.JAW_STEP,
+                   float(cur.get(key, 0.0)), change,
                    confirm_msg="are you sure?")
 
 
@@ -6128,8 +6171,6 @@ class DirectScreen(kit.Screen):
                 "arm.gfudge": GfudgeScreen,
                 "arm.stickout": ReachSettingsScreen,
                 "arm.radscale": ReachSettingsScreen,
-                "arm.pickheightadj": PickHeightSettingsScreen,
-                "arm.pickheightreachslope": PickHeightSettingsScreen,
             }
             tgt = _test_map.get(key)
             if tgt is not None:
@@ -6151,7 +6192,7 @@ class DirectScreen(kit.Screen):
         # Full-width nav buttons (2026-10-21): every button stretches to fill
         # the screen width, the row is DOUBLE height and the label wraps inside
         # the button so two-line names fit. "Board size" is hidden here.
-        for label, tgt in (("Heights", PieceHeightScreen),
+        for label, tgt in (("Board & Pieces", PieceHeightScreen),
                            ("Manual corners", ManualCalibScreen),
                            ("Calibration test", CalibrationTestScreen),
                            ("Arm sag", ArmSagScreen)):

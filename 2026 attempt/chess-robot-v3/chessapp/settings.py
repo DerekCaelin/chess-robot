@@ -29,6 +29,8 @@ ARM_TO_CBSTATE = {
     "axistorow0":    "AL5D_axistorow0",
     "shoulder_height": "AL5D_shoulder_height",
     "board_height":  "AL5D_board_height",
+    "piece_grips":   "AL5D_piece_grips",
+    "piece_jaws":    "AL5D_piece_jaws",
     "wrist_sign":    "AL5D_wrist_sign",
     "wrist_offset":  "AL5D_wrist_offset",
     "radscale":      "AL5D_radscale",
@@ -171,6 +173,12 @@ def apply():
         ph = get("arm.piece_heights")
         if isinstance(ph, dict) and ph:
             lego.pieceheights = {k: float(v) for k, v in ph.items()}
+        pg = get("arm.piece_grips")
+        if isinstance(pg, dict) and pg:
+            lego.piecegrips = {k: float(v) for k, v in pg.items()}
+        pj = get("arm.piece_jaws")
+        if isinstance(pj, dict) and pj:
+            lego.piecejaws = {k: float(v) for k, v in pj.items()}
     ik = sys.modules.get("lib_al5_2D_IK")
     if ik:
         ik.A = CBstate.AL5D_A
@@ -222,7 +230,7 @@ def snapshot():
 # these — otherwise a stale snapshot silently reverts the square size / axis /
 # piece heights you've set on the bench.
 BOARD_KEEP_KEYS = ("squaresize", "axistorow0", "piece_heights",
-                   "board_height")
+                   "piece_grips", "piece_jaws", "board_height")
 
 
 def restore(snap):
@@ -268,15 +276,9 @@ EDITABLE = [
     ("arm.stickout", "Reach intercept (in)", -8.0, 8.0, 0.1,
      "A constant added to every reach distance before scaling - shifts all "
      "squares nearer or further together. Set by Arm calibration."),
-    ("arm.pickheightadj", "Pick height adjust (in)", -3.0, 3.0, 0.05,
-     "An adjustment to the height of the gripper as it descends to pick up the "
-     "piece. Positive values raise the gripper, negative values lower the "
-     "gripper. Grip_height = piece_h + pickheightadj + pickheightreachslope "
-     "* reach"),
     ("arm.pickheightreachslope", "Pick height reach slope (in/in)", -0.3, 0.3, 0.005,
-     "Adjustment per inch of arm reach. Positive values raise the gripper as "
-     "the arm extends further. Grip_height = piece_h + pickheightadj + "
-     "pickheightreachslope * reach"),
+     "Retired in favour of the arm-sag curve (2026-10-21) and no longer part "
+     "of the grip model (2026-11-06); kept for tooling only."),
     ("arm.cruise_height", "Cruise height (in)", 1.0, 5.0, 0.1,
      "How high the gripper TIP sits above the board while travelling between "
      "squares (inches), for both games and calibration. Must clear the tallest "
