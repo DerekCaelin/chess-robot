@@ -103,7 +103,7 @@ def main():
         (A.ReachSettingsScreen, {}, ["Save"]),
         (A.CalibTestScreen, {"key": "arm.pickheightadj"}, ["Save"]),
         (A.CalibTestScreen, {"key": "arm.pickheightreachslope"}, ["Save"]),
-        (A.PickHeightSettingsScreen, {}, ["Save", "Piece heights"]),
+        (A.PickHeightSettingsScreen, {}, ["Save", "Heights"]),
         (A.SettingsScreen, {}, []),
         (A.NewGameScreen, {}, ["BEGIN"]),
         (A.ArmGrabScreen, {}, ["Start", "Save", "Grab", "+",
