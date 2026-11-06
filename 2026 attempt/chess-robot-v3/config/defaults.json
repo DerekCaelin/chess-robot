@@ -6,6 +6,7 @@
         "gfudge": -8.171,
         "axistorow0": 3.875,
         "board_height": 0.5,
+        "park_reach": 8.0,
         "shoulder_height": 2.5,
         "wrist_sign": 1,
         "wrist_offset": 0.0,

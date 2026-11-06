@@ -290,6 +290,11 @@ EDITABLE = [
      "Fine adjustment of the gripper's tilt. Nudges the wrist a few degrees "
      "until the gripper hangs straight down (perpendicular to the board) at "
      "every reach - check near AND far squares."),
+    ("arm.park_reach", "Park reach (in)", 5.0, 11.0, 0.1,
+     "How far the arm extends at the park/rest pose - where it settles when "
+     "the servos release, and what it wakes into on the next move. A larger "
+     "reach keeps the arm's mass in front of the shoulder so it cannot "
+     "collapse backwards."),
     ("arm.frame_px", "Frame pivot X (squares)", -16.0, 16.0, 0.05,
      "Mode B: the arm pivot's X in board units (a-file = 0). Set by the "
      "corner calibration; edit only if you know a full re-fit is needed."),
