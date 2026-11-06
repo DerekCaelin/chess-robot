@@ -5239,11 +5239,14 @@ class AnalysisHomeScreen(kit.Screen):
         if not self.gpack.moves and self.engine_var.get():
             return                      # the full review needs the text
         # Begin loads the first move already playing (2026-10-22); the review
-        # shows the engine analysis per the checkbox (2026-10-24)
+        # shows the engine analysis per the checkbox (2026-10-24).  Auto
+        # advance is driven by ITS OWN checkbox (2026-11-06): it used to pass
+        # the engine-analysis checkbox, so unchecking 'Auto advance' did
+        # nothing and the review played itself through the whole game.
         self.stop = True
         self.app.release_awake("analysis")
         self.app.show(AnalysisMoveScreen, pack=self.gpack, idx=idx,
-                      autoplay=bool(self.engine_var.get()),
+                      autoplay=bool(self.adv_var.get()),
                       show_engine=bool(self.engine_var.get()))
 
     def _cleanup(self):

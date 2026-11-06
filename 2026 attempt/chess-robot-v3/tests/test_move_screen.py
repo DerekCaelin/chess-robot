@@ -205,6 +205,30 @@ def main():
     got = str(home.prog_lbl.cget("text"))
     if "audio" in got or "files loaded" in got:
         fails.append("home: audio stage shown with voice off (got %r)" % got)
+    # ---- "Auto advance" OFF must not auto-advance (2026-11-06) ----------
+    # Begin used to pass the ENGINE-ANALYSIS checkbox as the autoplay flag,
+    # so unchecking 'Auto advance' did nothing and the review played itself
+    # through the whole game.  Pin the wiring, not just the behaviour.
+    caught = {}
+    saved_show = app.show
+
+    def catch_show(cls, **kw):
+        caught.clear()
+        caught.update(kw)
+    app.show = catch_show
+    home.adv_var.set(False)
+    home.engine_var.set(True)
+    home._open(0)
+    if caught.get("autoplay"):
+        fails.append("auto-advance OFF: Begin still starts playing")
+    if not caught.get("show_engine"):
+        fails.append("engine checkbox no longer drives show_engine")
+    home.adv_var.set(True)
+    home._open(0)
+    if not caught.get("autoplay"):
+        fails.append("auto-advance ON: Begin does not start playing")
+    app.show = saved_show
+
     A.AP.load_pack, A.AP.generate_async = _real_load, _real_gen
     A.AP.generation_state = _real_state
     settings.set("analysis.voice", "none")
