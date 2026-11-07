@@ -6503,16 +6503,16 @@ class GameScreen(kit.Screen):
         # the move list scrolls by finger drag once it outgrows the space
         self.moves_txt.bind("<Button-1>", self._drag_start)
         self.moves_txt.bind("<B1-Motion>", self._drag_move)
-        # Menu and Star move sit BELOW the move list (2026-10-24), standard
-        # height
+        # Menu and Star move sit BELOW the move list (2026-10-24); height 2
+        # like the other action buttons on this screen (2026-11-08)
         brow = tk.Frame(side, bg=kit.BG)
         brow.pack(anchor="w", pady=(10, 0))
         self.star_btn = kit.big_button(brow, "\u2606 Star move",
                                        self._toggle_star, bg=kit.CARD_HI,
-                                       fg=kit.FG, width=10, height=1)
+                                       fg=kit.FG, width=10, height=2)
         self.star_btn.pack(side="left")
         kit.big_button(brow, "Menu", self._menu, bg=kit.CARD_HI, fg=kit.FG,
-                       width=8, height=1).pack(side="left", padx=(8, 0))
+                       width=8, height=2).pack(side="left", padx=(8, 0))
         threading.Thread(target=self._worker, daemon=True).start()
         self._poll()
 
