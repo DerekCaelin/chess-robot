@@ -5002,7 +5002,13 @@ class ArmSagScreen(kit.Screen):
             return
         self.stop = True
         if not self.saved:
-            RD.set_sag(self.orig)      # Cancel: drop the live tuning
+            # Cancel: drop the live tuning and restore the saved curve.
+            # BUGFIX (2026-11-07): self.orig is a {square: comp} DICT and
+            # set_sag expects [[square, comp], ...] - iterating the dict
+            # yielded its KEYS ('d4' -> item[0]='d'...), every sample failed
+            # the float parse and the sag was wiped to EMPTY (no
+            # compensation at all), not restored.
+            RD.set_sag([[sq, v] for sq, v in self.orig.items()])
         if RD.sp is None:
             self.app.back()
             return

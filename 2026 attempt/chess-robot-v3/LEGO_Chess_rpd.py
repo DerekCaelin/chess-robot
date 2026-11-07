@@ -342,12 +342,17 @@ sag_pts = []
 
 def set_sag(points):
     """Install the sag curve from the settings form [[square, comp], ...]:
-    each sample square's CURRENT reach (frame-dependent) anchors its point."""
+    each sample square's CURRENT reach (frame-dependent) anchors its point.
+    The stored curve is 'arm droop offset by board height' (the settings
+    convention, 2026-11-06): the pedestal is stripped here so the model
+    applies the pure flex compensation - without the strip the gripper
+    lands board_height too high."""
     global sag_pts
     pts = []
     for item in (points or []):
         try:
-            pts.append((float(armlength(item[0])), float(item[1])))
+            pts.append((float(armlength(item[0])),
+                        float(item[1]) - board_height))
         except Exception:
             continue
     sag_pts = sorted(pts)

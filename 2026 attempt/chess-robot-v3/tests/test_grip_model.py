@@ -72,6 +72,19 @@ def main():
           RD.piecewidths["p"] + 15 - 9.0)
     RD.piecejaws["n"] = -9.0
 
+    # ── the sag ("arm droop") storage convention ─────────────────────────
+    # stored values carry a board-height pedestal ("offset by board
+    # height"); set_sag strips it so the model applies pure flex.  Without
+    # the strip the gripper lands board_height too high - the symptom that
+    # prompted this (2026-11-07).
+    RD.set_sag([["d4", -1.0]])
+    check("sag strips the board-height pedestal",
+          RD.sag_comp(RD.armlength("d4")), -1.5)
+    RD.set_sag([])
+    check("empty sag is still zero", RD.sag_comp(8.0), 0.0)
+    # the sag screen's tuning is closed-loop through the same set_sag, so
+    # its stored values keep the pedestal by construction
+
     # ── settings -> the live arm module ──────────────────────────────────
     settings.set("arm.piece_grips", dict(RD.piecegrips, p=1.30))
     check("set piece_grips -> the arm module", RD.piecegrips["p"], 1.30)
