@@ -415,7 +415,7 @@ class HomeScreen(kit.Screen):
             bg=kit.ACCENT, activebackground=kit.ACCENT_HI,
             relief="flat", bd=0, highlightthickness=0, width=192, height=192)
         self.play_btn.image = self._play_img
-        self.play_btn.place(x=484, rely=0.5, anchor="center")
+        self.play_btn.place(x=484, rely=0.5, anchor="w")
         self.play_btn.bind(
             "<ButtonPress>",
             lambda _e: self.play_btn.configure(image=self._play_img_dn))
