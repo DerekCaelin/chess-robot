@@ -11,23 +11,32 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 # ── palette / typography ─────────────────────────────────────────────────────
-BG        = "#232730"   # app background (slate)
-CARD      = "#2e3440"   # panels, buttons
-CARD_HI   = "#3b4252"   # pressed/hover
-FG        = "#eceef4"
-FG_DIM    = "#9aa3b5"
-ACCENT    = "#d08b3e"   # primary action (warm wood)
-ACCENT_HI = "#b3752e"
-GREEN     = "#4f9e6b"
-RED       = "#c25a52"
-SQUARE_L  = "#e8d9b8"
-SQUARE_D  = "#7d6a4e"
+BG        = "#0c0a09"   # warm black - the dark room (theme: cherry & gold)
+CARD      = "#2b1512"   # panels, buttons (cherry-tinted)
+CARD_HI   = "#3c1c17"   # pressed/hover
+FG        = "#f4e9d8"   # bone - primary text
+FG_DIM    = "#c0a088"   # dim - secondary text
+ACCENT    = "#e6b25e"   # gold - primary action (the board's light side)
+ACCENT_HI = "#c9933f"   # gold pressed
+GREEN     = "#2f8f9e"   # TEAL - confirm: gold's axis partner, never
+                        # red-vs-green (red-green CVD, 2026-11-07)
+RED       = "#b34733"   # brick - danger FILL (use ALERT for red TEXT)
+ALERT     = "#e07a5f"   # red that reads on dark - text/borders only
+EDGE      = "#b8863f"   # hairline border on secondary/danger buttons
+SQUARE_L  = "#e7c182"   # gold board - light squares
+SQUARE_D  = "#cb8f42"   # gold board - dark squares
+BOARD_BG  = "#0a0806"   # the black barrier around the board
+PIECE_L   = "#f6efe2"   # near-white pine - white pieces
+PIECE_D   = "#3f2a1c"   # deep walnut - black pieces
+TABLE     = "#7a241c"   # the cherry table
 
-F_TITLE = ("DejaVu Sans", 20, "bold")
-F_BODY  = ("DejaVu Sans", 15)
-F_SMALL = ("DejaVu Sans", 11)
-F_BTN   = ("DejaVu Sans", 16, "bold")
-F_PIECE = ("DejaVu Sans", 22)
+F_TITLE = ("Atkinson Hyperlegible", 20, "bold")
+F_BODY  = ("Atkinson Hyperlegible", 15)
+F_SMALL = ("Atkinson Hyperlegible", 11)
+F_BTN   = ("Atkinson Hyperlegible", 16, "bold")
+F_PIECE = ("DejaVu Sans", 22)     # chess glyphs: Atkinson has none
+F_MONO  = ("JetBrains Mono", 14)  # numeric readouts
+F_HERO  = ("Cinzel", 56, "bold")  # the chessbot wordmark
 
 # THE instruction text width: every screen's instructions wrap at this width.
 # It is a property of the component (instr_label) - not of each call site -
@@ -36,6 +45,40 @@ INSTR_WRAP = 760
 
 GLYPH = {"k": "\u265a", "q": "\u265b", "r": "\u265c", "b": "\u265d",
          "n": "\u265e", "p": "\u265f"}
+
+
+def _ensure_fonts():
+    """Install the bundled TTFs into the USER font dir (no root needed) and
+    refresh the fontconfig cache so Tk resolves the families by name.
+    Runs at import, before the Tk root exists.  Silent on failure - the
+    families then fall back to whatever the system has."""
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "assets", "fonts")
+    if not os.path.isdir(src):
+        return
+    try:
+        import shutil
+        import subprocess
+        dst = os.path.join(os.path.expanduser("~"), ".local", "share",
+                           "fonts", "chessbot")
+        os.makedirs(dst, exist_ok=True)
+        fresh = False
+        for fn in sorted(os.listdir(src)):
+            if not fn.lower().endswith(".ttf"):
+                continue
+            tgt = os.path.join(dst, fn)
+            if not os.path.exists(tgt):
+                shutil.copy(os.path.join(src, fn), tgt)
+                fresh = True
+        if fresh:
+            subprocess.run(["fc-cache", "-f", dst],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+_ensure_fonts()
 
 
 def style_root(root):
@@ -48,13 +91,78 @@ def big_button(parent, text, cmd, bg=ACCENT, fg="#1b1e24", font=F_BTN,
                height=2, width=24, disabled=False, wraplength=None,
                justify="center"):
     b = tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
-                  activebackground=bg, activeforeground=fg, font=font,
-                  relief="flat", bd=0, highlightthickness=0,
+                  activebackground=_PRESSED.get(bg, bg),
+                  activeforeground=fg, font=font,
+                  relief="flat", bd=0,
+                  highlightthickness=(1 if bg not in (ACCENT, GREEN) else 0),
+                  highlightbackground=(ALERT if bg == RED else EDGE),
                   height=height, width=width, wraplength=wraplength,
                   justify=justify)
     if disabled:
-        b.configure(state="disabled", bg=CARD, fg=FG_DIM)
+        b.configure(state="disabled", bg=_DIS_BG, fg=_DIS_FG,
+                    highlightbackground=_DIS_EDGE)
     return b
+
+
+# pressed fills (one luminance step darker - never a hue-only change) and
+# the uniform disabled treatment (2026-11-07)
+_PRESSED = {ACCENT: ACCENT_HI, GREEN: "#24707c", CARD: "#5a2c22",
+            CARD_HI: "#5a2c22", RED: "#8f3325"}
+_DIS_BG, _DIS_FG, _DIS_EDGE = "#2e2420", "#8a7466", "#4a3c2c"
+
+# the sizing ladder: S/M/L/XL by HEIGHT (px) - the touch target.  Width
+# adapts to the label; stacked buttons of one size share a width.
+LADDER = {"s": (96, 48, 13), "m": (140, 56, 15),
+          "l": (200, 64, 17), "xl": (260, 80, 20)}
+
+
+def btn(parent, text, cmd, size="m", kind="secondary", square=False,
+        disabled=False, wraplength=None):
+    """Ladder button (2026-11-07): exact PIXEL sizing - Tk width is in
+    text units, so it is converted through the font metrics and the button
+    keeps its size whatever font wins.  kind: primary / confirm /
+    secondary / danger."""
+    w_px, h_px, fs = LADDER[size]
+    if square:
+        w_px = h_px
+    font = (F_BTN[0], fs, "bold")
+    f = tkfont.Font(font=font)
+    cw = max(1, f.measure("0"))
+    lh = max(1, f.metrics("linespace"))
+    fills = {"primary": (ACCENT, "#1b1e24", None),
+             "confirm": (GREEN, "#1b1e24", None),
+             "secondary": (CARD_HI, FG, EDGE),
+             "danger": (RED, FG, ALERT)}
+    bg, fg, bd = fills.get(kind, fills["secondary"])
+    b = tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
+                  activebackground=_PRESSED.get(bg, bg),
+                  activeforeground=fg, font=font, relief="flat", bd=0,
+                  highlightthickness=(1 if bd else 0),
+                  highlightbackground=bd or bg,
+                  height=max(1, int(h_px / lh)),
+                  width=max(1, int(w_px / cw)),
+                  wraplength=wraplength, justify="center")
+    if disabled:
+        b.configure(state="disabled", bg=_DIS_BG, fg=_DIS_FG,
+                    highlightbackground=_DIS_EDGE)
+    return b
+
+
+def btn_stack(parent, items, size="m"):
+    """A vertical stack of ladder buttons (2026-11-07).  items =
+    [(text, cmd, kind)] or [(text, cmd, kind, size)].  The stack rule:
+    stacked buttons share ONE width - fill="x" stretches every button to
+    the column, so even mixed sizes line up exactly.  Even 8px gaps."""
+    col = tk.Frame(parent, bg=BG)
+    out = []
+    n = len(items)
+    for i, it in enumerate(items):
+        text, cmd, kind = it[0], it[1], it[2]
+        sz = it[3] if len(it) > 3 else size
+        b = btn(col, text, cmd, size=sz, kind=kind)
+        b.pack(fill="x", pady=(0, 8 if i < n - 1 else 0))
+        out.append(b)
+    return col, out
 
 
 def instr_label(parent, font=None, **kw):
@@ -123,9 +231,9 @@ def piece_photo(glyph, size=22):
             font = ImageFont.load_default()
         img = Image.new("RGBA", (size + 10, size + 12), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        d.text((5, 1), glyph, font=font, fill=(18, 20, 25, 255),
+        d.text((5, 1), glyph, font=font, fill=(63, 42, 28, 255),
                stroke_width=max(1, size // 12),
-               stroke_fill=(240, 240, 240, 255))
+               stroke_fill=(244, 233, 216, 255))
         photo = ImageTk.PhotoImage(img)
     except Exception:
         photo = None
@@ -405,7 +513,7 @@ class BoardView(tk.Canvas):
         self.px = (px // 8) * 8
         self.sq = self.px // 8
         super().__init__(master, width=self.px, height=self.px,
-                         bg=BG, highlightthickness=0, bd=0, **kw)
+                         bg=BOARD_BG, highlightthickness=0, bd=0, **kw)
 
     def resize(self, px):
         """Grow/shrink in place (BoardCols refits the board to its column;
@@ -423,7 +531,7 @@ class BoardView(tk.Canvas):
                 light = (r + c) % 2 == 0
                 self.create_rectangle(x0, y0, x0 + self.sq, y0 + self.sq,
                                       fill=SQUARE_L if light else SQUARE_D,
-                                      outline="#5a4c37")
+                                      outline=BOARD_BG)
                 piece = board[r][c]
                 if piece != ".":
                     black = piece.islower()
@@ -431,7 +539,7 @@ class BoardView(tk.Canvas):
                         self.create_text(
                             x0 + self.sq // 2, y0 + int(self.sq * 0.56),
                             text=GLYPH.get(piece.lower(), "?"),
-                            font=F_PIECE, fill="#16181d")
+                            font=F_PIECE, fill=PIECE_D)
                     else:
                         # dark outline so light pieces pop on light squares.
                         # Canvas-text stroke options only exist in Tk 9 -

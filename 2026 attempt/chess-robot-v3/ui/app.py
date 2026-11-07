@@ -354,48 +354,59 @@ class HomeScreen(kit.Screen):
 
     def __init__(self, app):
         super().__init__(app=app, title="")
-        # touch-friendly corner controls: power top-right, terminal bottom-left
-        term_btn = kit.big_button(self, ">_", self._terminal, bg=kit.CARD,
-                                  fg=kit.FG_DIM, width=6, height=2,
-                                  font=kit.F_TITLE)
-        term_btn.place(relx=0.0, rely=1.0, anchor="sw")
+        # Home (2026-11-07): the chessbot identity screen.  A VERY subtle
+        # 80px checker is the home's signature (every working screen stays
+        # flat); the Cinzel wordmark in maple sits large on top, the action
+        # stack is centred below it (one shared width), and the power
+        # button - icon only, big enough for an inaccurate touch board -
+        # stands alone at the bottom so it is never hit by accident.
+        self.canvas = tk.Canvas(self.body, bg=kit.BG, highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", lambda _e: self._draw_checker())
+        hero = tk.Label(self.body, text="CHESSBOT", font=kit.F_HERO,
+                        bg=kit.BG, fg=kit.SQUARE_L)     # maple
+        hero.place(relx=0.5, rely=0.10, anchor="center")
+        stack, _home_btns = kit.btn_stack(self.body, [
+            ("\u25B6  PLAY", self._play, "primary", "xl"),
+            ("Calibrate", lambda: app.show(CalibrateScreen), "secondary"),
+            ("Settings", lambda: app.show(SettingsScreen), "secondary"),
+            ("Analysis", lambda: app.show(AnalysisHomeScreen), "secondary"),
+        ], size="m")
+        stack.place(relx=0.5, rely=0.52, anchor="center")
         try:
             self._power_img = tk.PhotoImage(
                 file=os.path.join(ROOT, "ui", "assets", "power.png"))
-            pbtn = tk.Button(self, image=self._power_img, command=self._power,
-                             bg=kit.CARD, activebackground=kit.CARD,
-                             relief="flat", bd=0, highlightthickness=0)
+            pbtn = tk.Button(self.body, image=self._power_img,
+                             command=self._power,
+                             bg=kit.CARD_HI, activebackground=kit.ACCENT_HI,
+                             relief="flat", bd=0, highlightthickness=1,
+                             highlightbackground=kit.EDGE,
+                             padx=28, pady=24)
             pbtn.image = self._power_img    # keep a reference alive
-            pbtn.place(relx=1.0, rely=0.0, anchor="ne")
-            self.update_idletasks()
-            pbtn.configure(width=term_btn.winfo_reqwidth(),
-                           height=term_btn.winfo_reqheight())
+            pbtn.place(relx=0.5, rely=0.93, anchor="center")
         except Exception:
             # asset missing / Tk too old for PNG: fall back to a glyph
-            kit.big_button(self, "\u23FB", self._power, bg=kit.CARD,
-                           fg=kit.FG_DIM, width=6, height=2,
-                           font=kit.F_TITLE).place(relx=1.0, rely=0.0,
-                                                   anchor="ne")
-        spacer = tk.Frame(self.body, bg=kit.BG)
-        spacer.pack(fill="both", expand=True)
-        group = tk.Frame(self.body, bg=kit.BG)
-        group.pack()
-        tk.Frame(self.body, bg=kit.BG).pack(fill="both", expand=True)
+            kit.big_button(self.body, "\u23FB", self._power, bg=kit.CARD_HI,
+                           fg=kit.FG, width=6, height=2,
+                           font=kit.F_TITLE).place(relx=0.5, rely=0.93,
+                                                   anchor="center")
 
-        self.play_btn = kit.big_button(group, "\u25B6  PLAY", self._play,
-                                       height=3, width=22)
-        self.play_btn.pack(pady=(0, 12))
-        row2 = tk.Frame(group, bg=kit.BG)
-        row2.pack()
-        kit.big_button(row2, "Calibrate", lambda: app.show(CalibrateScreen),
-                       bg=kit.CARD_HI, fg=kit.FG, width=12,
-                       height=2).pack(side="left", padx=8)
-        kit.big_button(row2, "Settings", lambda: app.show(SettingsScreen),
-                       bg=kit.CARD_HI, fg=kit.FG, width=12,
-                       height=2).pack(side="left", padx=8)
-        kit.big_button(row2, "Analysis", lambda: app.show(AnalysisHomeScreen),
-                       bg=kit.CARD_HI, fg=kit.FG, width=12,
-                       height=2).pack(side="left", padx=8)
+    def _draw_checker(self):
+        """The home's checker (2026-11-07): 80px squares, grey barely above
+        the black - texture at a glance, chess up close.  Home only."""
+        try:
+            c = self.canvas
+            c.delete("checker")
+            w, h = c.winfo_width(), c.winfo_height()
+            for r in range(h // 80 + 1):
+                for col in range(w // 80 + 1):
+                    if (r + col) % 2 == 0:
+                        c.create_rectangle(col * 80, r * 80,
+                                           col * 80 + 80, r * 80 + 80,
+                                           fill="#141311", outline="",
+                                           tags="checker")
+        except tk.TclError:
+            pass
 
     def on_show(self):
         # sitting in menus is idle time: pre-generate the analysis audio
@@ -428,17 +439,16 @@ class HomeScreen(kit.Screen):
         tk.Label(side, text=game_state.summary(), font=kit.F_BODY,
                  bg=kit.CARD, fg=kit.FG_DIM, justify="left",
                  wraplength=230).pack(anchor="w", pady=(0, 8))
-        kit.big_button(side, "Continue",
-                       lambda: (m.close(),
-                                self.app.show(GameScreen, resume=True)),
-                       bg=kit.GREEN, height=2, width=13).pack(pady=4)
-        kit.big_button(side, "New game",
-                       lambda: (m.close(), self.app.show(NewGameScreen)),
-                       bg=kit.CARD_HI, fg=kit.FG, height=2,
-                       width=16).pack(pady=4)
-        kit.big_button(side, "Back", m.close, bg=kit.CARD,
-                       fg=kit.FG_DIM, height=2,
-                       width=16, font=kit.F_BODY).pack(pady=4)
+        # stacked = ONE width (2026-11-07); hero first
+        kit.btn_stack(side, [
+            ("Continue",
+             lambda: (m.close(), self.app.show(GameScreen, resume=True)),
+             "confirm", "l"),
+            ("New game",
+             lambda: (m.close(), self.app.show(NewGameScreen)),
+             "secondary", "m"),
+            ("Back", m.close, "secondary", "m"),
+        ])[0].pack(pady=4)
 
     def _power(self):
         # Same Power menu as the physical button, but without the countdown
@@ -641,17 +651,17 @@ class CalibCameraScreen(kit.Screen):
         kit.big_button(side, "Manual", lambda: app.show(ManualCalibScreen),
                        bg=kit.CARD, fg=kit.FG, height=2, width=13).pack(
             pady=1)
-        self.lbl_board = tk.Label(side, font=("DejaVu Sans", 11), bg=kit.BG,
+        self.lbl_board = tk.Label(side, font=("Atkinson Hyperlegible", 11), bg=kit.BG,
                                   fg=kit.FG_DIM, anchor="w", justify="left",
                                   wraplength=170)
         self.lbl_board.pack(pady=(4, 1))
-        self.lbl_corners = tk.Label(side, font=("DejaVu Sans", 11), bg=kit.BG,
+        self.lbl_corners = tk.Label(side, font=("Atkinson Hyperlegible", 11), bg=kit.BG,
                                     fg=kit.FG_DIM, anchor="w", justify="left",
                                     wraplength=170)
         self.lbl_corners.pack(pady=1)
         self.instr = kit.instr_label(self.body,
                                      font=(kit.F_BODY[0], 15, "bold"))
-        self.instr.pack(fill="x", pady=(4, 0))
+        self.instr.pack(fill="x", pady=(2, 0))
         threading.Thread(target=self._cam, daemon=True).start()
         self.bind("<Destroy>", self._cleanup, add="+")
         self._pump()
@@ -1051,7 +1061,7 @@ class ArmGrabScreen(kit.Screen):
                                        height=2, font=kit.F_BTN)
         self.left_btn.grid(row=1, column=0)
         self.sq_lbl = tk.Label(dgrid, text="\u2014", bg="#181b21", fg=kit.FG,
-                               font=("DejaVu Sans", 20, "bold"), width=3)
+                               font=("Atkinson Hyperlegible", 20, "bold"), width=3)
         self.sq_lbl.grid(row=1, column=1, sticky="nsew")
         self.right_btn = kit.big_button(dgrid, "\u25B6",
                                        lambda: self._jog("ccw"),
@@ -1084,7 +1094,7 @@ class ArmGrabScreen(kit.Screen):
         self.bar_c.pack(side="left", padx=(6, 0))
         self.bar_c.bind("<Button-1>", self._on_bar)
 
-        side = tk.Frame(row, bg=kit.BG, width=112)
+        side = tk.Frame(row, bg=kit.BG, width=96)
         side.pack(side="left", fill="y", padx=6)
         self.start_btn = kit.big_button(side, "Start", self._start,
                                         bg=kit.GREEN, height=2, width=9)
@@ -1107,12 +1117,12 @@ class ArmGrabScreen(kit.Screen):
         self._side = side                      # parent for phase show/hide
         self._verify_btns = (self.ready_btn, self.good_btn, self.off_btn)
 
-        self.instr_lbl = tk.Text(cols.right, height=1, width=40,
+        self.instr_lbl = tk.Text(cols.right, height=1, width=26,
                                  bg=kit.BG, fg=kit.FG, relief="flat",
-                                 wrap="word", font=("DejaVu Sans", 17),
+                                 wrap="word", font=("Atkinson Hyperlegible", 17),
                                  padx=0, pady=0, highlightthickness=0,
                                  cursor="arrow", state="disabled")
-        self.instr_lbl.tag_config("b", font=("DejaVu Sans", 17, "bold"))
+        self.instr_lbl.tag_config("b", font=("Atkinson Hyperlegible", 17, "bold"))
         self.instr_lbl.pack(fill="x", pady=(4, 0))
         # The box GROWS to its wrapped height (a one-row box hid every wrapped
         # line after the first); re-fit when the width settles after mapping.
@@ -1156,12 +1166,12 @@ class ArmGrabScreen(kit.Screen):
             n = 1
             for sz in (17, 15, 13, 11, 10):
                 cur = str(w.cget("font"))
-                w.configure(font=("DejaVu Sans", sz))
-                w.tag_config("b", font=("DejaVu Sans", sz, "bold"))
+                w.configure(font=("Atkinson Hyperlegible", sz))
+                w.tag_config("b", font=("Atkinson Hyperlegible", sz, "bold"))
                 n = w.count("1.0", "end-1c", "displaylines")
                 n = n[0] if isinstance(n, tuple) else n
                 n = max(1, int(n or 1))
-                lh = kit.tkfont.Font(family="DejaVu Sans",
+                lh = kit.tkfont.Font(family="Atkinson Hyperlegible",
                                      size=sz).metrics("linespace")
                 if n * lh <= avail or sz == 10:
                     break
@@ -2084,7 +2094,7 @@ class CalibTestScreen(kit.Screen):
         side = tk.Frame(row, bg=kit.BG, width=170)
         side.pack(side="left", fill="y", padx=8)
         self.val_lbl = tk.Label(side, text="", bg=kit.BG, fg=kit.ACCENT,
-                                font=("DejaVu Sans Mono", 10), justify="left")
+                                font=("JetBrains Mono", 10), justify="left")
         self.val_lbl.pack(anchor="w", pady=(0, 6))
         self.rec_btn = kit.big_button(side, "Record", self._record,
                                       bg=kit.ACCENT, height=2, width=10)
@@ -2093,7 +2103,7 @@ class CalibTestScreen(kit.Screen):
                                         height=2, width=10, disabled=True)
         self.save_btn.pack(pady=3)
 
-        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 16))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("Atkinson Hyperlegible", 16))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -2157,7 +2167,7 @@ class CalibTestScreen(kit.Screen):
         zbar.pack(pady=(6, 0))
         self.prec_out_btn = kit.big_button(zbar, "\u2212", self._prec_out,
                                            bg=kit.CARD, fg=kit.FG_DIM,
-                                           width=3, height=1, font=kit.F_BTN,
+                                           width=5, height=2, font=kit.F_BTN,
                                            disabled=True)
         self.prec_out_btn.pack(side="left", padx=(0, 4))
         self.prec_lbl = tk.Label(zbar, text="Precision 1", bg=kit.BG,
@@ -2165,7 +2175,7 @@ class CalibTestScreen(kit.Screen):
         self.prec_lbl.pack(side="left", padx=(0, 4))
         self.prec_in_btn = kit.big_button(zbar, "+", self._prec_in,
                                           bg=kit.CARD_HI, fg=kit.FG,
-                                          width=3, height=1, font=kit.F_BTN)
+                                          width=5, height=2, font=kit.F_BTN)
         self.prec_in_btn.pack(side="left")
         self._set_prec()
 
@@ -2511,13 +2521,13 @@ class GfudgeScreen(kit.Screen):
         side = tk.Frame(row, bg=kit.BG, width=190)
         side.pack(side="left", fill="y", padx=8)
         self.val_lbl = tk.Label(side, text="", bg=kit.BG, fg=kit.ACCENT,
-                                font=("DejaVu Sans Mono", 18), justify="left")
+                                font=("JetBrains Mono", 18), justify="left")
         self.val_lbl.pack(anchor="w", pady=(0, 6))
         self.save_btn = kit.big_button(side, "Save", self._save, bg=kit.GREEN,
                                        height=2, width=10)
         self.save_btn.pack(pady=3)
 
-        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 16))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("Atkinson Hyperlegible", 16))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -2550,7 +2560,7 @@ class GfudgeScreen(kit.Screen):
         zbar.pack(pady=(6, 0))
         self.prec_out_btn = kit.big_button(zbar, "\u2212", self._prec_out,
                                            bg=kit.CARD, fg=kit.FG_DIM,
-                                           width=3, height=1, font=kit.F_BTN,
+                                           width=5, height=2, font=kit.F_BTN,
                                            disabled=True)
         self.prec_out_btn.pack(side="left", padx=(0, 4))
         self.prec_lbl = tk.Label(zbar, text="Precision 1", bg=kit.BG,
@@ -2558,7 +2568,7 @@ class GfudgeScreen(kit.Screen):
         self.prec_lbl.pack(side="left", padx=(0, 4))
         self.prec_in_btn = kit.big_button(zbar, "+", self._prec_in,
                                           bg=kit.CARD_HI, fg=kit.FG,
-                                          width=3, height=1, font=kit.F_BTN)
+                                          width=5, height=2, font=kit.F_BTN)
         self.prec_in_btn.pack(side="left")
         self._set_prec()
 
@@ -2733,7 +2743,7 @@ class ReachSettingsScreen(kit.Screen):
         kit.big_button(ctl, "Save", self._save, bg=kit.GREEN,
                        height=2, width=10).pack(anchor="w", pady=(10, 0))
 
-        self.instr_lbl = kit.FitLabel(right, font=("DejaVu Sans", 14))
+        self.instr_lbl = kit.FitLabel(right, font=("Atkinson Hyperlegible", 14))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self._set_instr()
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
@@ -2771,7 +2781,7 @@ class ReachSettingsScreen(kit.Screen):
             c.create_rectangle(1, y0 + 1, self.F_W - 1, y0 + self.CELL - 1,
                                fill=fill, outline="#5a4c37")
             c.create_text(12, y0 + self.CELL // 2, text=str(rank),
-                          font=("DejaVu Sans", 11, "bold"), fill=kit.FG_DIM)
+                          font=("Atkinson Hyperlegible", 11, "bold"), fill=kit.FG_DIM)
             if self.sel == rank:
                 cx, cy = self.F_W // 2, y0 + self.CELL // 2
                 c.create_oval(cx - 9, cy - 9, cx + 9, cy + 9,
@@ -2790,9 +2800,9 @@ class ReachSettingsScreen(kit.Screen):
         box.pack(fill="x", pady=5)
         top = tk.Frame(box, bg=kit.BG)
         top.pack(fill="x")
-        tk.Label(top, text=label, font=("DejaVu Sans", 12), bg=kit.BG,
+        tk.Label(top, text=label, font=("Atkinson Hyperlegible", 12), bg=kit.BG,
                  fg=kit.FG).pack(side="left")
-        val_lbl = tk.Label(top, text="", font=("DejaVu Sans Mono", 11),
+        val_lbl = tk.Label(top, text="", font=("JetBrains Mono", 11),
                            bg=kit.BG, fg=kit.ACCENT, justify="right")
         val_lbl.pack(side="right")
         sr = tk.Frame(box, bg=kit.BG)
@@ -2967,13 +2977,13 @@ class StickoutScreen(kit.Screen):
         side = tk.Frame(row, bg=kit.BG, width=190)
         side.pack(side="left", fill="y", padx=8)
         self.val_lbl = tk.Label(side, text="", bg=kit.BG, fg=kit.ACCENT,
-                                font=("DejaVu Sans Mono", 14), justify="left")
+                                font=("JetBrains Mono", 14), justify="left")
         self.val_lbl.pack(anchor="w", pady=(0, 6))
         self.save_btn = kit.big_button(side, "Save", self._save, bg=kit.GREEN,
                                        height=2, width=10)
         self.save_btn.pack(pady=3)
 
-        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 16))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("Atkinson Hyperlegible", 16))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -3019,7 +3029,7 @@ class StickoutScreen(kit.Screen):
         zbar.pack(pady=(6, 0))
         self.prec_out_btn = kit.big_button(zbar, "\u2212", self._prec_out,
                                            bg=kit.CARD, fg=kit.FG_DIM,
-                                           width=3, height=1, font=kit.F_BTN,
+                                           width=5, height=2, font=kit.F_BTN,
                                            disabled=True)
         self.prec_out_btn.pack(side="left", padx=(0, 4))
         self.prec_lbl = tk.Label(zbar, text="Precision 1", bg=kit.BG,
@@ -3027,7 +3037,7 @@ class StickoutScreen(kit.Screen):
         self.prec_lbl.pack(side="left", padx=(0, 4))
         self.prec_in_btn = kit.big_button(zbar, "+", self._prec_in,
                                           bg=kit.CARD_HI, fg=kit.FG,
-                                          width=3, height=1, font=kit.F_BTN)
+                                          width=5, height=2, font=kit.F_BTN)
         self.prec_in_btn.pack(side="left")
         self._set_prec()
 
@@ -3193,13 +3203,13 @@ class RadscaleScreen(kit.Screen):
         side = tk.Frame(row, bg=kit.BG, width=190)
         side.pack(side="left", fill="y", padx=8)
         self.val_lbl = tk.Label(side, text="", bg=kit.BG, fg=kit.ACCENT,
-                                font=("DejaVu Sans Mono", 14), justify="left")
+                                font=("JetBrains Mono", 14), justify="left")
         self.val_lbl.pack(anchor="w", pady=(0, 6))
         self.save_btn = kit.big_button(side, "Save", self._save, bg=kit.GREEN,
                                        height=2, width=10)
         self.save_btn.pack(pady=3)
 
-        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 16))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("Atkinson Hyperlegible", 16))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
@@ -3245,7 +3255,7 @@ class RadscaleScreen(kit.Screen):
         zbar.pack(pady=(6, 0))
         self.prec_out_btn = kit.big_button(zbar, "\u2212", self._prec_out,
                                            bg=kit.CARD, fg=kit.FG_DIM,
-                                           width=3, height=1, font=kit.F_BTN,
+                                           width=5, height=2, font=kit.F_BTN,
                                            disabled=True)
         self.prec_out_btn.pack(side="left", padx=(0, 4))
         self.prec_lbl = tk.Label(zbar, text="Precision 1", bg=kit.BG,
@@ -3253,7 +3263,7 @@ class RadscaleScreen(kit.Screen):
         self.prec_lbl.pack(side="left", padx=(0, 4))
         self.prec_in_btn = kit.big_button(zbar, "+", self._prec_in,
                                           bg=kit.CARD_HI, fg=kit.FG,
-                                          width=3, height=1, font=kit.F_BTN)
+                                          width=5, height=2, font=kit.F_BTN)
         self.prec_in_btn.pack(side="left")
         self._set_prec()
 
@@ -3441,7 +3451,8 @@ class CornerCalibScreen(kit.Screen):
         side = tk.Frame(main, bg=kit.BG)
         side.pack(side="right", fill="y", expand=True)
         self.val_lbl = tk.Label(side, text="", bg=kit.BG, fg=kit.ACCENT,
-                                font=("DejaVu Sans Mono", 12), justify="center")
+                                font=("JetBrains Mono", 11), justify="center",
+                                wraplength=170)
         self.val_lbl.pack(pady=(0, 6))
         self.grab_btn = kit.big_button(side, "Grab", self._grab, bg=kit.ACCENT,
                                        height=2, width=12)
@@ -3452,12 +3463,12 @@ class CornerCalibScreen(kit.Screen):
 
         # the instruction box: full horizontal width at the bottom, with the
         # square name in bold
-        self.instr_lbl = tk.Text(self.body, height=2, width=48, bg=kit.BG,
+        self.instr_lbl = tk.Text(self.body, height=2, width=52, bg=kit.BG,
                                  fg=kit.FG, relief="flat", wrap="word",
-                                 font=("DejaVu Sans", 16), padx=0, pady=0,
+                                 font=("Atkinson Hyperlegible", 13), padx=0, pady=0,
                                  highlightthickness=0, cursor="arrow",
                                  state="disabled")
-        self.instr_lbl.tag_config("b", font=("DejaVu Sans", 16, "bold"))
+        self.instr_lbl.tag_config("b", font=("Atkinson Hyperlegible", 13, "bold"))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.instr_lbl.bind("<Configure>", lambda *_: self._fit_instr())
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
@@ -3506,19 +3517,19 @@ class CornerCalibScreen(kit.Screen):
         self.up_btn = kit.big_button(g, "\u25B2", lambda: self._jog("in"),
                                      bg=kit.CARD_HI, fg=kit.FG, width=8,
                                      height=2, font=kit.F_BTN)
-        self.up_btn.grid(row=0, column=1, padx=4, pady=3)
+        self.up_btn.grid(row=0, column=1, padx=4, pady=1)
         self.left_btn = kit.big_button(g, "\u25C0", lambda: self._jog("cw"),
                                        bg=kit.CARD_HI, fg=kit.FG, width=8,
                                        height=2, font=kit.F_BTN)
-        self.left_btn.grid(row=1, column=0, padx=4, pady=3)
+        self.left_btn.grid(row=1, column=0, padx=4, pady=1)
         self.dn_btn = kit.big_button(g, "\u25BC", lambda: self._jog("out"),
                                      bg=kit.CARD_HI, fg=kit.FG, width=8,
                                      height=2, font=kit.F_BTN)
-        self.dn_btn.grid(row=2, column=1, padx=4, pady=3)
+        self.dn_btn.grid(row=2, column=1, padx=4, pady=1)
         self.rt_btn = kit.big_button(g, "\u25B6", lambda: self._jog("ccw"),
                                      bg=kit.CARD_HI, fg=kit.FG, width=8,
                                      height=2, font=kit.F_BTN)
-        self.rt_btn.grid(row=1, column=2, padx=4, pady=3)
+        self.rt_btn.grid(row=1, column=2, padx=4, pady=1)
         # height arrows (the touch bar retired) + precision share one row
         bottom = tk.Frame(pad, bg=kit.BG)
         bottom.pack(pady=(8, 0))
@@ -3538,7 +3549,7 @@ class CornerCalibScreen(kit.Screen):
         zbar.pack(side="left", padx=(12, 0))
         self.prec_out_btn = kit.big_button(zbar, "\u2212", self._prec_out,
                                            bg=kit.CARD, fg=kit.FG_DIM,
-                                           width=3, height=1, font=kit.F_BTN,
+                                           width=5, height=2, font=kit.F_BTN,
                                            disabled=True)
         self.prec_out_btn.pack(side="left", padx=(0, 4))
         self.prec_lbl = tk.Label(zbar, text="Precision 1", bg=kit.BG,
@@ -3546,7 +3557,7 @@ class CornerCalibScreen(kit.Screen):
         self.prec_lbl.pack(side="left", padx=(0, 4))
         self.prec_in_btn = kit.big_button(zbar, "+", self._prec_in,
                                           bg=kit.CARD_HI, fg=kit.FG,
-                                          width=3, height=1, font=kit.F_BTN)
+                                          width=5, height=2, font=kit.F_BTN)
         self.prec_in_btn.pack(side="left")
         self._set_prec()
 
@@ -3631,11 +3642,10 @@ class CornerCalibScreen(kit.Screen):
         lbl = self.LABELS[sq]
         self._say("Center a pawn on %s. Adjust the gripper to pick up the "
                   "pawn, and press Grab." % lbl, bold=lbl)
-        self.val_lbl.configure(text="%s\nreach %.2f\nangle %.1f\ntip %.2f\n"
-                               "%d/%d grabbed"
-                               % (lbl, self.cur[0], self.cur[2],
-                                  self.cur[1] - RD.gripper_len,
-                                  len(self.samples), len(self.ORDER)))
+        self.val_lbl.configure(
+            text="%s   reach %.2f   angle %.1f   %d/%d grabbed"
+                 % (lbl, self.cur[0], self.cur[2],
+                    len(self.samples), len(self.ORDER)))
 
     def _jog(self, direction):
         if self.busy:
@@ -3711,9 +3721,8 @@ class CornerCalibScreen(kit.Screen):
             self._say(res + "Center a pawn on %s. Adjust the gripper to "
                       "pick up the pawn, and press Grab." % nxt, bold=nxt)
             self.val_lbl.configure(
-                text="%s\nreach %.2f\nangle %.1f\ntip %.2f\n%d/%d grabbed"
+                text="%s   reach %.2f   angle %.1f   %d/%d grabbed"
                      % (nxt, self.cur[0], self.cur[2],
-                        self.cur[1] - RD.gripper_len,
                         len(self.samples), len(self.ORDER)))
         else:
             self._show_fit()
@@ -3936,7 +3945,7 @@ class ManualCalibScreen(kit.Screen):
         kit.big_button(side, "Retry", self._retry, bg=kit.CARD,
                        fg=kit.FG, height=2, width=11).pack(pady=8)
         self.instr = kit.instr_label(self.body,
-                                     font=("DejaVu Sans", 15, "bold"))
+                                     font=("Atkinson Hyperlegible", 15, "bold"))
         self.instr.pack(fill="x", pady=(4, 0))
         self._say("Waiting for camera...", kit.FG_DIM)
         threading.Thread(target=self._cam, daemon=True).start()
@@ -4260,7 +4269,7 @@ class PickHeightSettingsScreen(kit.Screen):
                        bg=kit.CARD, fg=kit.FG, height=2, width=12).pack(
             side="left")
 
-        self.instr_lbl = kit.FitLabel(right, font=("DejaVu Sans", 14))
+        self.instr_lbl = kit.FitLabel(right, font=("Atkinson Hyperlegible", 14))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self._set_instr()
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
@@ -4290,7 +4299,7 @@ class PickHeightSettingsScreen(kit.Screen):
             c.create_rectangle(1, y0 + 1, self.F_W - 1, y0 + self.CELL - 1,
                                fill=fill, outline="#5a4c37")
             c.create_text(12, y0 + self.CELL // 2, text=str(rank),
-                          font=("DejaVu Sans", 11, "bold"), fill=kit.FG_DIM)
+                          font=("Atkinson Hyperlegible", 11, "bold"), fill=kit.FG_DIM)
             if self.sel == rank:
                 cx, cy = self.F_W // 2, y0 + self.CELL // 2
                 c.create_oval(cx - 9, cy - 9, cx + 9, cy + 9,
@@ -4309,9 +4318,9 @@ class PickHeightSettingsScreen(kit.Screen):
         box.pack(fill="x", pady=6)
         top = tk.Frame(box, bg=kit.BG)
         top.pack(fill="x")
-        tk.Label(top, text=label, font=("DejaVu Sans", 12), bg=kit.BG,
+        tk.Label(top, text=label, font=("Atkinson Hyperlegible", 12), bg=kit.BG,
                  fg=kit.FG).pack(side="left")
-        val_lbl = tk.Label(top, text="", font=("DejaVu Sans Mono", 11),
+        val_lbl = tk.Label(top, text="", font=("JetBrains Mono", 11),
                            bg=kit.BG, fg=kit.ACCENT, justify="right")
         val_lbl.pack(side="right")
         sr = tk.Frame(box, bg=kit.BG)
@@ -4492,7 +4501,7 @@ class PieceHeightScreen(kit.Screen):
         for r, (key, label, lo, hi, step, definition) in enumerate(self.ROWS):
             name_cell = tk.Frame(grid, bg=kit.BG)
             name_cell.grid(row=r, column=0, sticky="nsew", pady=1)
-            tk.Label(name_cell, text=label, font=("DejaVu Sans", 12),
+            tk.Label(name_cell, text=label, font=("Atkinson Hyperlegible", 11),
                      bg=kit.BG, fg=kit.FG, anchor="w").pack(side="left")
             if definition:          # the board's info button
                 kit.info_button(
@@ -4503,18 +4512,18 @@ class PieceHeightScreen(kit.Screen):
                 grid, "",
                 lambda k=key, l=label, lo=lo, hi=hi, st=step:
                 self._edit_height(k, l, lo, hi, st),
-                bg=kit.CARD_HI, fg=kit.ACCENT, width=5, height=2,
-                font=("DejaVu Sans", 12))
-            hbtn.grid(row=r, column=1, sticky="nsew", padx=(8, 0), pady=1)
+                bg=kit.CARD_HI, fg=kit.ACCENT, width=4, height=1,
+                font=("Atkinson Hyperlegible", 12))
+            hbtn.grid(row=r, column=1, sticky="nsew", padx=(4, 0), pady=1)
             self.rows[key] = hbtn
             if key == "board":      # the board has no jaws
                 continue
             cell = tk.Frame(grid, bg=kit.BG)
-            cell.grid(row=r, column=2, sticky="nsew", padx=(8, 0), pady=1)
+            cell.grid(row=r, column=2, sticky="nsew", padx=(4, 0), pady=1)
             jbtn = kit.big_button(
                 cell, "", lambda k=key: self._edit_jaw(k),
-                bg=kit.CARD_HI, fg=kit.ACCENT, width=5, height=2,
-                font=("DejaVu Sans", 12))
+                bg=kit.CARD_HI, fg=kit.ACCENT, width=4, height=1,
+                font=("Atkinson Hyperlegible", 12))
             jbtn.pack(side="left", fill="both", expand=True)
             kit.info_button(cell, self._jaw_info_cb(key), small=True,
                             bg=kit.BG).pack(side="left", padx=(4, 0))
@@ -4606,7 +4615,7 @@ class BoardSizeScreen(kit.Screen):
         for i, (key, label, lo, hi, step, definition) in enumerate(items):
             name_cell = tk.Frame(grid, bg=kit.BG)
             name_cell.grid(row=i, column=0, sticky="nsew", pady=4)
-            tk.Label(name_cell, text=label, font=("DejaVu Sans", 12),
+            tk.Label(name_cell, text=label, font=("Atkinson Hyperlegible", 11),
                      bg=kit.BG, fg=kit.FG, anchor="w").pack(side="left")
             kit.info_button(name_cell,
                             lambda t=label, d=definition: self._info(t, d),
@@ -4618,7 +4627,7 @@ class BoardSizeScreen(kit.Screen):
                                  lambda k=key, l=label, lo=lo, hi=hi, st=step:
                                  self._edit(k, l, lo, hi, st),
                                  bg=kit.CARD_HI, fg=kit.ACCENT, width=8,
-                                 height=2, font=("DejaVu Sans", 12))
+                                 height=2, font=("Atkinson Hyperlegible", 12))
             btn.pack(fill="both", expand=True)
             self.rows[key] = btn
         self.refresh_labels()
@@ -4670,7 +4679,7 @@ class CalibrationTestScreen(kit.Screen):
                                      fg="#1b1e24", height=2, width=8)
         self.go_btn.pack(anchor="w", pady=(6, 0))
 
-        self.instr_lbl = kit.FitLabel(cols.right, font=("DejaVu Sans", 15))
+        self.instr_lbl = kit.FitLabel(cols.right, font=("Atkinson Hyperlegible", 15))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self._set_instr()
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
@@ -4843,10 +4852,10 @@ class ArmSagScreen(kit.Screen):
                                      height=2, font=kit.F_BTN, disabled=True)
         self.dn_btn.pack(side="left")
         self.orig_lbl = tk.Label(side, text="was  -", bg=kit.BG,
-                                 fg=kit.FG_DIM, font=("DejaVu Sans", 13))
+                                 fg=kit.FG_DIM, font=("Atkinson Hyperlegible", 13))
         self.orig_lbl.pack(anchor="w", pady=(10, 0))
         self.val_lbl = tk.Label(side, text="now  -", bg=kit.BG, fg=kit.ACCENT,
-                                font=("DejaVu Sans Mono", 22, "bold"),
+                                font=("JetBrains Mono", 22, "bold"),
                                 anchor="w")
         self.val_lbl.pack(anchor="w")
         self.sel_lbl = tk.Label(side, text="tap a box", bg=kit.BG,
@@ -4855,7 +4864,7 @@ class ArmSagScreen(kit.Screen):
         kit.big_button(side, "Save", self._save, bg=kit.GREEN, fg="#1b1e24",
                        height=2, width=10).pack(pady=(14, 0), anchor="w")
 
-        self.instr_lbl = kit.FitLabel(right, font=("DejaVu Sans", 15))
+        self.instr_lbl = kit.FitLabel(right, font=("Atkinson Hyperlegible", 15))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self.instr_lbl.configure(
             text="Tap a box to adjust the compensation for arm sag at that "
@@ -4932,7 +4941,7 @@ class ArmSagScreen(kit.Screen):
             c.create_text(px, py - self.BOX_H / 2 - 9,
                           text="%.2f" % self.pts[sq],
                           fill=kit.FG if on else kit.FG_DIM,
-                          font=("DejaVu Sans", 10,
+                          font=("Atkinson Hyperlegible", 10,
                                 "bold" if on else "normal"))
             c.create_text(px, py + self.BOX_H / 2 + 8, text=sq.upper(),
                           fill=kit.FG if on else kit.FG_DIM, font=kit.F_SMALL)
@@ -5130,7 +5139,7 @@ class AnalysisHomeScreen(kit.Screen):
                   "Black wins" if res == "0-1" else
                   "Draw" if res == "1/2-1/2" else "Unfinished")
         tk.Label(right, text="%s  \u00b7  %s" % (date, winner),
-                 font=("DejaVu Sans", 16, "bold"),
+                 font=("Atkinson Hyperlegible", 16, "bold"),
                  bg=kit.BG, fg=kit.ACCENT).pack(anchor="w", pady=(0, 12))
 
         # the review MODE lives with the other options (2026-10-24): with the
@@ -5140,27 +5149,27 @@ class AnalysisHomeScreen(kit.Screen):
             value=bool(settings.get("analysis.show_engine", True)))
         kit.checkbox(right, "Display Engine analysis", self.engine_var,
                      command=self._save_engine,
-                     font=("DejaVu Sans", 16)).pack(anchor="w", pady=(0, 6))
+                     font=("Atkinson Hyperlegible", 16)).pack(anchor="w", pady=(0, 4))
         # touch-sized checkboxes (2026-10-24): drawn boxes - Tk's checkbutton
         # INDICATOR does not grow with the font
         self.adv_var = tk.BooleanVar(
             value=bool(settings.get("analysis.auto_advance", True)))
         kit.checkbox(right, "Auto advance", self.adv_var,
                      command=self._save_adv,
-                     font=("DejaVu Sans", 16)).pack(anchor="w", pady=(0, 6))
+                     font=("Atkinson Hyperlegible", 16)).pack(anchor="w", pady=(0, 4))
         # the Stockfish depth of analysis (2026-10-24): picking a new depth
         # throws out the stored text and audio and starts from scratch
         drow = tk.Frame(right, bg=kit.BG)
-        drow.pack(anchor="w", pady=(0, 6))
-        tk.Label(drow, text="Engine depth", font=("DejaVu Sans", 18),
+        drow.pack(anchor="w", pady=(0, 4))
+        tk.Label(drow, text="Engine depth", font=("Atkinson Hyperlegible", 18),
                  bg=kit.BG, fg=kit.FG).pack(side="left", padx=(0, 8))
         self.depth_var = tk.StringVar(value=str(
             settings.get("analysis.depth", 18)))
         dmenu = tk.OptionMenu(drow, self.depth_var, *self.DEPTH_KEYS,
                               command=self._depth_changed)
-        dmenu.configure(font=("DejaVu Sans", 16), bg=kit.CARD_HI, fg=kit.FG,
+        dmenu.configure(font=("Atkinson Hyperlegible", 16), bg=kit.CARD_HI, fg=kit.FG,
                         highlightthickness=0, width=6)
-        dmenu["menu"].configure(font=("DejaVu Sans", 18), bg=kit.CARD_HI,
+        dmenu["menu"].configure(font=("Atkinson Hyperlegible", 18), bg=kit.CARD_HI,
                                 fg=kit.FG, activebackground=kit.ACCENT,
                                 activeforeground="#1b1e24")
         dmenu.pack(side="left")
@@ -5168,7 +5177,7 @@ class AnalysisHomeScreen(kit.Screen):
         # touch-sized options in the dropdown
         vrow = tk.Frame(right, bg=kit.BG)
         vrow.pack(anchor="w")
-        tk.Label(vrow, text="Voice", font=("DejaVu Sans", 18), bg=kit.BG,
+        tk.Label(vrow, text="Voice", font=("Atkinson Hyperlegible", 18), bg=kit.BG,
                  fg=kit.FG).pack(side="left", padx=(0, 8))
         cur = settings.get("analysis.voice", "none")
         if cur not in self.VOICE_KEYS:
@@ -5177,21 +5186,22 @@ class AnalysisHomeScreen(kit.Screen):
         menu = tk.OptionMenu(vrow, self.voice_var,
                              *[AP.VOICE_LABELS[k] for k in self.VOICE_KEYS],
                              command=self._voice_changed)
-        menu.configure(font=("DejaVu Sans", 16), bg=kit.CARD_HI, fg=kit.FG,
+        menu.configure(font=("Atkinson Hyperlegible", 16), bg=kit.CARD_HI, fg=kit.FG,
                        highlightthickness=0, width=14)
         # the dropdown LIST has its own font - the widget's font never
         # reaches the items (2026-10-24)
-        menu["menu"].configure(font=("DejaVu Sans", 18), bg=kit.CARD_HI,
+        menu["menu"].configure(font=("Atkinson Hyperlegible", 18), bg=kit.CARD_HI,
                                fg=kit.FG, activebackground=kit.ACCENT,
                                activeforeground="#1b1e24")
         menu.pack(side="left")
         # one status line for whatever is generating right now (the stage's
         # own #/# and the animated dots), then the bar
         self.prog_lbl = tk.Label(right, text="Generating text (0/0)...",
-                                 font=("DejaVu Sans", 13), bg=kit.BG,
+                                 font=("Atkinson Hyperlegible", 13), bg=kit.BG,
                                  fg=kit.ACCENT, justify="left", anchor="w",
                                  wraplength=340)
-        self.prog_lbl.pack(anchor="w", pady=(10, 0))
+        self.prog_lbl.pack(anchor="w", pady=(6, 0))
+        self._prog_parent = right
         self.prog_bar = tk.Canvas(right, width=220, height=16, bg="#181b21",
                                   highlightthickness=0)
         self.prog_bar.pack(anchor="w", pady=(4, 0))
@@ -5202,7 +5212,7 @@ class AnalysisHomeScreen(kit.Screen):
         self.begin_btn = kit.big_button(right, "Begin", self._begin,
                                         bg=kit.GREEN, fg="#1b1e24",
                                         height=2, width=16, disabled=True)
-        self.begin_btn.pack(anchor="w", pady=(12, 0))
+        self.begin_btn.pack(anchor="w", pady=(8, 0))
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._start_generation()
         self._poll()
@@ -5342,7 +5352,14 @@ class AnalysisHomeScreen(kit.Screen):
         if alive != self._bar_on:
             self._bar_on = alive
             if alive:
-                self.prog_bar.pack(anchor="w", pady=(4, 0))
+                # re-CREATE the bar: re-packing the pack_forget'd canvas
+                # left it unmapped in this app's Tk context (2026-11-08) -
+                # a fresh canvas maps exactly like the one in __init__
+                self.prog_bar = tk.Canvas(self._prog_parent, width=220,
+                                          height=16, bg="#181b21",
+                                          highlightthickness=0)
+                self.prog_bar.pack(anchor="w", pady=(4, 0),
+                                   before=self.begin_btn)
                 self._draw_prog(0.0)
             else:
                 self.prog_bar.pack_forget()
@@ -5514,7 +5531,7 @@ class AnalysisMoveScreen(kit.Screen):
                                          bg=kit.ACCENT, fg="#1b1e24",
                                          width=6, height=3, font=kit.F_BTN)
         # the quality verdict is a LABEL above the text box (2026-10-23)
-        self.verdict_lbl = tk.Label(right, text="", font=("DejaVu Sans", 16,
+        self.verdict_lbl = tk.Label(right, text="", font=("Atkinson Hyperlegible", 16,
                                                           "bold"),
                                     bg=kit.BG, fg=kit.ACCENT, justify="left",
                                     anchor="w", wraplength=340)
@@ -5523,10 +5540,10 @@ class AnalysisMoveScreen(kit.Screen):
         self.gen_lbl = tk.Label(right, text="", font=kit.F_SMALL,
                                 bg=kit.BG, fg=kit.ACCENT, justify="center")
         self.txt = tk.Text(right, height=2, width=28, bg="#181b21",
-                           fg=kit.FG, font=("DejaVu Sans", 14), relief="flat",
+                           fg=kit.FG, font=("Atkinson Hyperlegible", 14), relief="flat",
                            wrap="word", padx=8, pady=6, highlightthickness=0,
                            cursor="arrow")
-        self.txt.tag_config("move", font=("DejaVu Sans", 14, "bold"),
+        self.txt.tag_config("move", font=("Atkinson Hyperlegible", 14, "bold"),
                             foreground=kit.ACCENT)
         self.txt.tag_config("icon", font=("DejaVu Sans", 15))
         self.txt.tag_config("star", foreground="#f6f2e8",
@@ -5536,7 +5553,7 @@ class AnalysisMoveScreen(kit.Screen):
         self.txt.pack(fill="both", expand=True, pady=(6, 0))
         self.txt.configure(state="disabled")
         # the engine's continuation from this position, beneath the text box
-        self.next_lbl = tk.Label(right, text="", font=("DejaVu Sans", 12),
+        self.next_lbl = tk.Label(right, text="", font=("Atkinson Hyperlegible", 12),
                                  bg=kit.BG, fg=kit.FG_DIM, justify="left",
                                  anchor="w", wraplength=340)
         self.next_lbl.pack(anchor="w", pady=(6, 0))
@@ -5553,22 +5570,22 @@ class AnalysisMoveScreen(kit.Screen):
                                           self._explore_toggle,
                                           bg=kit.CARD_HI, fg=kit.FG,
                                           width=15, height=2,
-                                          font=("DejaVu Sans", 13))
+                                          font=("Atkinson Hyperlegible", 13))
         self.explore_btn.grid(row=0, column=0, padx=(0, 6), pady=3)
         self.test_btn = kit.big_button(btns, "Test alternate",
                                        self._test_start,
                                        bg=kit.CARD_HI, fg=kit.FG,
                                        width=15, height=2,
-                                       font=("DejaVu Sans", 13))
+                                       font=("Atkinson Hyperlegible", 13))
         self.reset_btn = kit.big_button(btns, "Reset", self._test_reset,
                                         bg=kit.CARD_HI, fg=kit.FG,
                                         width=15, height=2,
-                                        font=("DejaVu Sans", 13))
+                                        font=("Atkinson Hyperlegible", 13))
         self.engine_btn = kit.big_button(btns, "Hide analysis",
                                          self._toggle_engine,
                                          bg=kit.CARD_HI, fg=kit.FG,
                                          width=15, height=2,
-                                         font=("DejaVu Sans", 13))
+                                         font=("Atkinson Hyperlegible", 13))
         self.engine_btn.grid(row=1, column=0, padx=(0, 6), pady=3)
 
         # the board fills its column's height once the layout is realized
@@ -6206,7 +6223,7 @@ class DirectScreen(kit.Screen):
             pair = i // per_col
             name_cell = tk.Frame(grid, bg=kit.BG)
             name_cell.grid(row=r, column=pair * 2, sticky="nsew", pady=1)
-            tk.Label(name_cell, text=label, font=("DejaVu Sans", 12),
+            tk.Label(name_cell, text=label, font=("Atkinson Hyperlegible", 11),
                      bg=kit.BG, fg=kit.FG, anchor="w").pack(side="left")
             kit.info_button(name_cell,
                             lambda t=label, d=definition: self._info(t, d),
@@ -6224,14 +6241,14 @@ class DirectScreen(kit.Screen):
                 kit.big_button(cell, "\u25B6",
                                lambda t=tgt: app.show(t),
                                bg=kit.CARD, fg=kit.ACCENT, width=3, height=2,
-                               font=("DejaVu Sans", 12)).pack(side="right",
+                               font=("Atkinson Hyperlegible", 12)).pack(side="right",
                                                               fill="y",
                                                               padx=(2, 0))
             btn = kit.big_button(cell, "",
                                  lambda k=key, l=label, lo=lo, hi=hi, st=step:
                                  self._edit(k, l, lo, hi, st),
                                  bg=kit.CARD_HI, fg=kit.ACCENT, width=5,
-                                 height=2, font=("DejaVu Sans", 12))
+                                 height=2, font=("Atkinson Hyperlegible", 12))
             btn.pack(side="left", fill="both", expand=True)
             self.rows[key] = btn
         bottom = tk.Frame(self.body, bg=kit.BG)
@@ -6733,12 +6750,11 @@ class GameScreen(kit.Screen):
             game_state.save_last()
             self.app.show(HomeScreen)
 
-        kit.big_button(m.body, "Home", to_home,
-                       bg=kit.CARD_HI, fg=kit.FG, width=14,
-                       height=2).pack(pady=6)
-        kit.big_button(m.body, "Analysis", to_analysis,
-                       bg=kit.GREEN, fg="#1b1e24", width=14,
-                       height=2).pack(pady=6)
+        # stacked = ONE width (2026-11-07)
+        kit.btn_stack(m.body, [
+            ("Home", to_home, "secondary"),
+            ("Analysis", to_analysis, "confirm"),
+        ])[0].pack(pady=6)
 
     def _refresh_moves(self):
         self.moves_txt.configure(state="normal")
@@ -6908,8 +6924,8 @@ class GameScreen(kit.Screen):
             self._close_prep()
             self.abandon()
             self.app.show(HomeScreen)
-        kit.big_button(m.body, "Home", go_home, bg=kit.CARD_HI, fg=kit.FG,
-                       width=12, height=2).pack(pady=(10, 0))
+        kit.btn(m.body, "Home", go_home, size="m",
+                kind="secondary").pack(pady=(10, 0))
         self._prep = m
         self._prep_n = 0
         self._tick_prep()
