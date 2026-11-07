@@ -58,23 +58,37 @@ trap '"$DIR/pi/led.sh" off 2>/dev/null || true' EXIT
 
 # Boot splash: the Pi 3B's firmware ignores /boot/firmware/background.png, so
 # show the artwork ourselves while the UI imports (cv2/numpy/PIL take several
-# seconds on the 3B).  This window runs in the BACKGROUND and is torn down by
-# the app the instant the home screen is up (see app.py _kill_splash); the
-# 60 s timeout is only a safety net if the app never starts.
-if [ -f "$DIR/pi/bringup/background.png" ]; then
-    python3 - "$DIR/pi/bringup/background.png" <<'PYEOF' &
-import sys, tkinter as tk
-from PIL import Image, ImageTk
+# seconds on the 3B).  Drawn, not an image file (2026-11-08): the home
+# screen's own identity - the soft 80px checker and the CHESSBOT wordmark -
+# so boot flows straight into the app with no visual jump.  The wordmark is
+# rendered from the SHIPPED Cinzel file directly, so no font install is
+# needed first.  This window runs in the BACKGROUND and is torn down by the
+# app the instant the home screen is up (see app.py _kill_splash); the 60 s
+# timeout is only a safety net if the app never starts.
+python3 - "$DIR" <<'PYEOF' &
+import os, sys
+import tkinter as tk
+from PIL import Image, ImageDraw, ImageTk, ImageFont
+W, H = 800, 480
+img = Image.new("RGB", (W, H), "#0c0a09")
+d = ImageDraw.Draw(img)
+for r in range(H // 80 + 1):
+    for c in range(W // 80 + 1):
+        if (r + c) % 2 == 0:
+            d.rectangle([c * 80, r * 80, c * 80 + 80, r * 80 + 80],
+                        fill="#1d1a17")
+font = ImageFont.truetype(
+    os.path.join(sys.argv[1], "ui", "assets", "fonts", "Cinzel-Bold.ttf"), 112)
+d.text((W // 2, H // 2), "CHESSBOT", font=font, fill="#e7c182", anchor="mm")
 root = tk.Tk(); root.overrideredirect(True)
-img = ImageTk.PhotoImage(Image.open(sys.argv[1]))
-tk.Label(root, image=img, bg="#232730").pack(fill="both", expand=True)
-root.geometry("%dx%d+0+0" % (img.width(), img.height()))
+photo = ImageTk.PhotoImage(img)
+tk.Label(root, image=photo, bg="#0c0a09").pack(fill="both", expand=True)
+root.geometry("%dx%d+0+0" % (W, H))
 root.update()
 root.after(60000, root.destroy)   # safety net only; the app closes us first
 root.mainloop()
 PYEOF
-    echo $! > "$DIR/data/.splash.pid"
-fi
+echo $! > "$DIR/data/.splash.pid"
 
 force_800x480
 python3 ui/app.py --fullscreen

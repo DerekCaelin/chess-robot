@@ -104,11 +104,15 @@ class App:
             self.root.attributes("-fullscreen", True)
         else:
             self.root.geometry("%dx%d+60+60" % (w, h))
-        bar = tk.Frame(self.root, bg="#181b21")
-        bar.pack(fill="x", side="bottom")
-        self.status_lbl = tk.Label(bar, text="", bg="#181b21",
+        # The terminal-output strip is hidden by default (2026-11-08): the
+        # screens' own UI carries the same information and the strip
+        # competed with every layout for the bottom edge.  Settings >
+        # "Show terminal output" brings the raw status stream back.
+        self.terminal_bar = tk.Frame(self.root, bg="#181b21")
+        self.status_lbl = tk.Label(self.terminal_bar, text="", bg="#181b21",
                                    fg=kit.FG_DIM, font=kit.F_SMALL)
         self.status_lbl.pack(side="left", padx=10, pady=2)
+        self.apply_terminal()
         self.history = []          # [(cls, kw)]
         self.current = None
         self._tools = []           # keep ToolRun refs alive
@@ -342,6 +346,13 @@ class App:
     def toast(self, text):
         self.status_lbl.configure(text=text)
 
+    def apply_terminal(self):
+        """Show/hide the terminal-output strip from the current setting."""
+        if settings.get("ui.show_terminal", False):
+            self.terminal_bar.pack(fill="x", side="bottom")
+        else:
+            self.terminal_bar.pack_forget()
+
     def run(self):
         self._idle_check()
         self.root.mainloop()
@@ -365,30 +376,33 @@ class HomeScreen(kit.Screen):
         self.canvas.bind("<Configure>", lambda _e: self._draw_checker())
         hero = tk.Label(self.body, text="CHESSBOT", font=kit.F_HERO,
                         bg=kit.BG, fg=kit.SQUARE_L)     # maple
-        hero.place(relx=0.5, rely=0.10, anchor="center")
+        hero.place(relx=0.5, rely=0.08, anchor="center")
         stack, _home_btns = kit.btn_stack(self.body, [
             ("\u25B6  PLAY", self._play, "primary", "xl"),
             ("Calibrate", lambda: app.show(CalibrateScreen), "secondary"),
             ("Settings", lambda: app.show(SettingsScreen), "secondary"),
             ("Analysis", lambda: app.show(AnalysisHomeScreen), "secondary"),
         ], size="m")
-        stack.place(relx=0.5, rely=0.52, anchor="center")
+        stack.place(relx=0.5, rely=0.47, anchor="center")
         try:
             self._power_img = tk.PhotoImage(
                 file=os.path.join(ROOT, "ui", "assets", "power.png"))
+            # Tk ignores padx/pady on image buttons - WIDTH/HEIGHT are true
+            # pixels for them, so the target is sized directly (2026-11-08:
+            # it rendered at the raw 44px icon size before)
             pbtn = tk.Button(self.body, image=self._power_img,
                              command=self._power,
                              bg=kit.CARD_HI, activebackground=kit.ACCENT_HI,
                              relief="flat", bd=0, highlightthickness=1,
                              highlightbackground=kit.EDGE,
-                             padx=28, pady=24)
+                             width=90, height=74)
             pbtn.image = self._power_img    # keep a reference alive
-            pbtn.place(relx=0.5, rely=0.93, anchor="center")
+            pbtn.place(relx=0.5, rely=0.90, anchor="center")
         except Exception:
             # asset missing / Tk too old for PNG: fall back to a glyph
             kit.big_button(self.body, "\u23FB", self._power, bg=kit.CARD_HI,
-                           fg=kit.FG, width=6, height=2,
-                           font=kit.F_TITLE).place(relx=0.5, rely=0.93,
+                           fg=kit.FG, width=6, height=3,
+                           font=kit.F_TITLE).place(relx=0.5, rely=0.90,
                                                    anchor="center")
 
     def _draw_checker(self):
@@ -5229,9 +5243,6 @@ class AnalysisHomeScreen(kit.Screen):
     def _save_adv(self):
         settings.set("analysis.auto_advance", bool(self.adv_var.get()))
 
-    def _save_adapt(self):
-        settings.set("stockfish.adaptive", bool(self.adapt_var.get()))
-
     def _save_engine(self):
         settings.set("analysis.show_engine", bool(self.engine_var.get()))
         self._update_begin()
@@ -5567,25 +5578,28 @@ class AnalysisMoveScreen(kit.Screen):
         btns.pack(anchor="w", pady=(6, 0))
         btns.grid_columnconfigure(0, weight=1, uniform="mcol")
         btns.grid_columnconfigure(1, weight=1, uniform="mcol")
+        # width=14 (was 15): with the terminal strip gone the board column
+        # grew taller and the board must not be WIDTH-capped by this grid
+        # (test_move_screen, 2026-11-08)
         self.explore_btn = kit.big_button(btns, "Engine",
                                           self._explore_toggle,
                                           bg=kit.CARD_HI, fg=kit.FG,
-                                          width=15, height=2,
+                                          width=14, height=2,
                                           font=("Atkinson Hyperlegible", 13))
         self.explore_btn.grid(row=0, column=0, padx=(0, 6), pady=3)
         self.test_btn = kit.big_button(btns, "Test alternate",
                                        self._test_start,
                                        bg=kit.CARD_HI, fg=kit.FG,
-                                       width=15, height=2,
+                                       width=14, height=2,
                                        font=("Atkinson Hyperlegible", 13))
         self.reset_btn = kit.big_button(btns, "Reset", self._test_reset,
                                         bg=kit.CARD_HI, fg=kit.FG,
-                                        width=15, height=2,
+                                        width=14, height=2,
                                         font=("Atkinson Hyperlegible", 13))
         self.engine_btn = kit.big_button(btns, "Hide analysis",
                                          self._toggle_engine,
                                          bg=kit.CARD_HI, fg=kit.FG,
-                                         width=15, height=2,
+                                         width=14, height=2,
                                          font=("Atkinson Hyperlegible", 13))
         self.engine_btn.grid(row=1, column=0, padx=(0, 6), pady=3)
 
@@ -6298,15 +6312,6 @@ class SettingsScreen(kit.Screen):
                                         bg=kit.CARD_HI, fg=kit.FG, width=28,
                                         height=2)
         self.level_btn.pack(pady=6)
-        # Adaptive Level (2026-10-24): a game that ends in checkmate updates
-        # the strength estimate and re-picks the level - challenged but
-        # feasible. One step per game; draws and abandoned games count for
-        # nothing.
-        self.adapt_var = tk.BooleanVar(
-            value=bool(settings.get("stockfish.adaptive", True)))
-        kit.checkbox(col, "Adaptive Level", self.adapt_var,
-                     command=self._save_adapt,
-                     font=kit.F_BODY).pack(anchor="w", pady=(0, 6))
         self.vol_btn = kit.big_button(col, self._vol_txt(), self._volume,
                                       bg=kit.CARD_HI, fg=kit.FG, width=28,
                                       height=2)
@@ -6315,6 +6320,13 @@ class SettingsScreen(kit.Screen):
                                        bg=kit.CARD_HI, fg=kit.FG, width=28,
                                        height=2)
         self.mute_btn.pack(pady=6)
+        # after all the buttons: the one switch for the terminal-output
+        # element, which is hidden everywhere by default (2026-11-08)
+        self.term_var = tk.BooleanVar(
+            value=bool(settings.get("ui.show_terminal", False)))
+        kit.checkbox(col, "Show terminal output", self.term_var,
+                     command=self._save_term,
+                     font=kit.F_BODY).pack(anchor="w", pady=(6, 0))
         self._refresh()
 
     def _level_txt(self):
@@ -6342,9 +6354,9 @@ class SettingsScreen(kit.Screen):
                    settings.get("stockfish.level", 5), setv, fmt="%d",
                    extra=lambda v: " (~%d)" % LV.level_elo(int(v)))
 
-    def _save_adapt(self):
-        settings.set("stockfish.adaptive", bool(self.adapt_var.get()))
-        self._refresh()
+    def _save_term(self):
+        settings.set("ui.show_terminal", bool(self.term_var.get()))
+        self.app.apply_terminal()
 
     def _volume(self):
         def setv(v):
@@ -6384,15 +6396,6 @@ class NewGameScreen(kit.Screen):
                                  height=2, font=kit.F_BODY)
             btn.pack(side="left", padx=6)
             self.lbls[key] = btn
-            if key == "stockfish.level":
-                # Adaptive Level sits beneath the level button
-                self.adapt_var = tk.BooleanVar(
-                    value=bool(settings.get("stockfish.adaptive", True)))
-                kit.checkbox(col, "Adaptive Level", self.adapt_var,
-                             command=self._save_adapt,
-                             font=kit.F_BODY).pack(anchor="w",
-                                                   padx=(120, 0),
-                                                   pady=(0, 6))
         kit.big_button(col, "BEGIN", self._begin, bg=kit.GREEN, fg="#14161c",
                        height=3, width=22).pack(pady=16)
         self._refresh()
@@ -6403,9 +6406,6 @@ class NewGameScreen(kit.Screen):
             # just [level] ([elo]) - the row's label names it
             return "%d (~%d)" % (int(v), LV.level_elo(int(v)))
         return v.capitalize()
-
-    def _save_adapt(self):
-        settings.set("stockfish.adaptive", bool(self.adapt_var.get()))
 
     def _refresh(self):
         for k, b in self.lbls.items():
@@ -6478,10 +6478,14 @@ class GameScreen(kit.Screen):
         self._prep = None
         self._cam_lost = None
         self._takeback_req = False
+        # the raw monitor stream - terminal output, hidden by default like
+        # the app-wide strip (2026-11-08).  The THINKING dots below still
+        # read from the same events even when the line is not shown.
         self.status_lbl = tk.Label(self.body, text="", font=kit.F_SMALL,
                                    bg=kit.BG, fg=kit.FG_DIM, anchor="w",
                                    wraplength=770)
-        self.status_lbl.pack(side="bottom", fill="x", pady=(2, 0))
+        if settings.get("ui.show_terminal", False):
+            self.status_lbl.pack(side="bottom", fill="x", pady=(2, 0))
         row = tk.Frame(self.body, bg=kit.BG)
         row.pack(fill="both", expand=True)
         self.board = kit.BoardView(row, px=384)

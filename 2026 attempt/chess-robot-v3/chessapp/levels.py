@@ -42,8 +42,10 @@ def elo_for_level(target):
 
 def adapt_after_game(game, force=False):
     """One Adaptive Level update per game. `game` is the saved game dict.
-    Returns the new level, or None when nothing changed."""
-    if not settings.get("stockfish.adaptive", True):
+    Returns the new level, or None when nothing changed.  Default OFF
+    (2026-11-08): the feature is unused and its UI switch is gone - it only
+    runs when data/settings.json turns it on explicitly."""
+    if not settings.get("stockfish.adaptive", False):
         return None
     moves = game.get("moves") or []
     if not moves:
