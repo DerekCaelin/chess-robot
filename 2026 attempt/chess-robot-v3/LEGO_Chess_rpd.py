@@ -512,11 +512,32 @@ def is_afile_square(squarename):
 GRAVE_COLS = 2
 GRAVE_ROWS = 7            # ranks 8..2 (rank 1 excluded: out of workspace)
 _grave_next = 0
+_last_grave_slot = None
 
 
 def reset_graveyard():
-    global _grave_next
+    global _grave_next, _last_grave_slot
     _grave_next = 0
+    _last_grave_slot = None
+
+
+def last_grave_slot():
+    """The slot index the last drop used (None when the classic spot was
+    used, or no drop has happened).  The game records this next to the
+    captured piece so a takeback can point the player at it (2026-11-08)."""
+    return _last_grave_slot
+
+
+def restore_graveyard(used_slots):
+    """Restore the fill state from the remembered placements: a resumed game
+    must not drop onto the pieces already sitting in the graveyard, and a
+    takeback reuses the slots it freed (the LOWEST free slot goes next)."""
+    global _grave_next
+    used = {int(x) for x in (used_slots or []) if x is not None}
+    n = 0
+    while n in used and n < GRAVE_COLS * GRAVE_ROWS:
+        n += 1
+    _grave_next = min(n, GRAVE_COLS * GRAVE_ROWS - 1)
 
 
 def grave_slot(n):
@@ -537,8 +558,9 @@ def grave_slot(n):
 def next_grave_pose():
     """Advance the graveyard and return the next drop pose (clamps to the last
     slot past 14 captures)."""
-    global _grave_next
+    global _grave_next, _last_grave_slot
     n = _grave_next
+    _last_grave_slot = n
     _grave_next = min(n + 1, GRAVE_COLS * GRAVE_ROWS - 1)
     return grave_slot(n)
 
@@ -797,7 +819,10 @@ def takepiece(X, Z, targetpiece, source_square=None):
     Xgraveyard, Zgraveyard = next_grave_pose()
     if not (pose_ok(Xgraveyard, cruise_for_reach(Xgraveyard), Zgraveyard)
             and pose_ok(Xgraveyard, 2.5, Zgraveyard)):
-        # that graveyard slot sits outside the workspace - use the classic spot
+        # that graveyard slot sits outside the workspace - use the classic
+        # spot (not a slot: the memory must not claim one for it)
+        global _last_grave_slot
+        _last_grave_slot = None
         Xgraveyard = armlength("h9") + 0.5
         Zgraveyard = armangle("h9")
     movearm(Xgraveyard, Zgraveyard)

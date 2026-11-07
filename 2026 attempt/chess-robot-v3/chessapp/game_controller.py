@@ -18,7 +18,8 @@ import sys
 import time
 
 from ChessBoard import ChessBoard
-from chessapp import settings, game_state
+from chessapp import game_state, settings
+from chessapp.graveyard import GraveMemory, captured_on
 import CBstate
 
 
@@ -33,6 +34,7 @@ class ChessGame:
                  use_robot=True):
         self.on_speak = on_speak
         self.on_status = on_status
+        self.grave = GraveMemory()
         self.on_board = on_board
         self.on_player_move = on_player_move
         self.on_computer_move = on_computer_move
@@ -114,14 +116,10 @@ class ChessGame:
         """Fresh start, or resume from data/game.json if asked and present."""
         self.start_engine()
         self.cb.resetBoard()
-        if self.use_robot:               # captured pieces start back at slot 1
-            try:
-                self._RD().reset_graveyard()
-            except Exception:
-                pass
         self.fmove = ""
         self.movelist = []
         self.stars = []
+        self.grave = GraveMemory()
         self.game_over = False
         self.result_text = None
         self._put("ucinewgame")
@@ -140,10 +138,19 @@ class ChessGame:
                              saved.get("player_color", "white"))
                 self.stars = [s for s in (saved.get("stars") or [])
                               if 1 <= s <= len(self.movelist)]
+                self.grave = GraveMemory(saved.get("graveyard") or [])
+        if self.use_robot:
+            # the graveyard fill follows the memory (2026-11-08): a fresh
+            # game starts at slot 1, a RESUME must never drop a capture onto
+            # the pieces already sitting there
+            try:
+                self._RD().restore_graveyard(self.grave.used_slots())
+            except Exception:
+                pass
         level = settings.get("stockfish.level", 5)
         color = settings.get("player.color", "white")
         game_state.save(self.movelist, color, level, result=None,
-                        stars=self.stars)
+                        stars=self.stars, graveyard=self.grave.to_list())
         self._notify_board()
         return {"ok": True, "resumed": bool(resume and self.movelist)}
 
@@ -210,10 +217,16 @@ class ChessGame:
             return out
 
         self._status("You: " + brdmove)
+        cap = captured_on(board_before, brdmove)   # before the board advances
         self._checkvarious(out)
         board_before = self._RD_update(brdmove, board_before)
         self.fmove = (self.fmove + " " + brdmove).strip()
         self.movelist.append(brdmove)
+        if cap is not None:
+            # the player physically lifts this piece and puts it in the
+            # graveyard themselves - the exact spot is theirs
+            self.grave.record(cap[0], cap[1], slot=None, by="player",
+                              ply=len(self.movelist))
         self._persist()
         if self.on_player_move:      # show the player's move in the UI
             try:                     # immediately (was: after the robot's
@@ -248,13 +261,19 @@ class ChessGame:
                 self.on_computer_move(smove)
             except Exception:
                 pass
+        cap = captured_on(board_before, smove)      # before the arm plays it
+        slot = None
         if self.use_robot:
             try:
                 RD = self._RD()
                 RD.movepiece(smove[0:2], smove[2:4], board_before)
+                slot = RD.last_grave_slot()
             except Exception as e:
                 out["robot_error"] = str(e)
                 self._status("Robot problem: %s" % e)
+        if cap is not None:
+            self.grave.record(cap[0], cap[1], slot=slot, by="robot",
+                              ply=len(self.movelist))
         self._checkvarious(out)
         self._persist()
         self._notify_board()
@@ -284,13 +303,19 @@ class ChessGame:
                 self.on_computer_move(smove)
             except Exception:
                 pass
+        cap = captured_on(board_before, smove)      # before the arm plays it
+        slot = None
         if self.use_robot:
             try:
                 RD = self._RD()
                 RD.movepiece(smove[0:2], smove[2:4], board_before)
+                slot = RD.last_grave_slot()
             except Exception as e:
                 out["robot_error"] = str(e)
                 self._status("Robot problem: %s" % e)
+        if cap is not None:
+            self.grave.record(cap[0], cap[1], slot=slot, by="robot",
+                              ply=len(self.movelist))
         self._checkvarious(out)
         self._persist()
         self._notify_board()
@@ -374,13 +399,15 @@ class ChessGame:
                 game_state.clear()
             return
         game_state.save(self.movelist, settings.get("player.color", "white"),
-                        settings.get("stockfish.level", 5), stars=self.stars)
+                        settings.get("stockfish.level", 5), stars=self.stars,
+                        graveyard=self.grave.to_list())
 
     def end_game(self):
         """User chose to abandon: wipe the saved game."""
         game_state.clear()
         self.fmove = ""
         self.movelist = []
+        self.grave = GraveMemory()
         self.game_over = False
 
     def takeback(self):
@@ -402,8 +429,17 @@ class ChessGame:
         self._put("position startpos moves " + self.fmove)
         self._put("isready")
         self._get("readyok")
+        # the undone captures come back OUT of the graveyard: forget their
+        # placements and hand the freed slots back to the arm
+        self.grave.rewind(len(self.movelist))
+        if self.use_robot:
+            try:
+                self._RD().restore_graveyard(self.grave.used_slots())
+            except Exception:
+                pass
         game_state.save(self.movelist, settings.get("player.color", "white"),
-                        settings.get("stockfish.level", 5), stars=self.stars)
+                        settings.get("stockfish.level", 5), stars=self.stars,
+                        graveyard=self.grave.to_list())
         return n
 
     def board(self):

@@ -19,7 +19,8 @@ def exists():
     return os.path.exists(PATH)
 
 
-def save(moves, player_color, level, result=None, started=None, stars=None):
+def save(moves, player_color, level, result=None, started=None,
+         stars=None, graveyard=None):
     os.makedirs(os.path.dirname(PATH), exist_ok=True)
     data = {
         "moves": list(moves),
@@ -30,6 +31,10 @@ def save(moves, player_color, level, result=None, started=None, stars=None):
         # moves the PLAYER starred during the game (1-based ply) - shown
         # again in the analysis review (2026-10-24)
         "stars": sorted(set(stars or [])),
+        # remembered graveyard placements: which captured piece sits where
+        # (2026-11-08) - keeps the arm off occupied slots after a restart
+        # and lets a takeback say where to find the piece that returns
+        "graveyard": [dict(e) for e in (graveyard or [])],
     }
     tmp = PATH + ".tmp"
     with open(tmp, "w") as f:

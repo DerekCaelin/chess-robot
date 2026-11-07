@@ -37,6 +37,8 @@ from PIL import Image, ImageTk                   # noqa: E402
 import CBstate                                   # noqa: E402
 import camera                                    # noqa: E402
 from chessapp import game_state, audio, verify_log
+from chessapp.graveyard import piece_name as _piece_name, \
+    slot_desc as _slot_desc
 from chessapp import levels as LV  # noqa: E402
 from chessapp import analysispack as AP  # noqa: E402
 from chessapp import analysis as AN  # noqa: E402  (the what-if engine:
@@ -7045,6 +7047,13 @@ class GameScreen(kit.Screen):
                  text="Re-set the board to match this position, then OK.",
                  font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
                  wraplength=420, justify="center").pack(pady=(0, 10))
+        # where to fetch the pieces that come BACK from the graveyard: the
+        # memory remembers where the opponent (the robot) dropped each
+        # capture - and where the player put their own (2026-11-08)
+        for line in self._grave_notes(prev):
+            tk.Label(m.body, text=line, font=kit.F_BODY, bg=kit.CARD,
+                     fg=kit.FG_DIM, wraplength=420,
+                     justify="center").pack()
         row = tk.Frame(m.body, bg=kit.CARD)
         row.pack()
 
@@ -7055,6 +7064,31 @@ class GameScreen(kit.Screen):
                 kind="secondary").pack(side="left", padx=8)
         kit.btn(row, "OK", ok, size="m", kind="confirm").pack(side="left",
                                                               padx=8)
+
+    def _grave_notes(self, prev):
+        """Lines naming the pieces a takeback brings back from the graveyard
+        and where each one sits in it."""
+        out = []
+        try:
+            cur = self.game.board()
+            grave = getattr(self.game, "grave", None)
+        except Exception:
+            return out
+        for r in range(8):
+            for c in range(8):
+                if prev[r][c] == "." or cur[r][c] != ".":
+                    continue
+                sq = "%s%d" % (chr(97 + c), 8 - r)
+                e = grave.at(sq) if grave is not None else None
+                where = "in the graveyard"
+                if e is not None:
+                    if e.get("slot") is not None:
+                        where = "graveyard: %s" % _slot_desc(e["slot"])
+                    elif e.get("by") == "player":
+                        where = "graveyard: where you placed it"
+                out.append("%s (from %s) - %s"
+                           % (_piece_name(prev[r][c]), sq, where))
+        return out
 
     def _prev_board(self):
         """The board as it will be AFTER the takeback - the position the
