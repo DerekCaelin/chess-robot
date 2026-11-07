@@ -417,13 +417,16 @@ class HomeScreen(kit.Screen):
         hero = tk.Label(self.body, image=self._hero_img, bg=kit.BG)
         hero.image = self._hero_img
         hero.place(relx=0.5, y=16, anchor="n")
-        for i, (text, cls) in enumerate((
-                ("Calibrate", CalibrateScreen),
-                ("Settings", SettingsScreen),
-                ("Analysis", AnalysisHomeScreen))):
-            kit.btn(self.body, text, lambda c=cls: app.show(c), size="m",
-                    kind="secondary",
-                    width_px=230).place(x=160, y=200 + i * 68)
+        # the menu: four buttons of ONE type stacked vertically in the left
+        # column (2026-11-08) - L size so they are not vertically cramped -
+        # with Power as the ordinary last member of the list
+        for i, (text, cmd) in enumerate((
+                ("Calibrate", lambda: app.show(CalibrateScreen)),
+                ("Settings", lambda: app.show(SettingsScreen)),
+                ("Analysis", lambda: app.show(AnalysisHomeScreen)),
+                ("Power", self._power))):
+            kit.btn(self.body, text, cmd, size="l", kind="secondary",
+                    width_px=230).place(x=160, y=146 + i * 84)
         # PLAY square hero: image carries the pixels, the text attr keeps it
         # findable; the pressed state is one luminance step darker
         self._play_img, self._play_img_dn = _play_square_images()
@@ -432,31 +435,14 @@ class HomeScreen(kit.Screen):
             bg=kit.ACCENT, activebackground=kit.ACCENT_HI,
             relief="flat", bd=0, highlightthickness=0, width=192, height=192)
         self.play_btn.image = self._play_img
-        self.play_btn.place(x=484, y=200)
+        self.play_btn.place(x=484, y=208)   # on the menu band's centre line
         self.play_btn.bind(
             "<ButtonPress>",
             lambda _e: self.play_btn.configure(image=self._play_img_dn))
         self.play_btn.bind(
             "<ButtonRelease>",
             lambda _e: self.play_btn.configure(image=self._play_img))
-        try:
-            self._power_img = tk.PhotoImage(
-                file=os.path.join(ROOT, "ui", "assets", "power.png"))
-            # Tk ignores padx/pady on image buttons - WIDTH/HEIGHT are true
-            # pixels for them, so the target is sized directly
-            pbtn = tk.Button(self.body, image=self._power_img,
-                             command=self._power,
-                             bg=kit.CARD_HI, activebackground=kit.ACCENT_HI,
-                             relief="flat", bd=0, highlightthickness=1,
-                             highlightbackground=kit.EDGE,
-                             width=90, height=74)
-            pbtn.image = self._power_img    # keep a reference alive
-            pbtn.place(x=14, y=380)         # bottom-left, out of the columns
-        except Exception:
-            # asset missing / Tk too old for PNG: fall back to a glyph
-            kit.big_button(self.body, "\u23FB", self._power, bg=kit.CARD_HI,
-                           fg=kit.FG, width=6, height=3,
-                           font=kit.F_TITLE).place(x=14, y=380)
+
 
     def _draw_checker(self):
         """The home's checker - shared with the modal backdrops (see
@@ -7046,9 +7032,54 @@ class GameScreen(kit.Screen):
 
     def _takeback(self):
         """Request a takeback: the worker thread does the undo + engine resync
-        (engine is idle while it waits for the player's move)."""
-        self._takeback_req = True
-        self.app.toast("Takeback - reset the board to your last move")
+        (engine is idle while it waits for the player's move).  Since
+        2026-11-08 a modal first shows the PREVIOUS state and asks the
+        player to re-set the board to it: OK proceeds, Cancel aborts."""
+        m = kit.Modal(self.app, "Takeback")
+        prev = self._prev_board()
+        if prev is not None:
+            board = kit.BoardView(m.body, px=224)
+            board.pack(pady=(2, 8))
+            board.draw(prev)
+        tk.Label(m.body,
+                 text="Re-set the board to match this position, then OK.",
+                 font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
+                 wraplength=420, justify="center").pack(pady=(0, 10))
+        row = tk.Frame(m.body, bg=kit.CARD)
+        row.pack()
+
+        def ok():
+            m.close()
+            self._takeback_req = True
+        kit.btn(row, "Cancel", m.close, size="m",
+                kind="secondary").pack(side="left", padx=8)
+        kit.btn(row, "OK", ok, size="m", kind="confirm").pack(side="left",
+                                                              padx=8)
+
+    def _prev_board(self):
+        """The board as it will be AFTER the takeback - the position the
+        player must physically restore.  Replayed from the movelist so the
+        live game state is untouched; takeback() removes the last full turn
+        (up to two plies)."""
+        moves = list(getattr(self.game, "movelist", []) or [])
+        n = min(2, len(moves))
+        if n == 0:
+            return None
+        try:
+            import chess
+            b = chess.Board()
+            for u in moves[:len(moves) - n]:
+                b.push_uci(u)
+        except Exception:
+            return None
+        grid = []
+        for rank in range(8, 0, -1):
+            row = []
+            for file in "abcdefgh":
+                p = b.piece_at(chess.parse_square("%s%d" % (file, rank)))
+                row.append(p.symbol() if p else ".")
+            grid.append(row)
+        return grid
 
     def abandon(self):
         self.stop_req = True
