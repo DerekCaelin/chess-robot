@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 
 import chess
 import chess.pgn
@@ -242,16 +243,18 @@ def _pv_line(board, pv, mover, mate=None):
     for u in (pv or [])[:6]:
         try:
             mv = chess.Move.from_uci(u)
+            san = b.san(mv)          # asserts on anything not legal here
+            kinds = [k for k, _ in CF.move_facts(b, mv)]
+            forced = b.legal_moves.count() == 1
+            cap = b.is_capture(mv)
+            chk = b.gives_check(mv)
+            b.push(mv)
         except Exception:
-            break
-        san = b.san(mv)
-        kinds = [k for k, _ in CF.move_facts(b, mv)]
+            break        # one odd PV line must not kill the whole analysis
         plies.append({"san": san,
-                      "color": "white" if b.turn == chess.WHITE else "black",
-                      "forced": b.legal_moves.count() == 1,
-                      "kinds": kinds, "capture": b.is_capture(mv),
-                      "check": b.gives_check(mv)})
-        b.push(mv)
+                      "color": "white" if b.turn == chess.BLACK else "black",
+                      "forced": forced, "kinds": kinds, "capture": cap,
+                      "check": chk})
     total = (_material(b) - _material(board)) * (1 if mover == chess.WHITE
                                                  else -1)
     # where does the line's gain materialize?
@@ -367,7 +370,7 @@ def _is_endgame(board):
 
 
 def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
-                 on_entry=None):
+                 on_entry=None, cached=None, checkpoint=None):
     """Walk the game with the engine and return the analysis dict.
 
     TWO passes per position (2026-10-22): MultiPV 1 at full depth for the
@@ -376,7 +379,15 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
     for the candidate alternatives. Background pre-warming absorbs the time.
 
     on_entry(entry) fires as each move is analysed, so a chart can show the
-    evaluation growing while the analysis advances (2026-10-24)."""
+    evaluation growing while the analysis advances (2026-10-24).
+
+    RESUME (2026-11-07): `cached` is a list of entries from an earlier run
+    of the SAME code digest and the SAME game; matching moves are trusted
+    as-is (no engine re-work) so an app restart does not throw away a
+    half-finished analysis - the Pi got hot re-doing it from scratch.
+    `checkpoint(entries, ucis, openings)` fires after every move so the
+    caller can persist the partial state.  The per-move sleep yields the
+    GIL so the Tk UI stays responsive during the run."""
     own = engine is None
     eng = engine or Engine(multipv=multipv)
     board = game.board()
@@ -397,13 +408,35 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
     entries = []
     ucis = []
     openings = []
-    pos = eng.analyse(board.fen(), depth, multipv=1)   # evaluation of the start
-    prev_eval = pos[0]["cp"] if pos else 0
-    prev_mate = pos[0]["mate"] if pos else None
+    cached = list(cached or [])
+    if cached:
+        # resuming: the start-position search is only a fallback for an
+        # engine failure inside the loop - take it from the checkpoint
+        prev_eval = cached[-1].get("eval_cp", 0)
+        prev_mate = cached[-1].get("eval_mate")
+    else:
+        pos = eng.analyse(board.fen(), depth, multipv=1)   # evaluation of the start
+        prev_eval = pos[0]["cp"] if pos else 0
+        prev_mate = pos[0]["mate"] if pos else None
 
     for i, mv in enumerate(moves):
         if progress:
             progress(i, len(moves))
+        # resume: a checkpointed entry for this exact move is trusted as-is
+        if i < len(cached) and cached[i].get("uci") == mv.uci():
+            entries.append(cached[i])
+            ucis.append(mv.uci())
+            m = OP.match_opening(ucis)
+            if m and m[1] == len(ucis):
+                openings.append({"ply": i + 1, "name": m[0],
+                                 "color": "white" if board.turn == chess.WHITE
+                                 else "black", "san": cached[i].get("san", "")})
+            board.push(mv)
+            prev_eval = cached[i].get("eval_cp", prev_eval)
+            prev_mate = cached[i].get("eval_mate", prev_mate)
+            if on_entry is not None:
+                on_entry(entries[-1])
+            continue
         turn = board.turn
         # pass 1: the verdict (full depth, single line); pass 2: alternatives
         before = eng.analyse(board.fen(), depth, multipv=1)
@@ -592,6 +625,9 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
         prev_eval, prev_mate = cur_cp, mate_after
         if on_entry is not None:
             on_entry(entries[-1])
+        if checkpoint is not None:
+            checkpoint(entries, ucis, openings)
+        time.sleep(0.005)   # yield the GIL - the UI shares this process
 
     if progress:
         progress(len(moves), len(moves))

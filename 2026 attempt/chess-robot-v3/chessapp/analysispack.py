@@ -131,6 +131,45 @@ class AnalysisPack:
     def text_path(self):
         return os.path.join(self.dir, "text.json")
 
+    def partial_path(self):
+        return os.path.join(self.dir, "text.partial.json")
+
+    def _load_partial(self, depth):
+        """Entries from an interrupted earlier run of the SAME digest, depth
+        and game (2026-11-07): the resume source, so an app restart does not
+        re-do the whole search - the Pi overheated re-analysing from scratch
+        every time the UI was restarted mid-run."""
+        try:
+            with open(self.partial_path()) as f:
+                data = json.load(f)
+            if (data.get("format") != CACHE_FORMAT
+                    or data.get("code") != _code_digest()
+                    or int(data.get("depth", -1)) != int(depth)):
+                return []
+            ucis = data.get("ucis") or []
+            entries = data.get("entries") or []
+            game_ucis = self.game.get("moves") or []
+            if ucis != game_ucis[:len(ucis)]:
+                return []          # a different game - do not trust it
+            return entries
+        except (OSError, ValueError):
+            return []
+
+    def _save_partial(self, depth, entries, ucis, openings):
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+            tmp = self.partial_path() + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"format": CACHE_FORMAT,
+                           "code": _code_digest(),
+                           "depth": int(depth),
+                           "ucis": list(ucis),
+                           "entries": list(entries),
+                           "openings": list(openings)}, f)
+            os.replace(tmp, self.partial_path())
+        except OSError:
+            pass
+
     def wav_path(self, ply, voice):
         return os.path.join(self.dir, "m%03d_%s.wav" % (ply, voice))
 
@@ -209,11 +248,15 @@ class AnalysisPack:
                                 except OSError:
                                     pass
                     g = game_from_state(self.game)
+                    cached = self._load_partial(depth)
                     self.analysis = AN.analyze_game(
                         g, depth=depth,
                         progress=((lambda i, n: on_progress(i, n, "start", ""))
                                   if on_progress else None),
-                        on_entry=self.live_moves.append)
+                        on_entry=self.live_moves.append,
+                        cached=cached,
+                        checkpoint=lambda e, u, o: self._save_partial(
+                            depth, e, u, o))
                     self.moves = NR.per_move(self.analysis)
                     with open(self.text_path(), "w") as f:
                         json.dump({"format": CACHE_FORMAT,
@@ -222,6 +265,10 @@ class AnalysisPack:
                                    "analysis": AN.analysis_to_jsonable(
                                        self.analysis)},
                                   f, indent=1)
+                    try:
+                        os.remove(self.partial_path())
+                    except OSError:
+                        pass
         if not self.moves:
             self._load_text()
         if on_progress:
@@ -315,6 +362,9 @@ def _text_lock(h):
 def generate_async(pack, voice, depth=None):
     """Start (or join) the staged generation for this game+voice. Returns the
     shared state dict: {done, total, state, error, alive}."""
+    voice = voice or "none"     # one key per voice (prewarm passes None;
+                                # without this it and the analysis home ran
+                                # DUPLICATE full analyses, 2026-11-07)
     if depth is None:
         depth = int(settings.get("analysis.depth", 18))
     key = (pack.hash, voice)
@@ -356,6 +406,7 @@ def generation_state(pack, voice):
     # the text stage is shared across voices: the same words are being
     # written whatever the selected voice (and the same words get spoken -
     # only the sound differs), so every voice shows the same count
+    voice = voice or "none"
     ts = _TEXT_STATE.get(pack.hash)
     if ts is not None and ts.get("alive"):
         return ts

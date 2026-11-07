@@ -156,7 +156,7 @@ def test_pack_stale_sounds():
         seen = {}
 
         def fake_analyze(g, depth=18, multipv=3, engine=None, progress=None,
-                         on_entry=None):
+                         on_entry=None, cached=None, checkpoint=None):
             seen["wavs"] = [x for x in os.listdir(pk.dir)
                             if x.endswith(".wav")]
             if progress:

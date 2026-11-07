@@ -13,6 +13,8 @@ PIECE_NAMES = {chess.PAWN: "pawn", chess.KNIGHT: "knight",
 
 
 def piece_name(piece):
+    if piece is None:
+        return "piece"
     return PIECE_NAMES.get(piece.piece_type, "piece")
 
 
@@ -76,10 +78,15 @@ def move_facts(board, move):
                                   "ep": True}))
     elif board.is_capture(move):
         victim = board.piece_at(move.to_square)
-        facts.append(("capture", {"piece": piece_name(victim),
-                                  "what": ("the " + piece_name(victim)),
-                                  "square": chess.square_name(move.to_square),
-                                  "value": VALUES[victim.piece_type]}))
+        if victim is not None:
+            facts.append(("capture", {"piece": piece_name(victim),
+                                      "what": ("the " + piece_name(victim)),
+                                      "square": chess.square_name(move.to_square),
+                                      "value": VALUES[victim.piece_type]}))
+        # python-chess reports is_capture for pseudo-legal moves whose
+        # victim is NOT on the to-square (2026-11-07: a wrong-side push
+        # reads 'exe5' and crashed piece_name(None)).  No identifiable
+        # victim = no capture fact - strictly true or nothing.
     if move.promotion:
         facts.append(("promotion", {"piece": PIECE_NAMES.get(move.promotion,
                                                              "queen"),
