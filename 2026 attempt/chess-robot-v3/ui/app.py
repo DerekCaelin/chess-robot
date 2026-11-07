@@ -3425,7 +3425,7 @@ class CornerCalibScreen(kit.Screen):
         # height the sample is taken at. auto_h keeps the tip at grip height as
         # the reach jogs; a HEIGHT-bar override wins until the next corner.
         self.auto_h = True
-        X0, Z0 = RD.parametric_pose(self.ORDER[0])
+        X0, Z0 = RD.armlength(self.ORDER[0]), RD.armangle(self.ORDER[0])
         self.cur = [X0, self._grip_Y(X0), Z0]
 
         cols = kit.BoardCols(self.body)
@@ -3571,9 +3571,12 @@ class CornerCalibScreen(kit.Screen):
         self._go(self.ORDER[0], wake=True)
 
     def _go(self, sq, wake=False):
-        # Best guess from the PARAMETRIC model (never the uncalibrated mode-B
-        # frame), clamped so the low descend stays inside the reach annulus.
-        X, Z = RD.parametric_pose(sq)
+        # The square's coordinates come from the CURRENT board mapping -
+        # whatever it is today (2026-11-07): the last good fit is a far
+        # better seed than the retired parametric model, and if the mapping
+        # IS the parametric one this is identical.  Clamped so the low
+        # descend stays inside the reach annulus.
+        X, Z = RD.armlength(sq), RD.armangle(sq)
         Y = self._grip_Y(X)
         cap = RD.reach_at_height(Y) - 0.1
         X = max(self.X_LO, min(cap, X))

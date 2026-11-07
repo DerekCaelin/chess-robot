@@ -295,14 +295,11 @@ def armlength(squarename):
     return planar_to_arm(*board_sq_center(squarename))[0]
 
 
-def parametric_pose(squarename):
-    """(reach, base-angle) from the PARAMETRIC model, independent of calib_mode.
-    Used to seed the corner calibration's best-guess, which must not depend on
-    the as-yet-uncalibrated mode-B frame."""
-    m = _model_sq(squarename)
-    x = xmtrans[m[0]] * squaresize
-    y = (8 - int(m[1])) * squaresize
-    return armlength_xy(x, y), armangle_xy(x, y)
+# parametric_pose() retired (2026-11-07): it seeded the corner calibration
+# with the mode-A model "which must not depend on the as-yet-uncalibrated
+# frame" - but the CURRENT mapping (armlength/armangle) is the far better
+# seed: the last good fit when there is one, the parametric model when the
+# mapping is still parametric.  The board calibration now uses it.
 
 
 # Piecewise reach-dependent pick-height correction (step function). The
