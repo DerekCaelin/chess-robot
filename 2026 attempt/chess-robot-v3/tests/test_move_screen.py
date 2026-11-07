@@ -332,15 +332,15 @@ def main():
     home._poll()
     settle(root)
     got = str(home.prog_lbl.cget("text"))
-    if got != "Building analysis":
+    if not got.startswith("Building analysis (0/2)"):
         fails.append("home: text stage line wrong (got %r)" % got)
-    # the text stage keeps its name; progress lives in the bar as it goes
+    # the text stage keeps its name; the #/# and dots update as it goes
     state.update(done=1, total=2)
     home._poll()
     settle(root)
     got = str(home.prog_lbl.cget("text"))
-    if got != "Building analysis":
-        fails.append("home: text stage renamed mid-run (got %r)" % got)
+    if not got.startswith("Building analysis (1/2)"):
+        fails.append("home: no text-stage progress in the label (got %r)" % got)
     # Begin stays disabled (and inert) until the text exists - pressing it
     # over an empty pack used to do nothing at all
     if str(home.begin_btn.cget("state")) != "disabled":
@@ -358,13 +358,13 @@ def main():
     if str(home.begin_btn.cget("state")) == "disabled":
         fails.append("home: Begin still disabled with the text ready")
     got = str(home.prog_lbl.cget("text"))
-    if got != "Generating espeak voice":
+    if not got.startswith("Generating espeak voice (1/2)"):
         fails.append("home: espeak stage line wrong (got %r)" % got)
     state.update(voice="piper", done=2, total=2)
     home._poll()
     settle(root)
     got = str(home.prog_lbl.cget("text"))
-    if got != "Generating piper voice":
+    if not got.startswith("Generating piper voice (2/2)"):
         fails.append("home: piper stage line wrong (got %r)" % got)
     if not home._bar_on or not home.prog_bar.winfo_ismapped():
         fails.append("home: loading bar hidden while generating")
