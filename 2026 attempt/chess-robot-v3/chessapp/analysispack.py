@@ -279,25 +279,47 @@ class AnalysisPack:
         # analysis later finds the work already done (2026-10-24)
         for v in ("espeak", "piper"):
             total = max(1, len(self.moves))
-            for i, m in enumerate(self.moves):
+            pending = []
+            done = 0
+            for m in self.moves:
                 if self._run_id != token:
                     return self.moves
                 out = self.wav_path(m["ply"], v)
-                if not os.path.exists(out):
-                    speech = (m.get("speech") or "").strip()
-                    if speech:
-                        try:
-                            if v == "espeak":
-                                VO.synth_espeak(speech, out)
-                            else:
-                                VO.synth_piper(speech, out,
-                                               model=VO.PIPER_MODELS["alba"])
-                        except Exception as e:
-                            # one bad line must not stop the rest of the game
-                            print("voice: move %d failed: %s" % (m["ply"], e))
-                            continue
-                if on_progress:
-                    on_progress(i + 1, total, "audio", v)
+                speech = (m.get("speech") or "").strip()
+                if os.path.exists(out) or not speech:
+                    done += 1
+                    if on_progress:
+                        on_progress(done, total, "audio", v)
+                else:
+                    pending.append((m["ply"], speech, out))
+            if v == "piper":
+                # ONE model load for the whole batch (2026-11-08): loading
+                # piper per sentence took minutes per move on the Pi 3B and
+                # the background run never finished a game
+                def _one(_n):
+                    nonlocal done
+                    done += 1
+                    if on_progress:
+                        on_progress(done, total, "audio", v)
+                try:
+                    VO.synth_piper_many([(s, o) for _, s, o in pending],
+                                        model=VO.PIPER_MODELS["alba"],
+                                        on_item=_one,
+                                        should_stop=lambda: self._run_id != token)
+                except Exception as e:
+                    print("voice: piper batch failed: %s" % e)
+            else:
+                for ply, speech, out in pending:
+                    if self._run_id != token:
+                        return self.moves
+                    try:
+                        VO.synth_espeak(speech, out)
+                    except Exception as e:
+                        # one bad line must not stop the rest of the game
+                        print("voice: move %d failed: %s" % (ply, e))
+                    done += 1
+                    if on_progress:
+                        on_progress(done, total, "audio", v)
         return self.moves
 
     def _load_text(self):
@@ -410,7 +432,16 @@ def generation_state(pack, voice):
     ts = _TEXT_STATE.get(pack.hash)
     if ts is not None and ts.get("alive"):
         return ts
-    return _RUNS.get((pack.hash, voice))
+    st = _RUNS.get((pack.hash, voice))
+    if st is not None and st.get("alive"):
+        return st
+    # the idle prewarm runs under the shared "none" key - the analysis home
+    # must SEE it, or the background generation looks dead while it works
+    # (2026-11-08)
+    for (h, _v), s in _RUNS.items():
+        if h == pack.hash and s.get("alive"):
+            return s
+    return st
 
 
 def top_turning(moves, n=3, player=None, exclude_last=True):

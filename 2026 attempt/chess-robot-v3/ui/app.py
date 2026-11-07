@@ -362,26 +362,6 @@ class App:
 
 # ── home ─────────────────────────────────────────────────────────────────────
 
-def _wordmark_plate():
-    """The CHESSBOT wordmark as a PIL-rendered plate: 88px Cinzel Bold in
-    maple on flat black, with the margin measured from the GLYPH INK so it
-    is EQUAL on all four sides (a Tk label's box runs past the glyphs
-    vertically - the vertical margin was noticeable, the horizontal absent).
-    Rendered from the shipped font file, so it matches the approved mock
-    pixel for pixel (2026-11-08)."""
-    from PIL import ImageDraw, ImageFont
-    font = ImageFont.truetype(
-        os.path.join(ROOT, "ui", "assets", "fonts", "Cinzel-Bold.ttf"), 88)
-    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
-    tb = probe.textbbox((0, 0), "CHESSBOT", font=font)
-    w, h = tb[2] - tb[0], tb[3] - tb[1]
-    m = 26                                   # the black margin, equal
-    out = Image.new("RGB", (w + 2 * m, h + 2 * m), kit.BG)
-    ImageDraw.Draw(out).text((m - tb[0], m - tb[1]), "CHESSBOT",
-                             font=font, fill=kit.SQUARE_L)   # maple
-    return out
-
-
 def _play_square_images():
     """The PLAY square hero (word only - treatment 4), drawn exactly as the
     approved mock.  The two states differ by LUMINANCE only."""
@@ -415,20 +395,18 @@ class HomeScreen(kit.Screen):
         self.canvas = tk.Canvas(self.body, bg=kit.BG, highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda _e: self._draw_checker())
-        self._hero_img = ImageTk.PhotoImage(_wordmark_plate())
-        hero = tk.Label(self.body, image=self._hero_img, bg=kit.BG)
-        hero.image = self._hero_img
-        hero.place(relx=0.5, y=16, anchor="n")
         # the menu: four buttons of ONE type stacked vertically in the left
-        # column (2026-11-08) - L size so they are not vertically cramped -
-        # with Power as the ordinary last member of the list
-        for i, (text, cmd) in enumerate((
-                ("Calibrate", lambda: app.show(CalibrateScreen)),
-                ("Settings", lambda: app.show(SettingsScreen)),
-                ("Analysis", lambda: app.show(AnalysisHomeScreen)),
-                ("Power", self._power))):
-            kit.btn(self.body, text, cmd, size="l", kind="secondary",
-                    width_px=230).place(x=160, y=146 + i * 84)
+        # column (2026-11-08) - L size, Power as the ordinary last member -
+        # and the whole group CENTRED VERTICALLY (the wordmark is gone; the
+        # home is just the actions now)
+        menu = tk.Frame(self.body, bg=kit.BG)
+        for text, cmd in (("Calibrate", lambda: app.show(CalibrateScreen)),
+                          ("Settings", lambda: app.show(SettingsScreen)),
+                          ("Analysis", lambda: app.show(AnalysisHomeScreen)),
+                          ("Power", self._power)):
+            kit.btn(menu, text, cmd, size="l", kind="secondary",
+                    width_px=230).pack(pady=10)
+        menu.place(x=160, rely=0.5, anchor="w")
         # PLAY square hero: image carries the pixels, the text attr keeps it
         # findable; the pressed state is one luminance step darker
         self._play_img, self._play_img_dn = _play_square_images()
@@ -437,7 +415,7 @@ class HomeScreen(kit.Screen):
             bg=kit.ACCENT, activebackground=kit.ACCENT_HI,
             relief="flat", bd=0, highlightthickness=0, width=192, height=192)
         self.play_btn.image = self._play_img
-        self.play_btn.place(x=484, y=208)   # on the menu band's centre line
+        self.play_btn.place(x=484, rely=0.5, anchor="center")
         self.play_btn.bind(
             "<ButtonPress>",
             lambda _e: self.play_btn.configure(image=self._play_img_dn))
@@ -6998,11 +6976,12 @@ class GameScreen(kit.Screen):
                 self.app, "Calibration", "Pause the game to calibrate?",
                 lambda: (self.abandon(), self.app.show(CalibrateScreen))),
         }
+        # the approved 2-column treatment (2026-11-08)
         kit.choice(self.app, "",
                    [("Home", "home"), ("New game", "new"),
                     ("End game", "end"), ("Takeback", "takeback"),
                     ("Calibration settings", "calib")],
-                   lambda v: handlers[v]())
+                   lambda v: handlers[v](), columns=2)
 
     def _end_modal(self):
         """End game: Cancel / End, with 'See analysis?' beneath the buttons.

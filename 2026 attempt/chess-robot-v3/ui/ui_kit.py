@@ -446,9 +446,28 @@ def slider(app, title, lo, hi, step, value, on_change, fmt=None,
     return m
 
 
-def choice(app, title, options, on_pick, current=None):
-    """options: list of (label, value). on_pick(value) fires and closes."""
+def choice(app, title, options, on_pick, current=None, columns=1):
+    """options: list of (label, value). on_pick(value) fires and closes.
+    columns > 1 lays them out as a grid with Cancel in the last cell - the
+    in-game menu's approved 2-column treatment (2026-11-08)."""
     m = Modal(app, title)
+    if columns > 1:
+        grid = tk.Frame(m.body, bg=CARD)
+        grid.pack(padx=14, pady=(2, 0))
+        items = list(options) + [("Cancel", None)]
+        for i, (label, value) in enumerate(items):
+            def go(v=value):
+                m.close()
+                if v is not None:
+                    on_pick(v)
+            b = btn(grid, label, go, size="l", kind="secondary",
+                    width_px=240)
+            if value is None:
+                b.configure(bg=CARD, fg=FG_DIM)
+            elif value == current:
+                b.configure(bg=ACCENT, fg="#1b1e24")
+            b.grid(row=i // columns, column=i % columns, padx=7, pady=7)
+        return m
     for label, value in options:
         bg = ACCENT if value == current else CARD_HI
         fg = "#1b1e24" if value == current else FG

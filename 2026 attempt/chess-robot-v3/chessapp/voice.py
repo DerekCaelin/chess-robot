@@ -60,21 +60,38 @@ def _merge_wavs(paths, out, pause=0.35):
 
 def synth_piper(text, out, model=PIPER_MODEL):
     """Synthesize with Piper, one sentence at a time, then join."""
+    synth_piper_many([(text, out)], model=model)
+    return out
+
+
+def synth_piper_many(items, model=PIPER_MODEL, on_item=None, should_stop=None):
+    """Many tracks through ONE loaded model (2026-11-08).  Running the piper
+    CLI per sentence reloaded the 63 MB model every time: ~23 s per sentence
+    on the Pi 3B (19 s of it model load), so the background voice generation
+    took MINUTES per move and never finished a game.  With the model warm a
+    sentence is ~4 s.  One bad track never stops the rest; on_item(n) fires
+    after each track (n from 1)."""
     if not os.path.exists(model):
         raise RuntimeError("missing voice model: %s" % model)
-    parts = []
-    with tempfile.TemporaryDirectory() as td:
-        for i, s in enumerate(sentences(text)):
-            wav = os.path.join(td, "p%03d.wav" % i)
-            r = subprocess.run([sys.executable, "-m", "piper", "-m", model,
-                                "-f", wav],
-                               input=s, text=True, capture_output=True,
-                               preexec_fn=lambda: os.nice(10))
-            if r.returncode != 0 or not os.path.exists(wav):
-                raise RuntimeError("piper failed on %r: %s" % (s, r.stderr[-400:]))
-            parts.append(wav)
-        _merge_wavs(parts, out)
-    return out
+    from piper.voice import PiperVoice
+    pv = PiperVoice.load(model)
+    for n, (text, out) in enumerate(items, 1):
+        if should_stop is not None and should_stop():
+            return n - 1
+        try:
+            parts = []
+            with tempfile.TemporaryDirectory() as td:
+                for i, s in enumerate(sentences(text)):
+                    wav = os.path.join(td, "p%03d.wav" % i)
+                    with wave.open(wav, "wb") as w:
+                        pv.synthesize_wav(s, w)
+                    parts.append(wav)
+                _merge_wavs(parts, out)
+        except Exception as e:
+            print("voice: %s failed: %s" % (os.path.basename(out), e))
+        if on_item is not None:
+            on_item(n)
+    return len(items)
 
 
 def synth_espeak(text, out, voice=ESPEAK_VOICE, speed=155):
