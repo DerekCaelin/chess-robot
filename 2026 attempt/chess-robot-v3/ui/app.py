@@ -392,8 +392,9 @@ class HomeScreen(kit.Screen):
                                                    anchor="center")
 
     def _draw_checker(self):
-        """The home's checker (2026-11-07): 80px squares, grey barely above
-        the black - texture at a glance, chess up close.  Home only."""
+        """The home's checker (2026-11-07, contrast lifted 2026-11-08):
+        80px squares, a soft grey above the black - visible as texture but
+        never loud.  Home only."""
         try:
             c = self.canvas
             c.delete("checker")
@@ -403,7 +404,7 @@ class HomeScreen(kit.Screen):
                     if (r + col) % 2 == 0:
                         c.create_rectangle(col * 80, r * 80,
                                            col * 80 + 80, r * 80 + 80,
-                                           fill="#141311", outline="",
+                                           fill="#1d1a17", outline="",
                                            tags="checker")
         except tk.TclError:
             pass
