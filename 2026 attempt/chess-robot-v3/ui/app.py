@@ -3403,6 +3403,7 @@ class CornerCalibScreen(kit.Screen):
     PAD = 14
     STEP_REACH = 1.8
     STEP_BASE = 9.0
+    STEP_Y = 0.5        # height inches per tap at precision 1 (2026-11-07)
     PREC_LEVELS = (1.0, 5.0, 10.0, 20.0)
 
     def __init__(self, app):
@@ -3416,7 +3417,7 @@ class CornerCalibScreen(kit.Screen):
         self.frame_out = None
         self.corr_out = []
         self.sidx = 0
-        self._prec = 0
+        self._prec = 2            # default precision 3 (2026-11-07)
         # Measure AT the pick (grip) height - _grip_Y() is the wrist height a
         # game pick grips a pawn at for this reach - NOT at a hover above it:
         # the centring is judged where the jaws actually grip, and perspective
@@ -3428,68 +3429,113 @@ class CornerCalibScreen(kit.Screen):
         X0, Z0 = RD.armlength(self.ORDER[0]), RD.armangle(self.ORDER[0])
         self.cur = [X0, self._grip_Y(X0), Z0]
 
-        cols = kit.BoardCols(self.body)
-        self.board = kit.BoardView(cols.board_col, px=192)
-        cols.set_board(self.board, redraw=self._refresh)
-        row = tk.Frame(cols.right, bg=kit.BG)
-        row.pack(fill="x")
-        pad = tk.Frame(row, bg=kit.BG)
-        pad.pack(side="left")
+        # Layout (2026-11-07): no board drawing - the buttons take the
+        # space.  Left: the jog (big arrows + height arrows + precision);
+        # right: the readout and the action buttons, centred.  The
+        # instruction box is full width at the BOTTOM of the screen.
+        main = tk.Frame(self.body, bg=kit.BG)
+        main.pack(fill="both", expand=True)
+        pad = tk.Frame(main, bg=kit.BG)
+        pad.pack(side="left", anchor="n")
         self._build_jog(pad)
-        side = tk.Frame(row, bg=kit.BG, width=190)
-        side.pack(side="left", fill="y", padx=8)
+        side = tk.Frame(main, bg=kit.BG)
+        side.pack(side="right", fill="y", expand=True)
         self.val_lbl = tk.Label(side, text="", bg=kit.BG, fg=kit.ACCENT,
-                                font=("DejaVu Sans Mono", 11), justify="left")
-        self.val_lbl.pack(anchor="w", pady=(0, 6))
+                                font=("DejaVu Sans Mono", 12), justify="center")
+        self.val_lbl.pack(pady=(0, 6))
         self.grab_btn = kit.big_button(side, "Grab", self._grab, bg=kit.ACCENT,
-                                       height=2, width=10)
-        self.grab_btn.pack(pady=3)
-        srow = tk.Frame(side, bg=kit.BG)
-        srow.pack(pady=3)
-        self.save_btn = kit.big_button(srow, "Save", self._save, bg=kit.GREEN,
-                                       height=2, width=6, disabled=True)
-        self.save_btn.pack(side="left", padx=(0, 4))
-        self.match_btn = kit.big_button(srow, "Match height", self._match,
-                                        bg=kit.CARD_HI, fg=kit.FG,
-                                        height=2, width=6, wraplength=70,
-                                        disabled=True)
-        self.match_btn.pack(side="left")
+                                       height=2, width=12)
+        self.grab_btn.pack(pady=4)
+        self.save_btn = kit.big_button(side, "Save", self._save, bg=kit.GREEN,
+                                       height=2, width=12, disabled=True)
+        self.save_btn.pack(pady=4)
 
-        self.instr_lbl = kit.FitLabel(cols.right)
+        # the instruction box: full horizontal width at the bottom, with the
+        # square name in bold
+        self.instr_lbl = tk.Text(self.body, height=2, width=48, bg=kit.BG,
+                                 fg=kit.FG, relief="flat", wrap="word",
+                                 font=("DejaVu Sans", 16), padx=0, pady=0,
+                                 highlightthickness=0, cursor="arrow",
+                                 state="disabled")
+        self.instr_lbl.tag_config("b", font=("DejaVu Sans", 16, "bold"))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
+        self.instr_lbl.bind("<Configure>", lambda *_: self._fit_instr())
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
         self._enter()
 
+    def _say(self, text, bold=None, color=None):
+        """Instruction text with an optional bold run (the square name)."""
+        try:
+            w = self.instr_lbl
+            w.configure(state="normal")
+            w.delete("1.0", "end")
+            if bold and bold in text:
+                a, b = text.split(bold, 1)
+                if a:
+                    w.insert("end", a)
+                w.insert("end", bold, ("b",))
+                if b:
+                    w.insert("end", b)
+            else:
+                w.insert("end", text)
+            w.configure(state="disabled", foreground=color or kit.FG)
+        except tk.TclError:
+            return
+        self._fit_instr()
+
+    def _fit_instr(self):
+        """Size the instruction box to its wrapped height (2026-11-07) -
+        CAPPED at 4 lines: at the un-realized width the wrapped count is
+        huge and the request used to blow the body out of the window."""
+        try:
+            w = self.instr_lbl
+            n = w.count("1.0", "end-1c", "displaylines")
+            n = n[0] if isinstance(n, tuple) else n
+            n = max(2, min(3, int(n or 1)))
+            if int(w.cget("height")) != n:
+                w.configure(height=n)
+        except tk.TclError:
+            pass
+
     def _build_jog(self, pad):
-        outer = tk.Frame(pad, bg=kit.BG)
-        outer.pack()
-        g = tk.Frame(outer, bg=kit.BG)
-        g.pack(side="left")
+        # BIG jog arrows (2026-11-07): the old ones were too small to
+        # manipulate - wide touch targets now that the board is gone.
+        g = tk.Frame(pad, bg=kit.BG)
+        g.pack()
         self.up_btn = kit.big_button(g, "\u25B2", lambda: self._jog("in"),
-                                     bg=kit.CARD_HI, fg=kit.FG, width=4,
+                                     bg=kit.CARD_HI, fg=kit.FG, width=8,
                                      height=2, font=kit.F_BTN)
-        self.up_btn.grid(row=0, column=1)
+        self.up_btn.grid(row=0, column=1, padx=4, pady=3)
         self.left_btn = kit.big_button(g, "\u25C0", lambda: self._jog("cw"),
-                                       bg=kit.CARD_HI, fg=kit.FG, width=4,
+                                       bg=kit.CARD_HI, fg=kit.FG, width=8,
                                        height=2, font=kit.F_BTN)
-        self.left_btn.grid(row=1, column=0)
+        self.left_btn.grid(row=1, column=0, padx=4, pady=3)
         self.dn_btn = kit.big_button(g, "\u25BC", lambda: self._jog("out"),
-                                     bg=kit.CARD_HI, fg=kit.FG, width=4,
+                                     bg=kit.CARD_HI, fg=kit.FG, width=8,
                                      height=2, font=kit.F_BTN)
-        self.dn_btn.grid(row=2, column=1)
+        self.dn_btn.grid(row=2, column=1, padx=4, pady=3)
         self.rt_btn = kit.big_button(g, "\u25B6", lambda: self._jog("ccw"),
-                                     bg=kit.CARD_HI, fg=kit.FG, width=4,
+                                     bg=kit.CARD_HI, fg=kit.FG, width=8,
                                      height=2, font=kit.F_BTN)
-        self.rt_btn.grid(row=1, column=2)
-        # Vertical touch bar for height (same style as the other tests).
-        self.bar_c = tk.Canvas(outer, width=self.BAR_W, height=self.BAR_H,
-                               bg="#181b21", highlightthickness=0)
-        self.bar_c.pack(side="left", padx=(10, 0))
-        self.bar_c.bind("<Button-1>", self._on_bar)
-        self._draw_bar()
-        zbar = tk.Frame(pad, bg=kit.BG)
-        zbar.pack(pady=(6, 0))
+        self.rt_btn.grid(row=1, column=2, padx=4, pady=3)
+        # height arrows (the touch bar retired) + precision share one row
+        bottom = tk.Frame(pad, bg=kit.BG)
+        bottom.pack(pady=(8, 0))
+        h = tk.Frame(bottom, bg=kit.BG)
+        h.pack(side="left")
+        self.h_up_btn = kit.big_button(h, "\u25B2", lambda: self._h_jog(1),
+                                       bg=kit.CARD_HI, fg=kit.FG, width=5,
+                                       height=2, font=kit.F_BTN)
+        self.h_up_btn.pack(side="left", padx=4)
+        tk.Label(h, text="height", bg=kit.BG, fg=kit.FG_DIM,
+                 font=kit.F_SMALL).pack(side="left", padx=(0, 4))
+        self.h_dn_btn = kit.big_button(h, "\u25BC", lambda: self._h_jog(-1),
+                                       bg=kit.CARD_HI, fg=kit.FG, width=5,
+                                       height=2, font=kit.F_BTN)
+        self.h_dn_btn.pack(side="left", padx=4)
+        zbar = tk.Frame(bottom, bg=kit.BG)
+        zbar.pack(side="left", padx=(12, 0))
         self.prec_out_btn = kit.big_button(zbar, "\u2212", self._prec_out,
                                            bg=kit.CARD, fg=kit.FG_DIM,
                                            width=3, height=1, font=kit.F_BTN,
@@ -3530,34 +3576,16 @@ class CornerCalibScreen(kit.Screen):
         except tk.TclError:
             pass
 
-    # ---- touch height bar (same as the other tests) ----
-    def _Y_ypix(self, Y):
-        return self.PAD + (self.Y_HI - Y) / (self.Y_HI - self.Y_LO) \
-            * (self.BAR_H - 2 * self.PAD)
-
-    def _ypix_to_Y(self, y):
-        t = (y - self.PAD) / (self.BAR_H - 2 * self.PAD)
-        return max(self.Y_LO, min(self.Y_HI, self.Y_HI - t *
-                                  (self.Y_HI - self.Y_LO)))
-
-    def _draw_bar(self):
-        b = self.bar_c
-        b.delete("all")
-        p = self.PAD
-        b.create_rectangle(14, p, self.BAR_W - 14, self.BAR_H - p,
-                           fill="#20242c", outline=kit.FG_DIM)
-        wy = max(p, min(self.BAR_H - p, self._Y_ypix(self.cur[1])))
-        b.create_line(10, wy, self.BAR_W - 10, wy, fill="#ffffff", width=3)
-        b.create_text(self.BAR_W / 2, p - 4, text="height",
-                      fill=kit.FG_DIM, font=kit.F_SMALL)
-
-    def _on_bar(self, evt):
+    # ---- height arrows (the touch bar retired, 2026-11-07) ----
+    def _h_jog(self, direction):
         if self.busy:
             return
-        Y = self._ypix_to_Y(evt.y)
-        self.cur = [self.cur[0], Y, self.cur[2]]
-        self.auto_h = False      # the player's height wins until the next corner
-        self._draw_bar()
+        lvl = self.PREC_LEVELS[self._prec]
+        X, Y, Z = self.cur
+        Y += direction * self.STEP_Y / lvl
+        Y = max(self.Y_LO, min(self.Y_HI, Y))
+        self.cur = [X, Y, Z]
+        self.auto_h = False   # the player's height wins until the next corner
         self._refresh()
         self._move()
 
@@ -3601,23 +3629,13 @@ class CornerCalibScreen(kit.Screen):
     def _refresh(self):
         sq = self.ORDER[self.sidx]
         lbl = self.LABELS[sq]
-        try:
-            board = [["."] * 8 for _ in range(8)]
-            col = RD.xtrans[sq[0]]
-            r = 8 - int(sq[1])
-            board[r][col] = "P"
-            self.board.draw(board, last_move=(r, col, r, col))
-        except Exception:
-            pass
-        self.instr_lbl.configure(
-            text="Centre a pawn on %s. The jaws are at grip height - jog "
-                 "until the pawn is centred between them, then Grab (%d/%d)."
-                 % (lbl, self.sidx + 1, len(self.ORDER)))
+        self._say("Center a pawn on %s. Adjust the gripper to pick up the "
+                  "pawn, and press Grab." % lbl, bold=lbl)
         self.val_lbl.configure(text="%s\nreach %.2f\nangle %.1f\ntip %.2f\n"
-                               "%d/4 grabbed"
+                               "%d/%d grabbed"
                                % (lbl, self.cur[0], self.cur[2],
                                   self.cur[1] - RD.gripper_len,
-                                  len(self.samples)))
+                                  len(self.samples), len(self.ORDER)))
 
     def _jog(self, direction):
         if self.busy:
@@ -3658,17 +3676,45 @@ class CornerCalibScreen(kit.Screen):
         threading.Thread(target=run, daemon=True).start()
 
     def _grab(self):
+        """The pick TEST (2026-11-07): the jaws close on the pawn and
+        release - 'adjust the gripper to pick up the pawn, and press Grab'.
+        The instruction says 'testing' while it runs, then the results are
+        displayed and the Save button is enabled."""
         if self.busy:
             return
+        self._say("testing")
+        self.busy = True
+        jaw = RD.grip_width("p")
+
+        def run():
+            try:
+                RD.set_gripper(jaw)          # close on the pawn
+                time.sleep(1.2)              # hold the grip for the player
+                RD.set_gripper(RD.grip_open_width())
+            except Exception:
+                pass
+            self.q.put(("grabbed", self.cur[0], self.cur[2], jaw))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _record_sample(self, X, Z, jaw):
         sq = self.ORDER[self.sidx]
-        self.samples.append({"square": sq, "X": self.cur[0], "Z": self.cur[2],
+        lbl = self.LABELS[sq]
+        self.samples.append({"square": sq, "X": X, "Z": Z,
                              "Y": self.cur[1], "auto_h": bool(self.auto_h)})
-        # Record and move straight on to the next corner's best guess (no jaws
-        # close - the player's jog has already centred over the pawn).
+        self.save_btn.configure(state="normal", bg=kit.GREEN, fg="#1b1e24")
+        res = ("Test %s \u2014 jaws %.1f, reach %.2f in, angle %.1f\u00b0. "
+               % (lbl, jaw, X, Z))
         if self.sidx + 1 < len(self.ORDER):
             self.sidx += 1
-            self._refresh()
             self._go(self.ORDER[self.sidx])
+            nxt = self.LABELS[self.ORDER[self.sidx]]
+            self._say(res + "Center a pawn on %s. Adjust the gripper to "
+                      "pick up the pawn, and press Grab." % nxt, bold=nxt)
+            self.val_lbl.configure(
+                text="%s\nreach %.2f\nangle %.1f\ntip %.2f\n%d/%d grabbed"
+                     % (nxt, self.cur[0], self.cur[2],
+                        self.cur[1] - RD.gripper_len,
+                        len(self.samples), len(self.ORDER)))
         else:
             self._show_fit()
 
@@ -3692,14 +3738,12 @@ class CornerCalibScreen(kit.Screen):
                 "resid %.3f in  ang %.1f deg"
                 % (f["px"], f["py"], f["scale"], f["offset"], f["a0"],
                    f["sign"], f["residual_in"], f["ang_residual_deg"])))
-            self.instr_lbl.configure(
-                text="Corners recorded. Save switches the arm to mode B "
-                     "(corners).\n" + self._roundtrip_text(), fg=kit.GREEN)
+            self._say("Corners recorded. Save switches the arm to mode B "
+                      "(corners).\n" + self._roundtrip_text(),
+                      color=kit.GREEN)
             self.save_btn.configure(state="normal", bg=kit.GREEN, fg="#1b1e24")
-            self.match_btn.configure(state="normal", bg=kit.CARD_HI, fg=kit.FG)
         else:
-            self.instr_lbl.configure(
-                text=self._fail_text(f), fg=kit.RED)
+            self._say(self._fail_text(f), color=kit.RED)
 
     def _corr(self, frame):
         """Per-corner corrections (measured MINUS the frame's prediction) -
@@ -3770,29 +3814,13 @@ class CornerCalibScreen(kit.Screen):
             pass
 
     def _match(self):
-        """Fit (pickheightadj, pickheightreachslope) so the pick model
-        reproduces the measured grip heights at the corners. With the sag
-        curve doing the reach work the slope should come out ~0 - a big slope
-        is a hint the sag curve needs re-measuring."""
-        fit = ap.fit_height(self.samples)
-        if not fit:
-            self.instr_lbl.configure(
-                text="Match height: no height samples to fit.", fg=kit.RED)
-            return
-        adj, slope = fit
-        o_adj = float(settings.get("arm.pickheightadj", 0.0) or 0.0)
-        o_sl = float(settings.get("arm.pickheightreachslope", 0.0) or 0.0)
-        msg = ("pickheightadj      %+.2f  ->  %+.2f\n"
-               "pickheightslope    %+.3f  ->  %+.3f" % (o_adj, adj, o_sl, slope))
-        if abs(slope) > 0.05:
-            msg += ("\nslope is large - the sag curve may need re-measuring")
-        kit.confirm(self.app, "Match grip height", msg,
-                    lambda: self._apply_match(adj, slope), yes_text="Apply")
+        """RETIRED (2026-11-07): the Match height button is gone - it fitted
+        pickheightadj/pickheightreachslope, both retired from the grip model
+        when the per-piece grip heights replaced them."""
+        self.app.toast("Match height is retired - see Board & Pieces")
 
     def _apply_match(self, adj, slope):
-        settings.set("arm.pickheightadj", round(adj, 3))
-        settings.set("arm.pickheightreachslope", round(slope, 4))
-        self.app.toast("Pick height matched to the corner measurements")
+        pass
 
     def _poll(self):
         try:
@@ -3800,12 +3828,21 @@ class CornerCalibScreen(kit.Screen):
                 ev = self.q.get_nowait()
                 if ev[0] == "done":
                     self.busy = False
+                elif ev[0] == "grabbed":
+                    self.busy = False
+                    self._record_sample(ev[1], ev[2], ev[3])
         except queue.Empty:
             pass
         if self.winfo_exists():
             self.after(120, self._poll)
 
     def _save(self):
+        if self.frame_out is None:
+            # Save is enabled after every test (2026-11-07): fit with what
+            # has been measured so far before persisting
+            self._show_fit()
+            if self.frame_out is None:
+                return
         fr = self.frame_out
         if fr is None:
             return

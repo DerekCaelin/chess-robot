@@ -106,7 +106,7 @@ def main():
         (A.ArmGrabScreen, {}, ["Start", "Save", "Grab", "+",
                                "\u2212", "\u25B2", "\u25BC", "\u25C0",
                                "\u25B6"]),
-        (A.CornerCalibScreen, {}, ["Grab", "Save", "Match height", "+",
+        (A.CornerCalibScreen, {}, ["Grab", "Save", "+",
                                    "\u2212", "\u25B2",
                                    "\u25BC", "\u25C0", "\u25B6"]),
         (A.ArmSagScreen, {}, ["Save", "\u25B2", "\u25BC"]),
@@ -184,8 +184,7 @@ def main():
                                  "a0": round(fit["a0"], 2),
                                  "sign": int(fit.get("sign", 1))}
                 scr.corr_out = scr._corr(scr.frame_out)
-                scr.instr_lbl.configure(
-                    text="Corners recorded. Save switches the arm to mode B "
+                scr._say("Corners recorded. Save switches the arm to mode B "
                          "(corners).\n" + scr._roundtrip_text())
         except Exception as e:
             fails.append("%s text setup crashed: %s" % (cls.__name__, e))
