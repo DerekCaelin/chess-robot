@@ -88,7 +88,7 @@ def main():
     AP.load_pack = lambda: _pack
 
     checks = [
-        (A.HomeScreen, {}, ["\u25B6  PLAY", "Calibrate", "Settings",
+        (A.HomeScreen, {}, ["PLAY", "Calibrate", "Settings",
                             "Analysis"]),
         (A.CalibrateScreen, {}, ["Camera", "Board",
                                  "Calibration settings", "Reset all to defaults"]),

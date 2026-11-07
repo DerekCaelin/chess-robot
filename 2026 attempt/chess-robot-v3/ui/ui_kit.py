@@ -117,7 +117,7 @@ LADDER = {"s": (96, 48, 13), "m": (140, 56, 15),
 
 
 def btn(parent, text, cmd, size="m", kind="secondary", square=False,
-        disabled=False, wraplength=None):
+        disabled=False, wraplength=None, width_px=None):
     """Ladder button (2026-11-07): exact PIXEL sizing - Tk width is in
     text units, so it is converted through the font metrics and the button
     keeps its size whatever font wins.  kind: primary / confirm /
@@ -125,6 +125,8 @@ def btn(parent, text, cmd, size="m", kind="secondary", square=False,
     w_px, h_px, fs = LADDER[size]
     if square:
         w_px = h_px
+    if width_px:
+        w_px = width_px
     font = (F_BTN[0], fs, "bold")
     f = tkfont.Font(font=font)
     cw = max(1, f.measure("0"))

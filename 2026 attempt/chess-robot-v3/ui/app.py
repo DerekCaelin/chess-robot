@@ -360,36 +360,90 @@ class App:
 
 # ── home ─────────────────────────────────────────────────────────────────────
 
+def _wordmark_plate():
+    """The CHESSBOT wordmark as a PIL-rendered plate: 88px Cinzel Bold in
+    maple on flat black, with the margin measured from the GLYPH INK so it
+    is EQUAL on all four sides (a Tk label's box runs past the glyphs
+    vertically - the vertical margin was noticeable, the horizontal absent).
+    Rendered from the shipped font file, so it matches the approved mock
+    pixel for pixel (2026-11-08)."""
+    from PIL import ImageDraw, ImageFont
+    font = ImageFont.truetype(
+        os.path.join(ROOT, "ui", "assets", "fonts", "Cinzel-Bold.ttf"), 88)
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    tb = probe.textbbox((0, 0), "CHESSBOT", font=font)
+    w, h = tb[2] - tb[0], tb[3] - tb[1]
+    m = 26                                   # the black margin, equal
+    out = Image.new("RGB", (w + 2 * m, h + 2 * m), kit.BG)
+    ImageDraw.Draw(out).text((m - tb[0], m - tb[1]), "CHESSBOT",
+                             font=font, fill=kit.SQUARE_L)   # maple
+    return out
+
+
+def _play_square_images():
+    """The PLAY square hero (word only - treatment 4), drawn exactly as the
+    approved mock.  The two states differ by LUMINANCE only."""
+    from PIL import ImageDraw, ImageFont
+    font = ImageFont.truetype(
+        os.path.join(ROOT, "ui", "assets", "fonts",
+                     "AtkinsonHyperlegible-Bold.ttf"), 52)
+    imgs = []
+    for bg in (kit.ACCENT, kit.ACCENT_HI):
+        img = Image.new("RGB", (192, 192), bg)
+        d = ImageDraw.Draw(img)
+        tb = d.textbbox((0, 0), "PLAY", font=font)
+        d.text((96 - (tb[2] - tb[0]) // 2 - tb[0],
+                96 - (tb[3] - tb[1]) // 2 - tb[1]),
+               "PLAY", font=font, fill="#1b1e24")
+        imgs.append(ImageTk.PhotoImage(img))
+    return imgs
+
+
 class HomeScreen(kit.Screen):
     BACK = False
 
     def __init__(self, app):
         super().__init__(app=app, title="")
-        # Home (2026-11-07): the chessbot identity screen.  A VERY subtle
-        # 80px checker is the home's signature (every working screen stays
-        # flat); the Cinzel wordmark in maple sits large on top, the action
-        # stack is centred below it (one shared width), and the power
-        # button - icon only, big enough for an inaccurate touch board -
-        # stands alone at the bottom so it is never hit by accident.
+        # Home (2026-11-08, the approved treatment): the chessbot wordmark
+        # large on TOP (equal black margin on every side), Calibrate /
+        # Settings / Analysis on the LEFT, the PLAY square hero (word only)
+        # on the RIGHT - both columns vertically centred on one line - and
+        # POWER alone at the bottom-left, out of the columns.  The 80px
+        # checker is the home's signature; every working screen stays flat.
         self.canvas = tk.Canvas(self.body, bg=kit.BG, highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda _e: self._draw_checker())
-        hero = tk.Label(self.body, text="CHESSBOT", font=kit.F_HERO,
-                        bg=kit.BG, fg=kit.SQUARE_L)     # maple
-        hero.place(relx=0.5, rely=0.105, anchor="center")
-        stack, _home_btns = kit.btn_stack(self.body, [
-            ("\u25B6  PLAY", self._play, "primary", "xl"),
-            ("Calibrate", lambda: app.show(CalibrateScreen), "secondary"),
-            ("Settings", lambda: app.show(SettingsScreen), "secondary"),
-            ("Analysis", lambda: app.show(AnalysisHomeScreen), "secondary"),
-        ], size="m")
-        stack.place(relx=0.5, rely=0.47, anchor="center")
+        self._hero_img = ImageTk.PhotoImage(_wordmark_plate())
+        hero = tk.Label(self.body, image=self._hero_img, bg=kit.BG)
+        hero.image = self._hero_img
+        hero.place(relx=0.5, y=16, anchor="n")
+        for i, (text, cls) in enumerate((
+                ("Calibrate", CalibrateScreen),
+                ("Settings", SettingsScreen),
+                ("Analysis", AnalysisHomeScreen))):
+            kit.btn(self.body, text, lambda c=cls: app.show(c), size="m",
+                    kind="secondary",
+                    width_px=230).place(x=160, y=200 + i * 68)
+        # PLAY square hero: image carries the pixels, the text attr keeps it
+        # findable; the pressed state is one luminance step darker
+        self._play_img, self._play_img_dn = _play_square_images()
+        self.play_btn = tk.Button(
+            self.body, image=self._play_img, text="PLAY", command=self._play,
+            bg=kit.ACCENT, activebackground=kit.ACCENT_HI,
+            relief="flat", bd=0, highlightthickness=0, width=192, height=192)
+        self.play_btn.image = self._play_img
+        self.play_btn.place(x=484, y=200)
+        self.play_btn.bind(
+            "<ButtonPress>",
+            lambda _e: self.play_btn.configure(image=self._play_img_dn))
+        self.play_btn.bind(
+            "<ButtonRelease>",
+            lambda _e: self.play_btn.configure(image=self._play_img))
         try:
             self._power_img = tk.PhotoImage(
                 file=os.path.join(ROOT, "ui", "assets", "power.png"))
             # Tk ignores padx/pady on image buttons - WIDTH/HEIGHT are true
-            # pixels for them, so the target is sized directly (2026-11-08:
-            # it rendered at the raw 44px icon size before)
+            # pixels for them, so the target is sized directly
             pbtn = tk.Button(self.body, image=self._power_img,
                              command=self._power,
                              bg=kit.CARD_HI, activebackground=kit.ACCENT_HI,
@@ -397,13 +451,12 @@ class HomeScreen(kit.Screen):
                              highlightbackground=kit.EDGE,
                              width=90, height=74)
             pbtn.image = self._power_img    # keep a reference alive
-            pbtn.place(relx=0.5, rely=0.90, anchor="center")
+            pbtn.place(x=14, y=380)         # bottom-left, out of the columns
         except Exception:
             # asset missing / Tk too old for PNG: fall back to a glyph
             kit.big_button(self.body, "\u23FB", self._power, bg=kit.CARD_HI,
                            fg=kit.FG, width=6, height=3,
-                           font=kit.F_TITLE).place(relx=0.5, rely=0.90,
-                                                   anchor="center")
+                           font=kit.F_TITLE).place(x=14, y=380)
 
     def _draw_checker(self):
         """The home's checker - shared with the modal backdrops (see
@@ -6529,7 +6582,7 @@ class GameScreen(kit.Screen):
             if not self.winfo_exists():
                 return
             self._think_n = self._think_n % 3 + 1
-            self.turn_lbl.configure(text="THINKING" + "." * self._think_n)
+            self.turn_lbl.configure(text="READING" + "." * self._think_n)
             self.after(400, self._tick_thinking)
         except tk.TclError:
             self._thinking = False
@@ -6582,7 +6635,7 @@ class GameScreen(kit.Screen):
                 # that let moves made during the wait become part of the
                 # reference and vanish (2026-09-18). The prep modal holds
                 # them until the monitor says ready via the status callback.
-                q.put(("prep", "Reading the board"))
+                q.put(("prep", "READING"))
                 r = self.game.wait_player_move(
                     stop=lambda: self.stop_req or self._takeback_req,
                     status=lambda t: q.put(("stat", t)),
