@@ -406,22 +406,9 @@ class HomeScreen(kit.Screen):
                                                    anchor="center")
 
     def _draw_checker(self):
-        """The home's checker (2026-11-07, contrast lifted 2026-11-08):
-        80px squares, a soft grey above the black - visible as texture but
-        never loud.  Home only."""
-        try:
-            c = self.canvas
-            c.delete("checker")
-            w, h = c.winfo_width(), c.winfo_height()
-            for r in range(h // 80 + 1):
-                for col in range(w // 80 + 1):
-                    if (r + col) % 2 == 0:
-                        c.create_rectangle(col * 80, r * 80,
-                                           col * 80 + 80, r * 80 + 80,
-                                           fill="#1d1a17", outline="",
-                                           tags="checker")
-        except tk.TclError:
-            pass
+        """The home's checker - shared with the modal backdrops (see
+        kit.draw_checker).  Home only among the screens."""
+        kit.draw_checker(self.canvas)
 
     def on_show(self):
         # sitting in menus is idle time: pre-generate the analysis audio

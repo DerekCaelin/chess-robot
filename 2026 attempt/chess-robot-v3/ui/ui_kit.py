@@ -311,13 +311,33 @@ def info_button(parent, command, small=False, bg=CARD):
 
 # ── modal dialogs ────────────────────────────────────────────────────────────
 
+def draw_checker(c, size=80, light="#1d1a17", dark=BG):
+    """The app's signature checker (home and modal backgrounds, 2026-11-08):
+    soft grey squares on the warm black - texture at a glance, never loud."""
+    try:
+        c.delete("checker")
+        w, h = c.winfo_width(), c.winfo_height()
+        for r in range(h // size + 1):
+            for col in range(w // size + 1):
+                if (r + col) % 2 == 0:
+                    c.create_rectangle(col * size, r * size,
+                                       col * size + size, r * size + size,
+                                       fill=light, outline="", tags="checker")
+    except tk.TclError:
+        pass
+
+
 class Modal:
-    """Dimming overlay + centred card over the whole app window."""
+    """Checker backdrop + centred card over the whole app window.  The
+    backdrop carries the home's checker (2026-11-08) so every modal screen
+    has the app's texture around its card."""
 
     def __init__(self, app, title):
         self.app = app
-        self.overlay = tk.Frame(app.root, bg="#14161c")
+        self.overlay = tk.Canvas(app.root, bg=BG, highlightthickness=0)
         self.overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.overlay.bind("<Configure>",
+                          lambda _e: draw_checker(self.overlay))
         card = tk.Frame(self.overlay, bg=CARD, bd=0,
                         highlightbackground=ACCENT, highlightthickness=2)
         card.place(relx=0.5, rely=0.5, anchor="center")
