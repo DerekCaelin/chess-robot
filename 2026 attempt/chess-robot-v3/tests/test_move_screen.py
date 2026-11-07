@@ -332,15 +332,15 @@ def main():
     home._poll()
     settle(root)
     got = str(home.prog_lbl.cget("text"))
-    if not got.startswith("Generating text (0/2)"):
+    if got != "Building analysis":
         fails.append("home: text stage line wrong (got %r)" % got)
-    # the text stage drives the label and the bar as it goes
+    # the text stage keeps its name; progress lives in the bar as it goes
     state.update(done=1, total=2)
     home._poll()
     settle(root)
     got = str(home.prog_lbl.cget("text"))
-    if not got.startswith("Generating text (1/2)"):
-        fails.append("home: no text-stage progress in the label (got %r)" % got)
+    if got != "Building analysis":
+        fails.append("home: text stage renamed mid-run (got %r)" % got)
     # Begin stays disabled (and inert) until the text exists - pressing it
     # over an empty pack used to do nothing at all
     if str(home.begin_btn.cget("state")) != "disabled":
@@ -350,7 +350,7 @@ def main():
     if app.current is not home:
         fails.append("home: Begin opened a move screen over an empty pack")
     fake.moves = saved_moves
-    state.update(state="audio", done=1, total=2)
+    state.update(state="audio", voice="espeak", done=1, total=2)
     home._poll()
     settle(root)
     home._poll()
@@ -358,8 +358,14 @@ def main():
     if str(home.begin_btn.cget("state")) == "disabled":
         fails.append("home: Begin still disabled with the text ready")
     got = str(home.prog_lbl.cget("text"))
-    if not got.startswith("Generating piper audio (1/2)"):
-        fails.append("home: audio stage line wrong (got %r)" % got)
+    if got != "Generating espeak voice":
+        fails.append("home: espeak stage line wrong (got %r)" % got)
+    state.update(voice="piper", done=2, total=2)
+    home._poll()
+    settle(root)
+    got = str(home.prog_lbl.cget("text"))
+    if got != "Generating piper voice":
+        fails.append("home: piper stage line wrong (got %r)" % got)
     if not home._bar_on or not home.prog_bar.winfo_ismapped():
         fails.append("home: loading bar hidden while generating")
     state.update(alive=False, done=2)
@@ -382,7 +388,7 @@ def main():
     home._poll()
     settle(root)
     got = str(home.prog_lbl.cget("text"))
-    if "audio" in got or "files loaded" in got:
+    if "audio" in got or "voice" in got or "files loaded" in got:
         fails.append("home: audio stage shown with voice off (got %r)" % got)
     # ---- "Auto advance" OFF must not auto-advance (2026-11-06) ----------
     # Begin used to pass the ENGINE-ANALYSIS checkbox as the autoplay flag,

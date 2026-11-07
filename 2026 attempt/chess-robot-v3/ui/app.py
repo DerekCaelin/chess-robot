@@ -5268,23 +5268,18 @@ class AnalysisHomeScreen(kit.Screen):
         voice = self._voice_key()
         st = AP.generation_state(self.gpack, voice) if self.gpack else None
         alive = bool(st and st.get("alive"))
-        dots = ""
-        if alive:
-            self._dots = (self._dots % 3) + 1
-            dots = "." * self._dots
-        # one line for whatever is generating right now (its own #/# plus the
-        # animated dots), then the bar below it
+        # one line naming the CURRENT stage (2026-11-07): the engine
+        # analysis first, then the espeak voice, then the piper voice -
+        # progress lives in the bar below
         if alive and not st.get("error"):
             d, t = st.get("done", 0), st.get("total", 0)
             if st.get("state") == "audio":
-                # BOTH voices generate in the background: name the one at
-                # work (espeak first, then piper)
+                # BOTH voices generate in sequence (espeak first, then
+                # piper) whatever the selection - name the one at work
                 av = st.get("voice") or voice
-                self.prog_lbl.configure(
-                    text="Generating %s audio (%d/%d)%s" % (av, d, t, dots))
+                self.prog_lbl.configure(text="Generating %s voice" % av)
             else:
-                self.prog_lbl.configure(
-                    text="Generating text (%d/%d)%s" % (d, t, dots))
+                self.prog_lbl.configure(text="Building analysis")
             self._draw_prog(d / float(max(1, t)))
         elif st is not None and st.get("error"):
             self.prog_lbl.configure(text="Analysis failed: %s" % st["error"])
