@@ -376,7 +376,7 @@ class HomeScreen(kit.Screen):
         self.canvas.bind("<Configure>", lambda _e: self._draw_checker())
         hero = tk.Label(self.body, text="CHESSBOT", font=kit.F_HERO,
                         bg=kit.BG, fg=kit.SQUARE_L)     # maple
-        hero.place(relx=0.5, rely=0.08, anchor="center")
+        hero.place(relx=0.5, rely=0.105, anchor="center")
         stack, _home_btns = kit.btn_stack(self.body, [
             ("\u25B6  PLAY", self._play, "primary", "xl"),
             ("Calibrate", lambda: app.show(CalibrateScreen), "secondary"),
