@@ -572,23 +572,29 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
         plays = i + 1
         nxt = []
         nxt_plies = []
-        for k, u in enumerate((cur.get("pv") or [])[:6]):
+        nxt_full = []
+        # the FULL engine line is kept too (2026-11-08): a depth-30 search
+        # returns 20+ plies and the review shows all of them - the 6-ply
+        # window stays for the narration's speakable data
+        for k, u in enumerate(cur.get("pv") or []):
             try:
                 mv2 = chess.Move.from_uci(u)
                 san2 = nb.san(mv2)
-                facts2 = [{"kind": kk, **slots}
-                          for kk, slots in CF.move_facts(nb, mv2)]
             except (ValueError, AssertionError):
                 break
             n = (plays + k) // 2 + 1
             dots = "..." if nb.turn == chess.BLACK else "."
-            nxt.append("%d%s%s" % (n, dots, san2))
-            nxt_plies.append({"san": san2, "no": n, "dots": dots,
-                              "color": ("white" if nb.turn == chess.WHITE
-                                        else "black"),
-                              "facts": facts2,
-                              "check": nb.gives_check(mv2),
-                              "capture": nb.is_capture(mv2)})
+            nxt_full.append("%d%s%s" % (n, dots, san2))
+            if k < 6:
+                facts2 = [{"kind": kk, **slots}
+                          for kk, slots in CF.move_facts(nb, mv2)]
+                nxt.append("%d%s%s" % (n, dots, san2))
+                nxt_plies.append({"san": san2, "no": n, "dots": dots,
+                                  "color": ("white" if nb.turn == chess.WHITE
+                                            else "black"),
+                                  "facts": facts2,
+                                  "check": nb.gives_check(mv2),
+                                  "capture": nb.is_capture(mv2)})
             nb.push(mv2)
 
         entries.append({
@@ -610,6 +616,7 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
             "facts": facts,
             "concepts": concepts,
             "next": " ".join(nxt),
+            "next_full": " ".join(nxt_full),
             "next_plies": nxt_plies,
             "next_uci": [u for u in (cur.get("pv") or [])[:6]],
             "next_line": next_line,

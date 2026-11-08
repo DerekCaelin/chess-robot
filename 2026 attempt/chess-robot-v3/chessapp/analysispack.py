@@ -424,6 +424,34 @@ def generate_async(pack, voice, depth=None):
     return st
 
 
+# Measured on the Pi 3B (3 threads, 64 MB hash, 2026-11-08): the text stage
+# costs per position a VERDICT search at full depth plus an ALTERNATIVES
+# search at depth-3 with three lines.  Fitted to the benchmark:
+#   verdict(d)      = 0.1849 * 1.2789^d seconds
+#   alternatives(d) = 0.2112 * 1.389^d  seconds
+_VERDICT_A, _VERDICT_B = 0.1849, 1.2789
+_ALTS_A, _ALTS_B = 0.2112, 1.389
+
+
+def estimate_text_seconds(depth, positions):
+    """What the text stage costs at `depth` for `positions` analysed moves:
+    both searches per position plus the start position's verdict pass."""
+    d = int(depth)
+    n = max(0, int(positions))
+    verdict = _VERDICT_A * _VERDICT_B ** d
+    alts = _ALTS_A * _ALTS_B ** max(10, d - 3)
+    return verdict * (n + 1) + alts * n
+
+
+def fmt_estimate(seconds):
+    """"~19 min" / "~2.6 h" / "~32 h"."""
+    mins = seconds / 60.0
+    if mins < 90:
+        return "~%d min" % round(mins)
+    hours = mins / 60.0
+    return ("~%.1f h" % hours) if hours < 20 else ("~%d h" % round(hours))
+
+
 def generation_state(pack, voice):
     # the text stage is shared across voices: the same words are being
     # written whatever the selected voice (and the same words get spoken -

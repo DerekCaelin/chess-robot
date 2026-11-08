@@ -5122,6 +5122,14 @@ class AnalysisHomeScreen(kit.Screen):
     VOICE_KEYS = ("none", "espeak", "piper")
     DEPTH_KEYS = ("12", "15", "18", "21", "24", "27", "30")
 
+    def _depth_label(self, d):
+        """'18 (~19 min)' - the measured Pi 3B cost scaled to this game's
+        length (2026-11-08), so the estimate moves with the game."""
+        n = (self.gpack.move_count()
+             if getattr(self, "gpack", None) is not None else 25)
+        return "%d (%s)" % (d, AP.fmt_estimate(
+            AP.estimate_text_seconds(d, n)))
+
     def __init__(self, app):
         super().__init__(app=app, title="Analysis")
         self.app = app
@@ -5184,12 +5192,20 @@ class AnalysisHomeScreen(kit.Screen):
         drow.pack(anchor="w", pady=(0, 4))
         tk.Label(drow, text="Engine depth", font=("Atkinson Hyperlegible", 18),
                  bg=kit.BG, fg=kit.FG).pack(side="left", padx=(0, 8))
-        self.depth_var = tk.StringVar(value=str(
-            settings.get("analysis.depth", 18)))
-        dmenu = tk.OptionMenu(drow, self.depth_var, *self.DEPTH_KEYS,
+        # the labels carry the measured cost of each depth for THIS game's
+        # length (2026-11-08): '30 (~32 h)' is the honest truth about
+        # depth 30 and the estimate follows the game being analysed
+        self._depth_labels = [self._depth_label(int(d))
+                              for d in self.DEPTH_KEYS]
+        cur_d = str(settings.get("analysis.depth", 18))
+        if cur_d not in self.DEPTH_KEYS:
+            cur_d = "18"
+        self.depth_var = tk.StringVar(value=self._depth_label(int(cur_d)))
+        dmenu = tk.OptionMenu(drow, self.depth_var, *self._depth_labels,
                               command=self._depth_changed)
         dmenu.configure(font=("Atkinson Hyperlegible", 16), bg=kit.CARD_HI, fg=kit.FG,
-                        highlightthickness=0, width=6)
+                        highlightthickness=0,
+                        width=max(len(s) for s in self._depth_labels))
         dmenu["menu"].configure(font=("Atkinson Hyperlegible", 18), bg=kit.CARD_HI,
                                 fg=kit.FG, activebackground=kit.ACCENT,
                                 activeforeground="#1b1e24")
@@ -5272,7 +5288,7 @@ class AnalysisHomeScreen(kit.Screen):
     def _depth_changed(self, _=None):
         """A new depth throws out the stored text and audio and starts over."""
         try:
-            depth = int(self.depth_var.get())
+            depth = int(str(self.depth_var.get()).split()[0])
         except ValueError:
             return
         settings.set("analysis.depth", depth)
@@ -5350,7 +5366,16 @@ class AnalysisHomeScreen(kit.Screen):
                 self.prog_lbl.configure(text="Generating %s voice%s"
                                         % (av, prog))
             else:
-                self.prog_lbl.configure(text="Building analysis%s" % prog)
+                # the estimate travels with the progress (2026-11-08): at
+                # depth 30 the run is a day-long affair and 'how much
+                # longer' is the one thing worth showing
+                left = ""
+                if t:
+                    per = AP.estimate_text_seconds(
+                        settings.get("analysis.depth", 18), 1)
+                    left = " - %s left" % AP.fmt_estimate(per * (t - d))
+                self.prog_lbl.configure(text="Building analysis%s%s"
+                                        % (prog, left))
             self._draw_prog(d / float(max(1, t)))
         elif st is not None and st.get("error"):
             self.prog_lbl.configure(text="Analysis failed: %s" % st["error"])
@@ -5699,8 +5724,11 @@ class AnalysisMoveScreen(kit.Screen):
         eng = self._engine_visible
         self.verdict_lbl.configure(text=(m.get("verdict") or "") if eng
                                    else "")
-        self.next_lbl.configure(text=("Engine: " + m["next"])
-                                if (eng and m.get("next") and
+        # the FULL engine line (2026-11-08): the depth-30 PV is 20+ plies
+        # and every one of them is worth the wait
+        line = m.get("next_full") or m.get("next") or ""
+        self.next_lbl.configure(text=("Engine: " + line)
+                                if (eng and line and
                                     not self._exploring) else "")
         # Hide analysis (2026-11-06): the move text takes over the space of
         # the evaluation sentence and the engine line - both are UNPACKED,
@@ -5709,7 +5737,7 @@ class AnalysisMoveScreen(kit.Screen):
             self.verdict_lbl.pack(anchor="w", pady=(8, 0), before=self.txt)
         else:
             self.verdict_lbl.pack_forget()
-        if eng and m.get("next") and not self._exploring and not self._testing:
+        if eng and line and not self._exploring and not self._testing:
             self.next_lbl.pack(anchor="w", pady=(6, 0), after=self.txt)
         else:
             self.next_lbl.pack_forget()
