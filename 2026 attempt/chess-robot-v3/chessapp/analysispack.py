@@ -153,9 +153,16 @@ class AnalysisPack:
             if name == self.hash or not os.path.isdir(d):
                 continue
             src = _read_cache(d)
-            if (src is not None and src[0] == depth
-                    and 0 < len(src[1]) <= len(ucis)
-                    and ucis[:len(src[1])] == src[1]):
+            if src is not None and src[0] == depth:
+                # a source may be LONGER than this game (a takeback undid
+                # moves) - trim it to the common prefix; entries are per
+                # position so the trimmed ones are exactly what is needed
+                n = min(len(src[1]), len(ucis))
+                if n and src[1][:n] == ucis[:n]:
+                    src = (src[0], src[1][:n], src[2][:n], src[3])
+                else:
+                    src = None
+            if src is not None and src[2]:
                 if keep is None or len(src[2]) > len(keep[1][2]):
                     if keep is not None:
                         stale.append(keep[0])

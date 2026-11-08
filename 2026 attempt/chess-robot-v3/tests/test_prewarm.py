@@ -101,6 +101,15 @@ try:
     check(not os.path.isdir(p4.dir), "absorbed cache was not cleaned up")
     check(len(p6.moves) == 6, "run2 text covers %d moves" % len(p6.moves))
 
+    # a takeback makes the game SHORTER: the longer cache is trimmed to the
+    # common prefix and still covers everything
+    seen.clear()
+    p4b = AP.AnalysisPack(game(4))
+    p4b.generate(voice="none", text_only=True)
+    check(seen == [], "takeback case re-searched %s" % seen)
+    check(len(p4b.moves) == 4, "takeback text covers %d moves"
+          % len(p4b.moves))
+
     # an earlier game's cache is discarded, not absorbed
     other = os.path.join(AP.CACHE, "zzz_other")
     os.makedirs(other, exist_ok=True)
@@ -112,7 +121,7 @@ try:
     p8 = AP.AnalysisPack(game(8))
     p8.generate(voice="none", text_only=True)
     check(not os.path.isdir(other), "an earlier game's cache survived")
-    check(seen == game(8)["moves"][6:], "run3 analysed %s" % seen)
+    check(seen == game(8)["moves"][4:], "run3 analysed %s" % seen)
 
     # prewarm prefers the game being played, text only
     got = {}
