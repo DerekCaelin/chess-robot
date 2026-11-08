@@ -58,17 +58,16 @@ trap '"$DIR/pi/led.sh" off 2>/dev/null || true' EXIT
 
 # Boot splash: the Pi 3B's firmware ignores /boot/firmware/background.png, so
 # show the artwork ourselves while the UI imports (cv2/numpy/PIL take several
-# seconds on the 3B).  Drawn, not an image file (2026-11-08): the home
-# screen's own identity - the soft 80px checker and the CHESSBOT wordmark -
-# so boot flows straight into the app with no visual jump.  The wordmark is
-# rendered from the SHIPPED Cinzel file directly, so no font install is
-# needed first.  This window runs in the BACKGROUND and is torn down by the
-# app the instant the home screen is up (see app.py _kill_splash); the 60 s
-# timeout is only a safety net if the app never starts.
+# seconds on the 3B).  The checker stays and the ORIGINAL splash artwork
+# goes on top of it (2026-11-08: the CHESSBOT wordmark is gone) - scaled to
+# 80% of the screen height, centred, in a black frame.  This window runs in
+# the BACKGROUND and is torn down by the app the instant the home screen is
+# up (see app.py _kill_splash); the 60 s timeout is only a safety net if the
+# app never starts.
 python3 - "$DIR" <<'PYEOF' &
 import os, sys
 import tkinter as tk
-from PIL import Image, ImageDraw, ImageTk, ImageFont
+from PIL import Image, ImageDraw, ImageTk
 W, H = 800, 480
 img = Image.new("RGB", (W, H), "#0c0a09")
 d = ImageDraw.Draw(img)
@@ -77,9 +76,22 @@ for r in range(H // 80 + 1):
         if (r + c) % 2 == 0:
             d.rectangle([c * 80, r * 80, c * 80 + 80, r * 80 + 80],
                         fill="#1d1a17")
-font = ImageFont.truetype(
-    os.path.join(sys.argv[1], "ui", "assets", "fonts", "Cinzel-Bold.ttf"), 112)
-d.text((W // 2, H // 2), "CHESSBOT", font=font, fill="#e7c182", anchor="mm")
+# the original splash artwork at 80% screen height, black-framed
+try:
+    art = Image.open(os.path.join(sys.argv[1], "pi", "bringup",
+                                  "background.png")).convert("RGB")
+    h = int(H * 0.8)
+    w = max(1, round(art.width * h / art.height))
+    if w > W * 0.9:                 # never wider than 90% of the screen
+        w = int(W * 0.9)
+        h = max(1, round(art.height * w / art.width))
+    art = art.resize((w, h), Image.LANCZOS)
+    x, y = (W - w) // 2, (H - h) // 2
+    b = 4                           # the black frame
+    d.rectangle([x - b, y - b, x + w + b, y + h + b], fill="#000000")
+    img.paste(art, (x, y))
+except Exception:
+    pass                            # checker alone still boots fine
 root = tk.Tk(); root.overrideredirect(True)
 photo = ImageTk.PhotoImage(img)
 tk.Label(root, image=photo, bg="#0c0a09").pack(fill="both", expand=True)
