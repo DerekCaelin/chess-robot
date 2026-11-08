@@ -176,8 +176,10 @@ def main():
                      "(%s)" % [m.uci() for m in scr._test_board.move_stack])
     if fake_eng.get("calls", 0) < 1:
         fails.append("test-alt: no engine run on entry")
-    if str(scr.next_lbl.cget("text")).strip():
-        fails.append("test-alt: pre-baked next line still shown")
+    if hasattr(scr, "next_lbl"):
+        fails.append("the engine line label still exists (removed 2026-11-08: "
+                     "the narrative carries the engine info and the Engine "
+                     "button opens the line)")
     if "Reading the position" not in scr.txt.get("1.0", "end"):
         fails.append("test-alt: no reading placeholder while waiting")
     # a live depth report applies on the Tk thread
@@ -233,10 +235,11 @@ def main():
           scr.next_btn.winfo_reqwidth()]
     if max(ws) - min(ws) > 2:
         fails.append("transport widths differ: %s" % ws)
-    # the engine line label reads 'Engine:' (was 'Next:')
-    if not str(scr.next_lbl.cget("text")).startswith("Engine:"):
-        fails.append("engine line label wrong (got %r)"
-                     % scr.next_lbl.cget("text"))
+    # the engine line under the text box is GONE (2026-11-08): the
+    # narrative carries the engine info and the Engine button opens the
+    # full line - it only ate the narrative's vertical space
+    if hasattr(scr, "next_lbl"):
+        fails.append("engine line label still present")
     # black moves use a black piece icon with a white outline (an IMAGE -
     # the filled glyph vanishes on the dark box); white keeps the glyph
     saved_idx = scr.idx
@@ -250,12 +253,12 @@ def main():
     settle(root)
     if any(d[0] == "image" for d in scr.txt.dump("1.0", "end")):
         fails.append("white move: icon should stay a text glyph")
-    # hide analysis: the move text takes over the eval + engine-line rows
+    # hide analysis: the move text takes over the eval row
     h1 = scr.txt.winfo_height()
     scr._toggle_engine()
     settle(root)
-    if scr.verdict_lbl.winfo_ismapped() or scr.next_lbl.winfo_ismapped():
-        fails.append("hide analysis: eval/engine-line rows still mapped")
+    if scr.verdict_lbl.winfo_ismapped():
+        fails.append("hide analysis: the eval row is still mapped")
     if scr.txt.winfo_height() <= h1:
         fails.append("hide analysis: the move text did not grow (%d -> %d)"
                      % (h1, scr.txt.winfo_height()))

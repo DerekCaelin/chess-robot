@@ -369,7 +369,8 @@ def confirm(app, title, message, on_yes, on_no=None, yes_text="Yes",
     big_button(row, no_text, lambda: both(on_no), bg=CARD_HI, fg=FG,
                width=14).pack(side="left", padx=8)
     big_button(row, yes_text, lambda: both(on_yes),
-               bg=RED if danger else GREEN, width=14).pack(side="left", padx=8)
+               bg=RED if danger else GREEN, fg=(FG if danger else "#1b1e24"),
+               width=14).pack(side="left", padx=8)
     return m
 
 
@@ -786,14 +787,17 @@ class BoardCols:
 
 class EvalChart(tk.Canvas):
     """The engine's evaluation of positional strength at every move: white
-    above the middle line, black below. The PLAYER's stars are white; the
-    game's three most consequential moves are orange; the current move has
-    a marker. The chart grows as the analysis advances (2026-10-24)."""
+    above the middle line, black below. The PLAYER's stars are gold and the
+    game's three most consequential moves teal - each on a dark halo, so
+    they read over BOTH the white and the dark territory (2026-11-08: the
+    stars were white and vanished against the white score). The current
+    move has a marker. The chart grows as the analysis advances."""
 
     LINE = "#c8d0dc"
     ZERO = "#3b4252"
-    STAR_PLAYER = "#f6f2e8"
-    STAR_TURN = "#e08b3e"
+    STAR_PLAYER = "#e6b25e"     # gold - the accent
+    STAR_TURN = "#2f8f9e"       # teal: the gold<->teal axis, CVD-safe
+    HALO = "#0c0a09"
 
     def __init__(self, master, w=380, h=132, **kw):
         super().__init__(master, width=w, height=h, bg="#181b21",
@@ -801,6 +805,13 @@ class EvalChart(tk.Canvas):
         self.w, self.h = w, h
 
     def _star(self, x, y, col):
+        # Tk 8.6 canvas text has no stroke: fake the halo at 8 offsets
+        # (the board's light-pieces trick), then the glyph on top - the
+        # star must read over the white score AND the dark territory
+        for dx, dy in ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0),
+                       (-1, 1), (0, 1), (1, 1)):
+            self.create_text(x + dx, y + dy, text="\u2605", fill=self.HALO,
+                             font=("DejaVu Sans", 15))
         self.create_text(x, y, text="\u2605", fill=col,
                          font=("DejaVu Sans", 15))
 

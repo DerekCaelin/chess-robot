@@ -113,7 +113,7 @@ def main():
         # Analysis screens (a synthetic pack: no engine, no sound needed)
         (A.AnalysisHomeScreen, {}, ["Begin"]),
         (A.AnalysisMoveScreen, {"pack": _pack, "idx": 0}, ["\u25C0", "\u25B6"]),
-        (A.AnalysisMoveScreen, {"pack": _pack, "idx": 1}, ["Finish"]),
+        (A.AnalysisMoveScreen, {"pack": _pack, "idx": 1}, ["\u25C0", "\u25B6"]),
         (A.CalibCameraScreen, {}, ["Start", "Save", "Reset", "Manual"]),
         # (ManualCalibScreen below)
         (A.ManualCalibScreen, {}, ["Save", "OK", "Retry", "+", "\u2212"]),

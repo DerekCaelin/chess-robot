@@ -5292,12 +5292,29 @@ class AnalysisHomeScreen(kit.Screen):
             pass
 
     def _depth_changed(self, _=None):
-        """A new depth throws out the stored text and audio and starts over."""
+        """A new depth throws out the stored text and audio and starts over.
+        DESTRUCTIVE, so it asks first (2026-11-08): Cancel puts the old
+        depth back in the dropdown, OK wipes and restarts."""
         try:
             depth = int(str(self.depth_var.get()).split()[0])
         except ValueError:
             return
-        settings.set("analysis.depth", depth)
+        old = int(settings.get("analysis.depth", 18))
+        if depth == old:
+            return
+
+        def ok():
+            settings.set("analysis.depth", depth)
+            self._restart_analysis()
+
+        def cancel():
+            self.depth_var.set(self._depth_label(old))
+
+        kit.confirm(self.app, "Change analysis depth?",
+                    "This will delete your previous analysis and voices.",
+                    ok, on_no=cancel, yes_text="OK", danger=True)
+
+    def _restart_analysis(self):
         if self.gpack is not None:
             self.gpack.cancel()
             shutil.rmtree(self.gpack.dir, ignore_errors=True)
@@ -5339,7 +5356,7 @@ class AnalysisHomeScreen(kit.Screen):
         if self.bv is not None:
             self.bv.destroy()
         self.bv = kit.BoardView(self._board_col, px=px)
-        self.bv.pack(side="left")
+        self.bv.pack(anchor="center")   # centred in its column (2026-11-08)
         self.bv.draw(self.gpack.board_after(self.gpack.move_count()).getBoard())
 
     def _draw_prog(self, frac):
@@ -5544,21 +5561,21 @@ class AnalysisMoveScreen(kit.Screen):
 
         nav = tk.Frame(right, bg=kit.BG)
         nav.pack(fill="x")
-        # uniform side columns keep the transport TRIO exactly centred while
-        # Finish sits at the right edge on the last move (a mixed pack here
-        # doubled the row's requested height)
+        # the transport TRIO FILLS the row (2026-11-08): three equal,
+        # stretched buttons across the whole width - big targets for an
+        # inaccurate touch board.
         nav.grid_columnconfigure(0, weight=1, uniform="navpad")
-        nav.grid_columnconfigure(2, weight=1, uniform="navpad")
+        trio = tk.Frame(nav, bg=kit.BG)
+        trio.grid(row=0, column=0, sticky="ew")
+        for _i in range(3):
+            trio.grid_columnconfigure(_i, weight=1, uniform="trio")
         # transport: back / play-pause / advance - 50% taller (2026-11-06)
         # and all EXACTLY the same size (the play button's icon sits over
-        # sizing text so it keeps the same text-unit box as the arrows),
-        # centred in the column
-        trio = tk.Frame(nav, bg=kit.BG)
-        trio.grid(row=0, column=1)
+        # sizing text so it keeps the same text-unit box as the arrows)
         self.back_btn = kit.big_button(trio, "\u25C0", self._prev,
                                        bg=kit.CARD_HI, fg=kit.FG, width=3,
                                        height=3, font=kit.F_BTN)
-        self.back_btn.pack(side="left", padx=(0, 6))
+        self.back_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         # play/pause: PIL-drawn icons (DejaVu Sans has no pause glyph),
         # scaled up for the tall transport buttons
         self._icon_play = kit.glyph_photo("play", size=44)
@@ -5569,16 +5586,13 @@ class AnalysisMoveScreen(kit.Screen):
                                   activeforeground="#1b1e24", font=kit.F_BTN,
                                   relief="flat", bd=0, highlightthickness=0,
                                   width=3, height=3, compound="center")
-        self.play_btn.pack(side="left", padx=6)
+        self.play_btn.grid(row=0, column=1, sticky="ew", padx=6)
         self._set_play_glyph(False)
         self.next_btn = kit.big_button(trio, "\u25B6", self._next,
                                        bg=kit.CARD_HI, fg=kit.FG, width=3,
                                        height=3, font=kit.F_BTN)
-        self.next_btn.pack(side="left", padx=6)
+        self.next_btn.grid(row=0, column=2, sticky="ew", padx=(6, 0))
         self.after_idle(self._match_transport_heights)
-        self.finish_btn = kit.big_button(nav, "Finish", self._finish_to_home,
-                                         bg=kit.ACCENT, fg="#1b1e24",
-                                         width=6, height=3, font=kit.F_BTN)
         # the quality verdict is a LABEL above the text box (2026-10-23)
         self.verdict_lbl = tk.Label(right, text="", font=("Atkinson Hyperlegible", 16,
                                                           "bold"),
@@ -5601,11 +5615,6 @@ class AnalysisMoveScreen(kit.Screen):
                             font=("DejaVu Sans", 15))
         self.txt.pack(fill="both", expand=True, pady=(6, 0))
         self.txt.configure(state="disabled")
-        # the engine's continuation from this position, beneath the text box
-        self.next_lbl = tk.Label(right, text="", font=("Atkinson Hyperlegible", 12),
-                                 bg=kit.BG, fg=kit.FG_DIM, justify="left",
-                                 anchor="w", wraplength=340)
-        self.next_lbl.pack(anchor="w", pady=(6, 0))
         # 'Engine' mode (2026-11-04): the engine's own line, and a what-if
         # board where the player can test an alternate move.  The buttons
         # beneath the engine line form TWO equal columns with equal heights
@@ -5638,7 +5647,7 @@ class AnalysisMoveScreen(kit.Screen):
                                          bg=kit.CARD_HI, fg=kit.FG,
                                          width=14, height=2,
                                          font=("Atkinson Hyperlegible", 13))
-        self.engine_btn.grid(row=1, column=0, padx=(0, 6), pady=3)
+        self.engine_btn.grid(row=0, column=1, padx=6, pady=3)
 
         # the board fills its column's height once the layout is realized
         left.bind("<Configure>", self._fit_board)
@@ -5660,8 +5669,8 @@ class AnalysisMoveScreen(kit.Screen):
     def _fit_board(self, _e=None):
         """The board takes the entire available height of its column - but
         never more width than leaves the right column its request. Re-fits
-        when that request changes (the Finish button appears on the last
-        move), so the body never overflows the window."""
+        when that request changes, so the body never overflows the
+        window."""
         if not self.winfo_exists():
             return
         h = self._board_col.winfo_height()
@@ -5730,12 +5739,6 @@ class AnalysisMoveScreen(kit.Screen):
         eng = self._engine_visible
         self.verdict_lbl.configure(text=(m.get("verdict") or "") if eng
                                    else "")
-        # the FULL engine line (2026-11-08): the depth-30 PV is 20+ plies
-        # and every one of them is worth the wait
-        line = m.get("next_full") or m.get("next") or ""
-        self.next_lbl.configure(text=("Engine: " + line)
-                                if (eng and line and
-                                    not self._exploring) else "")
         # Hide analysis (2026-11-06): the move text takes over the space of
         # the evaluation sentence and the engine line - both are UNPACKED,
         # not just emptied, so the text box grows into their rows
@@ -5743,10 +5746,6 @@ class AnalysisMoveScreen(kit.Screen):
             self.verdict_lbl.pack(anchor="w", pady=(8, 0), before=self.txt)
         else:
             self.verdict_lbl.pack_forget()
-        if eng and line and not self._exploring and not self._testing:
-            self.next_lbl.pack(anchor="w", pady=(6, 0), after=self.txt)
-        else:
-            self.next_lbl.pack_forget()
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
         pstar, tstar = self._stars()
@@ -5787,12 +5786,7 @@ class AnalysisMoveScreen(kit.Screen):
         self.back_btn.configure(state="normal" if self.idx > 0 else "disabled",
                                 bg=kit.CARD_HI if self.idx > 0 else kit.CARD,
                                 fg=kit.FG if self.idx > 0 else kit.FG_DIM)
-        last = self.idx >= len(self.gpack.moves) - 1
-        self.finish_btn.grid_remove()
-        if last and not self._exploring:
-            self.finish_btn.grid(row=0, column=2, sticky="e", padx=6)
         self._refresh_next()
-        self._fit_board()      # the Finish button changes the width budget
         self._draw_bar(0.0)
 
     def _refresh_next(self):
@@ -5874,6 +5868,7 @@ class AnalysisMoveScreen(kit.Screen):
         self._set_bg("#2c313b")         # lighter grey: this is the ENGINE's
         self.explore_btn.configure(text="Back to game",
                                    bg=kit.ACCENT, fg="#1b1e24")
+        self.engine_btn.grid_remove()   # no 'Hide analysis' in engine mode
         self.test_btn.grid(row=0, column=1, padx=6, pady=3)
         self._show()
 
@@ -5888,6 +5883,7 @@ class AnalysisMoveScreen(kit.Screen):
             pass
         self.test_btn.grid_remove()
         self.reset_btn.grid_remove()
+        self.engine_btn.grid(row=0, column=1, padx=6, pady=3)
         self._exploring = False
         self._set_bg(kit.BG)
         self.explore_btn.configure(text="Engine",
@@ -5980,8 +5976,6 @@ class AnalysisMoveScreen(kit.Screen):
         self.board.bind("<Button-1>", self._board_tap)
         side = "White" if b.turn else "Black"
         self.verdict_lbl.configure(text="Your move (%s):" % side)
-        self.next_lbl.configure(text="")    # no pre-baked line posing live
-        self.next_lbl.pack_forget()
         self._test_draw()
         self._test_info(None)
         self._test_engine_run()             # the line from THIS position
@@ -6242,10 +6236,6 @@ class AnalysisMoveScreen(kit.Screen):
         self._stop_timer()
         audio.stop_wav()
         self.app.release_awake("analysis-move")
-
-    def _finish_to_home(self):
-        self._cleanup()
-        self.app.show(HomeScreen)
 
     def request_back(self):
         self._cleanup()
