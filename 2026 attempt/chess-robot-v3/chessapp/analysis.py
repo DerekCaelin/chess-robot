@@ -7,9 +7,9 @@
 # The result is JSON (cached under data/) and is the input to narrative.py.
 import json
 import os
-import select
 import shutil
 import subprocess
+import threading
 import time
 
 import chess
@@ -41,7 +41,25 @@ class Engine:
     def __init__(self, path=None, multipv=3, stop=None):
         self.path = path or find_engine()
         self.multipv = multipv
-        self._stop = stop      # polled between info lines (2026-11-08)
+        self._stop = stop      # the watchdog sends UCI 'stop' (2026-11-08)
+        if stop is not None:
+            threading.Thread(target=self._stop_watch,
+                             daemon=True).start()
+
+    def _stop_watch(self):
+        """Cancel promptly: when the stop hook flips, tell the engine to
+        stop searching.  'stop' outside a search is harmless, and the
+        blocking read loops stay simple and race-free (select() over a
+        buffered text pipe deadlocks - the answer can sit in Python's
+        buffer while select waits on an empty fd, 2026-11-08)."""
+        while self.p.poll() is None:
+            time.sleep(1.0)
+            try:
+                if self._stop is not None and self._stop():
+                    self._put("stop")
+                    return
+            except Exception:
+                return
         self.p = subprocess.Popen(
             [self.path], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             text=True, bufsize=1,
@@ -93,13 +111,6 @@ class Engine:
         turn = chess.WHITE if fen.split()[1] == "w" else chess.BLACK
         best = {}
         while True:
-            # a cancelled run must not sit out a deep search (2026-11-08):
-            # poll the pipe and check the stop hook between info lines
-            if self._stop is not None and self._stop():
-                self.close()
-                raise RuntimeError("analysis cancelled")
-            if not select.select([self.p.stdout], [], [], 1.0)[0]:
-                continue
             line = self.p.stdout.readline()
             if not line:
                 raise RuntimeError("engine died mid-search")
@@ -140,6 +151,9 @@ class Engine:
                 mate = -mate
             if wdl is not None:
                 wdl = (wdl[2], wdl[1], wdl[0])
+        if self._stop is not None and self._stop():
+            self.close()
+            raise RuntimeError("analysis cancelled")
         return {"multipv": mp, "cp": cp, "mate": mate, "wdl": wdl,
                 "depth": (int(parts[parts.index("depth") + 1])
                           if "depth" in parts else 0),
