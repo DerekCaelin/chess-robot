@@ -332,9 +332,16 @@ def draw_checker(c, size=80, light="#1d1a17", dark=BG):
 class Modal:
     """Checker backdrop + centred card over the whole app window.  The
     backdrop carries the home's checker (2026-11-08) so every modal screen
-    has the app's texture around its card."""
+    has the app's texture around its card.  Every card is at least the
+    standard BOX (2026-11-08): consecutive dialogs share one size, so the
+    'Reading the board' window keeps the dimensions of the Begin? confirm
+    that preceded it instead of shrinking to its content.  Bigger content
+    (the takeback board, the tool log) grows the card; nothing shrinks
+    it."""
 
-    def __init__(self, app, title):
+    BOX = (560, 250)
+
+    def __init__(self, app, title, box=None):
         self.app = app
         self.overlay = tk.Canvas(app.root, bg=BG, highlightthickness=0)
         self.overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -343,12 +350,29 @@ class Modal:
         card = tk.Frame(self.overlay, bg=CARD, bd=0,
                         highlightbackground=ACCENT, highlightthickness=2)
         card.place(relx=0.5, rely=0.5, anchor="center")
+        # the content sits centred in the card's box
+        inner = tk.Frame(card, bg=CARD)
+        inner.place(relx=0.5, rely=0.5, anchor="center")
         if title:
-            tk.Label(card, text=title, font=F_TITLE, bg=CARD, fg=FG).pack(
+            tk.Label(inner, text=title, font=F_TITLE, bg=CARD, fg=FG).pack(
                 padx=20, pady=(14, 6))
-        self.body = tk.Frame(card, bg=CARD)
+        self.body = tk.Frame(inner, bg=CARD)
         self.body.pack(padx=20, pady=(0, 14))
         self.card = card
+        self._inner = inner
+        self._box = box or self.BOX
+        self._fit()
+        app.root.after_idle(self._fit)
+
+    def _fit(self):
+        """The standard box, grown to the content when it needs more."""
+        try:
+            self._inner.update_idletasks()
+            w = max(self._box[0], self._inner.winfo_reqwidth() + 16)
+            h = max(self._box[1], self._inner.winfo_reqheight() + 16)
+            self.card.configure(width=w, height=h)
+        except tk.TclError:
+            pass
 
     def close(self):
         self.overlay.destroy()
