@@ -7,6 +7,7 @@
 # The result is JSON (cached under data/) and is the input to narrative.py.
 import json
 import os
+import select
 import shutil
 import subprocess
 import time
@@ -37,9 +38,10 @@ def find_engine():
 class Engine:
     """Minimal UCI client - enough to ask 'evaluate this position'."""
 
-    def __init__(self, path=None, multipv=3):
+    def __init__(self, path=None, multipv=3, stop=None):
         self.path = path or find_engine()
         self.multipv = multipv
+        self._stop = stop      # polled between info lines (2026-11-08)
         self.p = subprocess.Popen(
             [self.path], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             text=True, bufsize=1,
@@ -91,6 +93,13 @@ class Engine:
         turn = chess.WHITE if fen.split()[1] == "w" else chess.BLACK
         best = {}
         while True:
+            # a cancelled run must not sit out a deep search (2026-11-08):
+            # poll the pipe and check the stop hook between info lines
+            if self._stop is not None and self._stop():
+                self.close()
+                raise RuntimeError("analysis cancelled")
+            if not select.select([self.p.stdout], [], [], 1.0)[0]:
+                continue
             line = self.p.stdout.readline()
             if not line:
                 raise RuntimeError("engine died mid-search")
@@ -370,6 +379,7 @@ def _is_endgame(board):
 
 
 def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
+                 stop=None,
                  on_entry=None, cached=None, checkpoint=None):
     """Walk the game with the engine and return the analysis dict.
 
@@ -389,7 +399,7 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
     caller can persist the partial state.  The per-move sleep yields the
     GIL so the Tk UI stays responsive during the run."""
     own = engine is None
-    eng = engine or Engine(multipv=multipv)
+    eng = engine or Engine(multipv=multipv, stop=stop)
     board = game.board()
     moves = list(game.mainline_moves())
 

@@ -127,6 +127,7 @@ class AnalysisPack:
         """Stop the current generation run. Files already written are kept -
         switching voices never throws away finished work."""
         self._run_id += 1
+        cancel_runs(self.hash)
 
     def text_path(self):
         return os.path.join(self.dir, "text.json")
@@ -251,6 +252,7 @@ class AnalysisPack:
                     cached = self._load_partial(depth)
                     self.analysis = AN.analyze_game(
                         g, depth=depth,
+                        stop=lambda: self._run_id != token,
                         progress=((lambda i, n: on_progress(i, n, "start", ""))
                                   if on_progress else None),
                         on_entry=self.live_moves.append,
@@ -450,6 +452,18 @@ def fmt_estimate(seconds):
         return "~%d min" % round(mins)
     hours = mins / 60.0
     return ("~%.1f h" % hours) if hours < 20 else ("~%d h" % round(hours))
+
+
+def cancel_runs(h):
+    """Mark every run for this game dead the instant it is cancelled
+    (2026-11-08): the UI must start a FRESH run instead of joining a
+    doomed one, and the engine's in-flight search aborts via its stop
+    hook rather than finishing a depth nobody wants."""
+    with _LOCK:
+        for (hh, _v), st in _RUNS.items():
+            if hh == h:
+                st["alive"] = False
+                st["cancelled"] = True
 
 
 def generation_state(pack, voice):
