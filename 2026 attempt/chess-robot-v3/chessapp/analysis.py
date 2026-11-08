@@ -120,6 +120,9 @@ class Engine:
             rec = self._parse_info(line, turn)
             if rec:
                 best[rec["multipv"]] = rec   # keep the deepest per line
+        if self._stop is not None and self._stop():
+            self.close()
+            raise RuntimeError("analysis cancelled")
         return [best[k] for k in sorted(best)]
 
     @staticmethod
@@ -151,9 +154,6 @@ class Engine:
                 mate = -mate
             if wdl is not None:
                 wdl = (wdl[2], wdl[1], wdl[0])
-        if self._stop is not None and self._stop():
-            self.close()
-            raise RuntimeError("analysis cancelled")
         return {"multipv": mp, "cp": cp, "mate": mate, "wdl": wdl,
                 "depth": (int(parts[parts.index("depth") + 1])
                           if "depth" in parts else 0),
