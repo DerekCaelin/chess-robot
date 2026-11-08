@@ -332,6 +332,12 @@ class App:
                 pass
         s.pack(fill="both", expand=True)
         self.current = s
+        # every menu is idle time (2026-11-08): keep the game analysis
+        # growing in the background so the finished game is ready sooner
+        try:
+            self.root.after(0, AP.prewarm)
+        except tk.TclError:
+            pass
         s.on_show()
 
     def show(self, cls, **kw):

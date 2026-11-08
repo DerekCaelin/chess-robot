@@ -135,6 +135,45 @@ class AnalysisPack:
     def partial_path(self):
         return os.path.join(self.dir, "text.partial.json")
 
+    def _absorb(self, depth, mine):
+        """Steal the engine work of a SHORTER version of this game, and
+        throw out caches that can never serve it again (2026-11-08).
+        Entries are per POSITION - valid however much longer the game
+        grows - so the prewarm of a 12-move game carries straight into the
+        60-move final analysis; only the new moves get searched.  Returns
+        the entries to resume from."""
+        ucis = self.game.get("moves") or []
+        keep, stale = None, []
+        try:
+            names = os.listdir(CACHE)
+        except OSError:
+            names = []
+        for name in names:
+            d = os.path.join(CACHE, name)
+            if name == self.hash or not os.path.isdir(d):
+                continue
+            src = _read_cache(d)
+            if (src is not None and src[0] == depth
+                    and 0 < len(src[1]) <= len(ucis)
+                    and ucis[:len(src[1])] == src[1]):
+                if keep is None or len(src[2]) > len(keep[1][2]):
+                    if keep is not None:
+                        stale.append(keep[0])
+                    keep = (d, src)
+                else:
+                    stale.append(d)
+            else:
+                # an earlier game, a dead depth, or unreadable leftovers
+                stale.append(d)
+        out = mine
+        if keep is not None and len(keep[1][2]) > len(mine):
+            out = list(keep[1][2])
+            openings = keep[1][3]
+            self._save_partial(depth, out, ucis[:len(out)], openings)
+        for d in stale + ([keep[0]] if keep is not None else []):
+            shutil.rmtree(d, ignore_errors=True)
+        return out
+
     def _load_partial(self, depth):
         """Entries from an interrupted earlier run of the SAME digest, depth
         and game (2026-11-07): the resume source, so an app restart does not
@@ -227,7 +266,8 @@ class AnalysisPack:
             b.addTextMove(u)
         return b
 
-    def generate(self, voice="none", on_progress=None, depth=None):
+    def generate(self, voice="none", on_progress=None, depth=None,
+                 text_only=False):
         """Staged background generation. on_progress(done, total, stage).
         Cancellable between moves; one bad move never kills the run."""
         if depth is None:
@@ -249,7 +289,7 @@ class AnalysisPack:
                                 except OSError:
                                     pass
                     g = game_from_state(self.game)
-                    cached = self._load_partial(depth)
+                    cached = self._absorb(depth, self._load_partial(depth))
                     self.analysis = AN.analyze_game(
                         g, depth=depth,
                         stop=lambda: self._run_id != token,
@@ -263,6 +303,7 @@ class AnalysisPack:
                     with open(self.text_path(), "w") as f:
                         json.dump({"format": CACHE_FORMAT,
                                    "code": _code_digest(),
+                                   "depth": int(depth),
                                    "moves": self.moves,
                                    "analysis": AN.analysis_to_jsonable(
                                        self.analysis)},
@@ -276,6 +317,10 @@ class AnalysisPack:
         if on_progress:
             n = max(1, len(self.moves))
             on_progress(n, n, "text", "")   # the text stage ends at n/n
+        if text_only:
+            return self.moves   # the in-game prewarm: narration (and with
+                                # it the voices) may still change as the
+                                # game grows - skip them until it is over
         # THE VOICES GENERATE IN THE BACKGROUND WHATEVER THE USER PICKED -
         # espeak first (it is fast), then piper - so switching to voice
         # analysis later finds the work already done (2026-10-24)
@@ -375,15 +420,15 @@ _TEXT_STATE = {}
 
 
 def _text_lock(h):
-    """One text generation per game, shared by every voice's run. A voice
-    switch used to launch a SECOND engine analysis beside the in-flight one
-    (both writing the same cache) - now the new run waits for the first and
-    picks up its text (2026-10-23)."""
-    with _LOCK:
-        return _TEXT_LOCKS.setdefault(h, threading.Lock())
+    """One text generation at a TIME (2026-11-08: was one per game).  A
+    growing game spawns a run per move-state and the newer run ABSORBS the
+    older run's cache - the two must never write the cache together, so
+    every run waits its turn and the newer one picks up the older one's
+    finished work."""
+    return _TEXT_LOCKS.setdefault("all", threading.Lock())
 
 
-def generate_async(pack, voice, depth=None):
+def generate_async(pack, voice, depth=None, text_only=False):
     """Start (or join) the staged generation for this game+voice. Returns the
     shared state dict: {done, total, state, error, alive}."""
     voice = voice or "none"     # one key per voice (prewarm passes None;
@@ -412,7 +457,8 @@ def generate_async(pack, voice, depth=None):
                 if s == "text":
                     ts["alive"] = False   # the text stage is complete
         try:
-            pack.generate(voice, depth=depth, on_progress=prog)
+            pack.generate(voice, depth=depth, on_progress=prog,
+                      text_only=text_only)
         except Exception as e:
             st["error"] = str(e)
             ts = _TEXT_STATE.get(pack.hash)
@@ -466,6 +512,46 @@ def cancel_runs(h):
                 st["cancelled"] = True
 
 
+def _read_cache(d):
+    """(depth, ucis, entries, openings) from a cache dir's checkpoint or its
+    finished text - None when the dir holds nothing usable."""
+    try:
+        with open(os.path.join(d, "text.partial.json")) as f:
+            data = json.load(f)
+        if (data.get("format") == CACHE_FORMAT
+                and data.get("code") == _code_digest()):
+            return (int(data.get("depth", -1)), data.get("ucis") or [],
+                    data.get("entries") or [], data.get("openings") or [])
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(os.path.join(d, "text.json")) as f:
+            data = json.load(f)
+        if (data.get("format") == CACHE_FORMAT
+                and data.get("code") == _code_digest()):
+            an = data.get("analysis") or {}
+            entries = an.get("moves") or []
+            return (int(data.get("depth", -1)),
+                    [e.get("uci") for e in entries], entries,
+                    an.get("openings") or [])
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def load_live_pack():
+    """The game still being played (data/game.json), if any.  Prewarming it
+    during the player's turn and on menus means the finished game arrives
+    already analysed (2026-11-08)."""
+    try:
+        data = game_state.load()
+    except Exception:
+        return None
+    if not data or not data.get("moves"):
+        return None
+    return AnalysisPack(data)
+
+
 def generation_state(pack, voice):
     # the text stage is shared across voices: the same words are being
     # written whatever the selected voice (and the same words get spoken -
@@ -503,11 +589,17 @@ def top_turning(moves, n=3, player=None, exclude_last=True):
 
 
 def prewarm(voice=None):
-    """Idle-time generation: if a last finished game has ungenerated work,
-    quietly do it in the background. The voices are generated whatever the
+    """Idle-time generation.  The game being played FIRST (2026-11-08):
+    analysing it move by move during the player's turn and on menus means
+    the finished game arrives already analysed - only its last moves and
+    the voices are left.  Then, if a last finished game has ungenerated
+    work, quietly do it in the background. The voices are generated whatever the
     user picked (espeak then piper), so this is NOT gated on the selection -
     a reboot used to find nothing started at all (2026-10-24)."""
     try:
+        live = load_live_pack()
+        if live is not None:
+            return generate_async(live, voice, text_only=True)
         pack = load_pack()
         if pack is None:
             return None
@@ -525,14 +617,10 @@ def prewarm(voice=None):
 
 
 def load_pack():
-    """The last finished game's pack; caches of EARLIER games are discarded
-    ('throw out any analysis or sound leftover from the previous analysis')."""
+    """The last finished game's pack.  Caches of earlier games are discarded
+    by AnalysisPack._absorb, which runs at generation time - deleting them
+    here would throw away the prefix cache the final run absorbs (2026-11-08)."""
     data = game_state.load_last()
     if not data:
         return None
-    pk = AnalysisPack(data)
-    if os.path.isdir(CACHE):
-        for name in os.listdir(CACHE):
-            if name != pk.hash:
-                shutil.rmtree(os.path.join(CACHE, name), ignore_errors=True)
-    return pk
+    return AnalysisPack(data)
