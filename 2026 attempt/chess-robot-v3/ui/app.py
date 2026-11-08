@@ -5746,6 +5746,19 @@ class AnalysisMoveScreen(kit.Screen):
             self.verdict_lbl.pack(anchor="w", pady=(8, 0), before=self.txt)
         else:
             self.verdict_lbl.pack_forget()
+        if self._exploring:
+            # the RECOMMENDED LINE comes first (2026-11-08): entering the
+            # engine view shows the line at once - it used to show the
+            # narrative/board state and the line only once you advanced
+            self._explore_draw()
+            self.engine_btn.configure(text=("Hide analysis" if eng
+                                            else "Show analysis"))
+            self.back_btn.configure(
+                state="normal" if self.idx > 0 else "disabled",
+                bg=kit.CARD_HI if self.idx > 0 else kit.CARD,
+                fg=kit.FG if self.idx > 0 else kit.FG_DIM)
+            self._draw_bar(0.0)
+            return
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
         pstar, tstar = self._stars()
@@ -5851,7 +5864,8 @@ class AnalysisMoveScreen(kit.Screen):
     def _line_uci(self):
         """The engine's OWN line: the best play from the end of the previous
         turn - what the player should have moved (2026-11-04)."""
-        return self.move.get("best_uci") or []
+        return (self.move.get("line_uci")
+                or self.move.get("best_uci") or [])
 
     def _explore_toggle(self):
         if self._exploring:
@@ -5916,7 +5930,27 @@ class AnalysisMoveScreen(kit.Screen):
                 tc, tr = ord(u[2]) - 97, 8 - int(u[3])
                 hl = (fr, fc, tr, tc)
         self.board.draw(b.getBoard(), hl)
-        pl = (m.get("best_line") or {}).get("plies") or []
+        # the FULL line in the window (2026-11-08): SAN built from the
+        # UCI list - the old best_line window held 6 plies and stopped
+        # the exploration right where it gets interesting
+        import chess
+        nb = chess.Board()
+        for u in (self.gpack.game.get("moves")
+                  or [])[:max(0, m["ply"] - 1)]:
+            try:
+                nb.push_uci(u)
+            except ValueError:
+                break
+        pl = []
+        for u in uci:
+            try:
+                mv = chess.Move.from_uci(u)
+                pl.append({"san": nb.san(mv),
+                           "color": ("white" if nb.turn == chess.WHITE
+                                     else "black")})
+                nb.push(mv)
+            except Exception:
+                break
         base, col0 = m.get("no", 1), m.get("color", "white")
         # the whole projected line in the window where the player's move is
         # listed, with the move being examined in bold
@@ -5977,8 +6011,14 @@ class AnalysisMoveScreen(kit.Screen):
         side = "White" if b.turn else "Black"
         self.verdict_lbl.configure(text="Your move (%s):" % side)
         self._test_draw()
-        self._test_info(None)
-        self._test_engine_run()             # the line from THIS position
+        # the engine waits for the PLAYER's move (2026-11-08): making a
+        # move on the board is what prompts it - it used to analyse the
+        # starting position before the player had done anything
+        self.txt.configure(state="normal")
+        self.txt.delete("1.0", "end")
+        self.txt.insert("end", "Make a move on the board - the engine "
+                        "answers after your move.")
+        self.txt.configure(state="disabled")
 
     def _test_draw(self, hl=None):
         import ChessBoard
@@ -6024,6 +6064,7 @@ class AnalysisMoveScreen(kit.Screen):
         self._test_from = None
         self._test_board.push(mv)
         self._test_draw(hl=hl_of(mv.to_square))
+        self._test_info(None)               # reading placeholder
         self._test_engine_run()
 
     def _test_info(self, rec, depth=None):

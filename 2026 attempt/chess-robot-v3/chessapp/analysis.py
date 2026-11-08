@@ -645,6 +645,9 @@ def analyze_game(game, depth=18, multipv=3, engine=None, progress=None,
             "next_uci": [u for u in (cur.get("pv") or [])[:6]],
             "next_line": next_line,
             "best_uci": [u for u in (best.get("pv") or [])[:6]],
+            # the FULL line (2026-11-08): a depth-30 recommendation is 20+
+            # plies and the review must be able to explore all of it
+            "line_uci": [u for u in (best.get("pv") or [])],
             "best_line": best_line,
             "best_impact": _impact_of(best_line),
             "wdl": cur.get("wdl"),

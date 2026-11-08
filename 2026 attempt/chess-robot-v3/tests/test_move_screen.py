@@ -141,6 +141,9 @@ def main():
         fails.append("engine: auto-advance still running in Engine mode")
     if not scr._paused:
         fails.append("engine: not marked paused")
+    # the RECOMMENDED LINE shows on entry - not after the first advance
+    if "Engine line:" not in scr.txt.get("1.0", "end"):
+        fails.append("engine: the line is not shown on entry")
     scr._explore_toggle()       # back to game - must STAY paused
     if scr._exploring:
         fails.append("engine: mode did not close")
@@ -174,14 +177,15 @@ def main():
     if [m.uci() for m in scr._test_board.move_stack] != ["e2e4"]:
         fails.append("test-alt: board is not the current move's position "
                      "(%s)" % [m.uci() for m in scr._test_board.move_stack])
-    if fake_eng.get("calls", 0) < 1:
-        fails.append("test-alt: no engine run on entry")
+    if fake_eng.get("calls", 0):
+        fails.append("test-alt: the engine ran on entry - it must wait "
+                     "for the player's move on the board")
     if hasattr(scr, "next_lbl"):
         fails.append("the engine line label still exists (removed 2026-11-08: "
                      "the narrative carries the engine info and the Engine "
                      "button opens the line)")
-    if "Reading the position" not in scr.txt.get("1.0", "end"):
-        fails.append("test-alt: no reading placeholder while waiting")
+    if "Make a move on the board" not in scr.txt.get("1.0", "end"):
+        fails.append("test-alt: the entry hint is missing")
     # a live depth report applies on the Tk thread
     scr._test_q.put((scr._test_gen, 12,
                      {"cp": 30, "depth": 12, "pv": ["e7e5", "g1f3"]}))
