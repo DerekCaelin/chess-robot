@@ -42,24 +42,6 @@ class Engine:
         self.path = path or find_engine()
         self.multipv = multipv
         self._stop = stop      # the watchdog sends UCI 'stop' (2026-11-08)
-        if stop is not None:
-            threading.Thread(target=self._stop_watch,
-                             daemon=True).start()
-
-    def _stop_watch(self):
-        """Cancel promptly: when the stop hook flips, tell the engine to
-        stop searching.  'stop' outside a search is harmless, and the
-        blocking read loops stay simple and race-free (select() over a
-        buffered text pipe deadlocks - the answer can sit in Python's
-        buffer while select waits on an empty fd, 2026-11-08)."""
-        while self.p.poll() is None:
-            time.sleep(1.0)
-            try:
-                if self._stop is not None and self._stop():
-                    self._put("stop")
-                    return
-            except Exception:
-                return
         self.p = subprocess.Popen(
             [self.path], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             text=True, bufsize=1,
@@ -81,6 +63,24 @@ class Engine:
             self._put("setoption name SyzygyPath value %s" % tb)
         self._put("isready")
         self._wait("readyok")
+        if stop is not None:
+            threading.Thread(target=self._stop_watch,
+                             daemon=True).start()
+
+    def _stop_watch(self):
+        """Cancel promptly: when the stop hook flips, tell the engine to
+        stop searching.  'stop' outside a search is harmless, and the
+        blocking read loops stay simple and race-free (select() over a
+        buffered text pipe deadlocks - the answer can sit in Python's
+        buffer while select waits on an empty fd, 2026-11-08)."""
+        while self.p.poll() is None:
+            time.sleep(1.0)
+            try:
+                if self._stop is not None and self._stop():
+                    self._put("stop")
+                    return
+            except Exception:
+                return
 
     def _put(self, line):
         self.p.stdin.write(line + "\n")
