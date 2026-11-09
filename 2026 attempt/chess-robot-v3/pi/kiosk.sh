@@ -1,8 +1,8 @@
 #!/bin/bash
 # kiosk.sh - runs INSIDE the X session (via startx): assert the panel's native
-# 800x480, kill the cursor, launch the UI.  The display is now mounted
-# right-side-up (the hollow-book / upside-down mount is gone), so there is NO
-# 180-degree rotation and no mirrored touch matrix.
+# 800x480, flip it 180 degrees, kill the cursor, launch the UI.  The display
+# is mounted UPSIDE DOWN again (2026-11-09), so the panel is rotated inverted
+# and the touch matrix rotates with it.
 export DISPLAY=:0
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -35,6 +35,24 @@ force_800x480() {
     return 0
 }
 force_800x480
+
+# The panel is mounted upside down (2026-11-09): flip the DISPLAY 180
+# degrees and rotate the touch matrix to match, or taps land mirrored.
+rotate_180() {
+    local out dev
+    out=$(xrandr 2>/dev/null | awk '/ connected/ {print $1; exit}')
+    if [ -n "$out" ]; then
+        xrandr --output "$out" --rotate inverted 2>/dev/null || \
+            echo "WARN: xrandr could not rotate $out"
+    fi
+    dev=$(xinput list --name-only 2>/dev/null | grep -i -m1 "touch")
+    if [ -n "$dev" ]; then
+        xinput set-prop "$dev" "Coordinate Transformation Matrix" \
+            -1 0 1 0 -1 1 0 0 0 0 1 2>/dev/null || \
+            echo "WARN: could not rotate the touch matrix ($dev)"
+    fi
+}
+rotate_180
 
 # Hide the pointer completely: a transparent 1x1 cursor (no touch crosshair),
 # with unclutter as a fallback for any widget that sets its own cursor.
