@@ -48,7 +48,7 @@ rotate_180() {
     dev=$(xinput list --name-only 2>/dev/null | grep -i -m1 "touch")
     if [ -n "$dev" ]; then
         xinput set-prop "$dev" "Coordinate Transformation Matrix" \
-            -1 0 1 0 -1 1 0 0 0 0 1 2>/dev/null || \
+            -1 0 1 0 -1 1 0 0 1 2>/dev/null || \
             echo "WARN: could not rotate the touch matrix ($dev)"
     fi
 }
