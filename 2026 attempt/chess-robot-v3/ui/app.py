@@ -6391,6 +6391,12 @@ class SettingsScreen(kit.Screen):
                                        bg=kit.CARD_HI, fg=kit.FG, width=28,
                                        height=2)
         self.mute_btn.pack(pady=6)
+        # Screen rotation (2026-11-14): flips the panel AND the touch
+        # matrix together, live - it used to be a kiosk-script edit
+        self.rot_btn = kit.big_button(col, self._rot_txt(), self._rotate,
+                                      bg=kit.CARD_HI, fg=kit.FG, width=28,
+                                      height=2)
+        self.rot_btn.pack(pady=6)
         # after all the buttons: the one switch for the terminal-output
         # element, which is hidden everywhere by default (2026-11-08)
         self.term_var = tk.BooleanVar(
@@ -6416,6 +6422,7 @@ class SettingsScreen(kit.Screen):
         self.level_btn.configure(text=self._level_txt())
         self.vol_btn.configure(text=self._vol_txt())
         self.mute_btn.configure(text=self._mute_txt())
+        self.rot_btn.configure(text=self._rot_txt())
 
     def _level(self):
         def setv(v):
@@ -6441,6 +6448,20 @@ class SettingsScreen(kit.Screen):
         settings.set("audio.muted",
                      not settings.get("audio.muted", False))
         audio.apply_volume()
+        self._refresh()
+
+    def _rot_txt(self):
+        return ("Screen rotation: 180\u00b0"
+                if settings.get("display.rotation", "normal") == "inverted"
+                else "Screen rotation: Normal")
+
+    def _rotate(self):
+        from chessapp import display as DISP
+        new = ("normal"
+               if settings.get("display.rotation", "normal") == "inverted"
+               else "inverted")
+        settings.set("display.rotation", new)
+        DISP.apply(new)      # live: panel and touch flip together
         self._refresh()
 
 

@@ -1,8 +1,7 @@
 #!/bin/bash
 # kiosk.sh - runs INSIDE the X session (via startx): assert the panel's native
-# 800x480, flip it 180 degrees, kill the cursor, launch the UI.  The display
-# is mounted UPSIDE DOWN again (2026-11-09), so the panel is rotated inverted
-# and the touch matrix rotates with it.
+# 800x480, apply the Screen rotation setting (display + touch matrix
+# together), kill the cursor, launch the UI.
 export DISPLAY=:0
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -36,23 +35,16 @@ force_800x480() {
 }
 force_800x480
 
-# The panel is mounted upside down (2026-11-09): flip the DISPLAY 180
-# degrees and rotate the touch matrix to match, or taps land mirrored.
-rotate_180() {
-    local out dev
-    out=$(xrandr 2>/dev/null | awk '/ connected/ {print $1; exit}')
-    if [ -n "$out" ]; then
-        xrandr --output "$out" --rotate inverted 2>/dev/null || \
-            echo "WARN: xrandr could not rotate $out"
-    fi
-    dev=$(xinput list --name-only 2>/dev/null | grep -i -m1 "touch")
-    if [ -n "$dev" ]; then
-        xinput set-prop "$dev" "Coordinate Transformation Matrix" \
-            -1 0 1 0 -1 1 0 0 1 2>/dev/null || \
-            echo "WARN: could not rotate the touch matrix ($dev)"
-    fi
-}
-rotate_180
+# Panel rotation comes from the settings (2026-11-14): 'Screen rotation'
+# in the Settings screen flips the display AND the touch matrix together
+# (a display flip without the matrix makes every tap land mirrored).
+# Applied here at boot so the splash comes up the right way round.
+python3 - "$DIR" <<'PYEOF' || true
+import sys
+sys.path.insert(0, sys.argv[1])
+from chessapp import display
+display.apply()
+PYEOF
 
 # Hide the pointer completely: a transparent 1x1 cursor (no touch crosshair),
 # with unclutter as a fallback for any widget that sets its own cursor.
