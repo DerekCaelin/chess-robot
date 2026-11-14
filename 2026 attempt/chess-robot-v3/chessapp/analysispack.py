@@ -627,7 +627,7 @@ def prewarm(voice=None):
         # already complete? BOTH voices are generated in the background now
         n = pack.move_count()
         if n and all(pack.ready(i + 1, v) for i in range(n)
-                     for v in ("espeak", "piper")):
+                     for v in ("espeak",) + PIPER_VOICES):
             return None
         return generate_async(pack, voice)
     except Exception:
