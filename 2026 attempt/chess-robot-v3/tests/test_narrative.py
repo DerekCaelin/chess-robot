@@ -151,7 +151,7 @@ def test_pack_stale_sounds():
                               "started": "2026-10-23T10:00", "result": "*"})
         os.makedirs(pk.dir, exist_ok=True)
         for ply in (1, 2):
-            with open(pk.wav_path(ply, "piper"), "w") as f:
+            with open(pk.wav_path(ply, "alba"), "w") as f:
                 f.write("stale")
         seen = {}
 
@@ -183,7 +183,7 @@ def test_pack_stale_sounds():
         # BOTH voices generate in the background whatever the user picked,
         # espeak first
         assert any(s[2] == "audio" and s[3] == "espeak" for s in states), states
-        assert any(s[2] == "audio" and s[3] == "piper" for s in states), states
+        assert any(s[2] == "audio" and s[3] == "alba" for s in states), states
         assert states.index((2, 2, "text", "")) < min(
             i for i, s in enumerate(states) if s[2] == "audio"), states
     finally:
@@ -312,7 +312,7 @@ def test_shared_text_state():
     try:
         st = AP.generation_state(p, "none")
         assert st["done"] == 3, st
-        st2 = AP.generation_state(p, "piper")
+        st2 = AP.generation_state(p, "alba")
         assert st2["done"] == 3, st2
         AP._TEXT_STATE[p.hash]["alive"] = False
         st3 = AP.generation_state(p, "none")

@@ -5162,7 +5162,7 @@ class AnalysisHomeScreen(kit.Screen):
     in the background as soon as the page opens - text for every move first,
     then one sound file per move starting with the first."""
 
-    VOICE_KEYS = ("none", "espeak", "piper")
+    VOICE_KEYS = ("none", "espeak", "alba", "glados")
     DEPTH_KEYS = ("12", "15", "18", "21", "24", "27", "30")
 
     def _depth_label(self, d):
@@ -5259,7 +5259,7 @@ class AnalysisHomeScreen(kit.Screen):
         vrow.pack(anchor="w")
         tk.Label(vrow, text="Voice", font=("Atkinson Hyperlegible", 18), bg=kit.BG,
                  fg=kit.FG).pack(side="left", padx=(0, 8))
-        cur = settings.get("analysis.voice", "none")
+        cur = AP.norm_voice(settings.get("analysis.voice", "none"))
         if cur not in self.VOICE_KEYS:
             cur = "none"
         self.voice_var = tk.StringVar(value=AP.VOICE_LABELS[cur])
@@ -5546,7 +5546,7 @@ class AnalysisMoveScreen(kit.Screen):
         if not pack.moves:
             pack.moves = pack.review_moves()
         self.idx = max(0, min(idx, len(pack.moves) - 1))
-        self.voice = settings.get("analysis.voice", "none")
+        self.voice = AP.norm_voice(settings.get("analysis.voice", "none"))
         self.adv = bool(settings.get("analysis.auto_advance", True))
         self.stop = False
         self._playing = False

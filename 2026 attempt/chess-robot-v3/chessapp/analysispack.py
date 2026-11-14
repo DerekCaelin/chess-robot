@@ -23,9 +23,20 @@ from chessapp import voice as VO
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(ROOT, "data", "analysis")
-VOICES = ("none", "espeak", "piper")
+# the selectable voices (2026-11-14): 'piper' was renamed to the MODEL it
+# speaks with (alba) and GLaDOS joined it - both are Piper voices
+VOICES = ("none", "espeak", "alba", "glados")
+PIPER_VOICES = ("alba", "glados")
 VOICE_LABELS = {"none": "None (fastest)", "espeak": "espeak (fast)",
-                "piper": "piper (slow)"}
+                "alba": "alba (slow)", "glados": "GLaDOS (slower)"}
+
+
+def norm_voice(v):
+    """The voice key for a stored setting ('piper' is the old name of
+    alba) - 'none' when it is not one of the selectable voices."""
+    if v == "piper":
+        return "alba"
+    return v if v in VOICES else "none"
 
 # The stored analysis + commentary format. Bump when the engine fields or
 # the narrative output change shape/quality - a cached text.json with an
@@ -331,7 +342,7 @@ class AnalysisPack:
         # THE VOICES GENERATE IN THE BACKGROUND WHATEVER THE USER PICKED -
         # espeak first (it is fast), then piper - so switching to voice
         # analysis later finds the work already done (2026-10-24)
-        for v in ("espeak", "piper"):
+        for v in ("espeak",) + PIPER_VOICES:
             total = max(1, len(self.moves))
             pending = []
             done = 0
@@ -346,7 +357,7 @@ class AnalysisPack:
                         on_progress(done, total, "audio", v)
                 else:
                     pending.append((m["ply"], speech, out))
-            if v == "piper":
+            if v in PIPER_VOICES:
                 # ONE model load for the whole batch (2026-11-08): loading
                 # piper per sentence took minutes per move on the Pi 3B and
                 # the background run never finished a game
@@ -357,11 +368,11 @@ class AnalysisPack:
                         on_progress(done, total, "audio", v)
                 try:
                     VO.synth_piper_many([(s, o) for _, s, o in pending],
-                                        model=VO.PIPER_MODELS["alba"],
+                                        model=VO.PIPER_MODELS[v],
                                         on_item=_one,
                                         should_stop=lambda: self._run_id != token)
                 except Exception as e:
-                    print("voice: piper batch failed: %s" % e)
+                    print("voice: %s batch failed: %s" % (v, e))
             else:
                 for ply, speech, out in pending:
                     if self._run_id != token:

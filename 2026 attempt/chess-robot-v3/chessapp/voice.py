@@ -129,6 +129,8 @@ def speak_text(text, engine, out, model=PIPER_MODEL):
 PIPER_MODELS = {
     "alba": os.path.join(VOICES, "en_GB-alba-medium.onnx"),
     "alan": os.path.join(VOICES, "en_GB-alan-low.onnx"),
+    # systemofapwne/piper-en_US-glados-high via piperhub (2026-11-14)
+    "glados": os.path.join(VOICES, "en_US-glados-high.onnx"),
 }
 
 
