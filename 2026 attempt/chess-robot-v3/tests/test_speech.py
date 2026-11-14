@@ -33,11 +33,13 @@ def main():
     old_dir, old_voice = SP.DIR, SP.voice
     old_play, old_speak = audio.play_wav, audio.speak
     old_espeak = VO.synth_espeak
+    old_many = VO.synth_piper_many
     SP.DIR = tmp
     played, spoken, made = [], [], []
     audio.play_wav = lambda p: played.append(p) or True
     audio.speak = lambda t: spoken.append(t)
     VO.synth_espeak = lambda t, o: made.append(o)
+    VO.synth_piper_many = lambda items, **k: [made.append(o) for _, o in items]
     try:
         # 'none' is silent
         SP.voice = lambda: "none"
@@ -58,7 +60,16 @@ def main():
         check(len(made) == len(SP.PHRASES),
               "warm made %d sounds, expected %d" % (len(made),
                                                     len(SP.PHRASES)))
+        # warm_all cooks every voice, selected first
+        made.clear()
+        SP.voice = lambda: "glados"
+        SP.warm_all(background=False)
+        dirs = sorted({os.path.basename(os.path.dirname(o)) for o in made})
+        check(dirs == ["alba", "espeak", "glados"],
+              "warm_all missed voices: %s" % dirs)
+
         # with the sound present, it plays the wav (not the TTS)
+        SP.voice = lambda: "espeak"
         spoken.clear()
         os.makedirs(os.path.join(tmp, "espeak"), exist_ok=True)
         with open(os.path.join(tmp, "espeak", "check.wav"), "w") as f:
@@ -71,6 +82,7 @@ def main():
         SP.DIR, SP.voice = old_dir, old_voice
         audio.play_wav, audio.speak = old_play, old_speak
         VO.synth_espeak = old_espeak
+        VO.synth_piper_many = old_many
         shutil.rmtree(tmp, ignore_errors=True)
 
 

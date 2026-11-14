@@ -137,7 +137,7 @@ class App:
         # idle-time work: generate the last game's analysis audio in the
         # background so it is ready before anyone opens it (2026-10-22)
         self.root.after(3000, lambda: AP.prewarm())
-        self.root.after(2000, lambda: SP.warm())
+        self.root.after(2000, lambda: SP.warm_all())
 
     def _kill_splash(self):
         """Close the boot-splash process kiosk.sh started in the background."""
@@ -5363,7 +5363,7 @@ class AnalysisHomeScreen(kit.Screen):
 
     def _voice_changed(self, _=None):
         settings.set("analysis.voice", self._voice_key())
-        SP.warm(self._voice_key())
+        SP.warm_all()
         # the background generation covers BOTH voices - switching just picks
         # what PLAYBACK uses, nothing to cancel or restart (2026-10-24)
         self._start_generation()
@@ -6502,7 +6502,7 @@ class SettingsScreen(kit.Screen):
         def pick(v):
             settings.set("analysis.voice", v)
             self._refresh()
-            SP.warm(v)        # the phrases fill in behind the choice
+            SP.warm_all()     # the picked voice first, the rest behind it
         kit.choice(self.app, "Voice",
                    [(AP.VOICE_LABELS[k], k) for k in AP.VOICE_KEYS],
                    pick, current=cur)

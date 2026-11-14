@@ -57,7 +57,29 @@ def warm(v=None, background=True):
             pass
 
     if background:
-        threading.Thread(target=run, daemon=True).start()
+        # NOT a daemon: a daemon mid-synthesis aborts in native code at
+        # interpreter shutdown (the test suite caught it, 2026-11-14).
+        # The set is cached, so this join happens once per voice.
+        threading.Thread(target=run).start()
+    else:
+        run()
+
+
+def warm_all(background=True):
+    """Pre-cook EVERY voice's phrase set (2026-11-14): switching voices
+    then never costs a wait.  Each set is one model load plus five short
+    lines and is cached forever - about two minutes of background work,
+    one time.  The SELECTED voice goes first so it is ready soonest."""
+    order = ([voice()] + [v for v in ("espeak", "alba", "glados")
+                          if v != voice()])
+    order = [v for v in order if v != "none"]
+
+    def run():
+        for v in order:
+            warm(v, background=False)
+
+    if background:
+        threading.Thread(target=run).start()   # joined at exit, not a daemon
     else:
         run()
 
