@@ -4685,6 +4685,11 @@ class CalibrationTestScreen(kit.Screen):
     grabs (empty board), exactly as a game pick. Repeat for other squares;
     Back parks the arm and returns."""
 
+    # the piece the test simulates PICKING UP (2026-11-14)
+    PIECES = ("p", "n", "b", "r", "q", "k")
+    PIECE_NAMES = {"p": "pawn", "n": "knight", "b": "bishop",
+                   "r": "rook", "q": "queen", "k": "king"}
+
     def __init__(self, app):
         super().__init__(app=app, title="Calibration test")
         self.app = app
@@ -4709,6 +4714,21 @@ class CalibrationTestScreen(kit.Screen):
         self.instr_lbl = kit.FitLabel(cols.right, font=("Atkinson Hyperlegible", 15))
         self.instr_lbl.pack(fill="x", pady=(6, 0))
         self._set_instr()
+        # piece buttons (2026-11-14): which piece the simulated pick picks
+        # up - pawn selected by default, tapping another piece makes the
+        # NEXT move (Go) simulate that one (grip height + jaw width follow)
+        self.piece = "p"
+        self._piece_btns = {}
+        prow = tk.Frame(cols.right, bg=kit.BG)
+        prow.pack(pady=(8, 0))
+        for i, k in enumerate(self.PIECES):
+            b = kit.big_button(prow, kit.GLYPH[k],
+                               lambda kk=k: self._set_piece(kk),
+                               bg=kit.CARD_HI, fg=kit.FG, width=5, height=2,
+                               font=kit.F_PIECE)
+            b.grid(row=i // 3, column=i % 3, padx=4, pady=4)
+            self._piece_btns[k] = b
+        self._set_piece("p", refresh=False)
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._poll()
 
@@ -4718,6 +4738,7 @@ class CalibrationTestScreen(kit.Screen):
         if self.target:
             col = RD.xtrans[self.target[0]]
             row = 8 - int(self.target[1])
+            board[row][col] = self.piece.upper()
             hl = (row, col, row, col)
         self.board.draw(board, hl)
 
@@ -4730,11 +4751,27 @@ class CalibrationTestScreen(kit.Screen):
             self._set_instr()
             self.go_btn.configure(state="normal", bg=kit.GREEN, fg="#1b1e24")
 
+    def _set_piece(self, k, refresh=True):
+        """The piece the simulated pick picks up (2026-11-14): pawn is
+        selected by default; the next Go simulates whatever is selected."""
+        self.piece = k
+        for kk, b in self._piece_btns.items():
+            sel = (kk == k)
+            b.configure(bg=kit.ACCENT if sel else kit.CARD_HI,
+                        fg=("#1b1e24" if sel else kit.FG),
+                        activebackground=(kit.ACCENT_HI if sel
+                                          else kit.CARD_HI))
+        if refresh:
+            self._draw_board()
+            self._set_instr()
+
     def _set_instr(self):
         if self.target:
             self.instr_lbl.configure(
-                text="Target %s \u2014 tap Go to move there. Tap another "
-                     "square to change." % self.target.upper())
+                text="Target %s \u2014 tap Go to move there and pick up "
+                     "the %s. Tap another square to change."
+                     % (self.target.upper(),
+                        self.PIECE_NAMES[self.piece]))
         else:
             self.instr_lbl.configure(
                 text="Tap a square on the board, then tap Go.")
@@ -4745,7 +4782,7 @@ class CalibrationTestScreen(kit.Screen):
         sq = self.target
         X = RD.armlength(sq)
         Z = RD.armangle(sq)
-        Y = RD.grip_y("p", X)
+        Y = RD.grip_y(self.piece, X)
         # Refuse an unreachable target instead of silently falling back to the
         # all-middle default pose (2026-10-14: a broken arm frame made every
         # square unreachable and the arm looked frozen at a default pose).
@@ -4762,7 +4799,7 @@ class CalibrationTestScreen(kit.Screen):
                 RD.openjaws()
                 RD.movearm(X, Z)       # cruise to the square
                 RD.moveXY(Y)           # descend as the game picks
-                RD.closejaws("p")      # grab (signifier on the empty board)
+                RD.closejaws(self.piece)  # grab at the piece's jaw width
             except Exception:
                 pass
             self.q.put(("done",))
