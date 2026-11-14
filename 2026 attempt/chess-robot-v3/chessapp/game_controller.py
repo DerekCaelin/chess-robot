@@ -19,6 +19,7 @@ import time
 
 from ChessBoard import ChessBoard
 from chessapp import game_state, settings
+from chessapp import speech
 from chessapp.graveyard import GraveMemory, captured_on
 import CBstate
 
@@ -336,7 +337,7 @@ class ChessGame:
             out["last_move_type"] = lt
         if self.cb.isCheck():
             out["check"] = True
-            self._speak("Check!")
+            speech.say("check")          # the chosen voice (2026-11-14)
             self._status("Check!")
         if self.cb.isGameOver():
             codes = self.cb.getGameResult()
@@ -349,7 +350,16 @@ class ChessGame:
             out["game_over"] = True
             out["result_text"] = rt
             out["result_code"] = codes
-            self._speak(rt)
+            # the chosen voice speaks the game's end (2026-11-14);
+            # the other results keep the system TTS line
+            if codes == 1:
+                speech.say("mate_win")
+            elif codes == 2:
+                speech.say("mate_lose")
+            elif codes == 3:
+                speech.say("stalemate")
+            else:
+                self._speak(rt)
             self._status(rt)
 
     def _snapshot(self):

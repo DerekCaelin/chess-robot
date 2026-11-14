@@ -36,7 +36,7 @@ import numpy as np                               # noqa: E402
 from PIL import Image, ImageTk                   # noqa: E402
 import CBstate                                   # noqa: E402
 import camera                                    # noqa: E402
-from chessapp import game_state, audio, verify_log
+from chessapp import game_state, audio, verify_log, speech as SP
 from chessapp.graveyard import piece_name as _piece_name, \
     slot_desc as _slot_desc
 from chessapp import levels as LV  # noqa: E402
@@ -137,6 +137,7 @@ class App:
         # idle-time work: generate the last game's analysis audio in the
         # background so it is ready before anyone opens it (2026-10-22)
         self.root.after(3000, lambda: AP.prewarm())
+        self.root.after(2000, lambda: SP.warm())
 
     def _kill_splash(self):
         """Close the boot-splash process kiosk.sh started in the background."""
@@ -5362,6 +5363,7 @@ class AnalysisHomeScreen(kit.Screen):
 
     def _voice_changed(self, _=None):
         settings.set("analysis.voice", self._voice_key())
+        SP.warm(self._voice_key())
         # the background generation covers BOTH voices - switching just picks
         # what PLAYBACK uses, nothing to cancel or restart (2026-10-24)
         self._start_generation()
@@ -6416,31 +6418,33 @@ class SettingsScreen(kit.Screen):
         self.app = app
         col = tk.Frame(self.body, bg=kit.BG)
         col.pack(expand=True)
-        self.level_btn = kit.big_button(col, self._level_txt(), self._level,
-                                        bg=kit.CARD_HI, fg=kit.FG, width=28,
-                                        height=2)
-        self.level_btn.pack(pady=6)
-        self.vol_btn = kit.big_button(col, self._vol_txt(), self._volume,
-                                      bg=kit.CARD_HI, fg=kit.FG, width=28,
-                                      height=2)
-        self.vol_btn.pack(pady=6)
-        self.mute_btn = kit.big_button(col, self._mute_txt(), self._mute,
-                                       bg=kit.CARD_HI, fg=kit.FG, width=28,
-                                       height=2)
-        self.mute_btn.pack(pady=6)
+        self.level_btn = kit.btn(col, self._level_txt(), self._level,
+                                        size="m", kind="secondary", width_px=400)
+        self.level_btn.pack(pady=2)
+        self.vol_btn = kit.btn(col, self._vol_txt(), self._volume,
+                                      size="m", kind="secondary", width_px=400)
+        self.vol_btn.pack(pady=2)
+        self.mute_btn = kit.btn(col, self._mute_txt(), self._mute,
+                                       size="m", kind="secondary",
+                                       width_px=400)
+        self.mute_btn.pack(pady=2)
+        # the spoken voice (2026-11-14): the analysis narration AND the
+        # game phrases (hello / check / checkmate / stalemate) speak in it
+        self.voice_btn = kit.btn(col, self._voice_txt(), self._voice,
+                                        size="m", kind="secondary", width_px=400)
+        self.voice_btn.pack(pady=2)
         # Screen rotation (2026-11-14): flips the panel AND the touch
         # matrix together, live - it used to be a kiosk-script edit
-        self.rot_btn = kit.big_button(col, self._rot_txt(), self._rotate,
-                                      bg=kit.CARD_HI, fg=kit.FG, width=28,
-                                      height=2)
-        self.rot_btn.pack(pady=6)
+        self.rot_btn = kit.btn(col, self._rot_txt(), self._rotate,
+                                      size="m", kind="secondary", width_px=400)
+        self.rot_btn.pack(pady=2)
         # after all the buttons: the one switch for the terminal-output
         # element, which is hidden everywhere by default (2026-11-08)
         self.term_var = tk.BooleanVar(
             value=bool(settings.get("ui.show_terminal", False)))
         kit.checkbox(col, "Show terminal output", self.term_var,
                      command=self._save_term,
-                     font=kit.F_BODY).pack(anchor="w", pady=(6, 0))
+                     font=kit.F_BODY).pack(anchor="w", pady=(2, 0))
         self._refresh()
 
     def _level_txt(self):
@@ -6460,6 +6464,7 @@ class SettingsScreen(kit.Screen):
         self.vol_btn.configure(text=self._vol_txt())
         self.mute_btn.configure(text=self._mute_txt())
         self.rot_btn.configure(text=self._rot_txt())
+        self.voice_btn.configure(text=self._voice_txt())
 
     def _level(self):
         def setv(v):
@@ -6486,6 +6491,21 @@ class SettingsScreen(kit.Screen):
                      not settings.get("audio.muted", False))
         audio.apply_volume()
         self._refresh()
+
+    def _voice_txt(self):
+        return "Voice: " + AP.VOICE_LABELS[AP.norm_voice(
+            settings.get("analysis.voice", "none"))]
+
+    def _voice(self):
+        cur = AP.norm_voice(settings.get("analysis.voice", "none"))
+
+        def pick(v):
+            settings.set("analysis.voice", v)
+            self._refresh()
+            SP.warm(v)        # the phrases fill in behind the choice
+        kit.choice(self.app, "Voice",
+                   [(AP.VOICE_LABELS[k], k) for k in AP.VOICE_KEYS],
+                   pick, current=cur)
 
     def _rot_txt(self):
         return ("Screen rotation: 180\u00b0"
@@ -6830,6 +6850,9 @@ class GameScreen(kit.Screen):
                 elif kind == "turn":
                     self._close_prep()
                     self._stop_thinking()
+                    if not getattr(self, "_greeted", False):
+                        self._greeted = True
+                        SP.say("hello")   # "Hello. Let's play chess."
                     self.turn_lbl.configure(
                         text="YOUR MOVE" if ev[1] == "you"
                         else self._robot_move_txt())
