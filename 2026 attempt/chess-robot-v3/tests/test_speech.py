@@ -23,6 +23,29 @@ def check(cond, msg):
 
 
 def main():
+    # the synthesis output is cleaned: no clipping, no DC, soft ends
+    import array
+    import wave
+    tmp2 = tempfile.mkdtemp()
+    try:
+        w = wave.open(os.path.join(tmp2, "t.wav"), "wb")
+        w.setparams((1, 2, 22050, 0, "NONE", "not compressed"))
+        loud = array.array("h", [20000] * 22050)   # 1 s of hot, biased audio
+        loud[0] = -32768
+        loud[1] = -32767
+        w.writeframes(loud.tobytes())
+        w.close()
+        VO._sanitize_wav(os.path.join(tmp2, "t.wav"))
+        w = wave.open(os.path.join(tmp2, "t.wav"), "rb")
+        a = array.array("h", w.readframes(w.getnframes()))
+        w.close()
+        peak = max(max(a), -min(a))
+        check(peak <= int(32767 * 0.92), "sanitize left it too hot: %d" % peak)
+        check(all(abs(v) < 32700 for v in a), "sanitize left clipping")
+        check(a[0] == 0 and a[-1] == 0, "sanitize left a click at the ends")
+    finally:
+        shutil.rmtree(tmp2, ignore_errors=True)
+
     # the phrase set covers the specified triggers
     for k in ("hello", "check", "mate_win", "mate_lose", "stalemate"):
         check(k in SP.PHRASES, "missing phrase %s" % k)

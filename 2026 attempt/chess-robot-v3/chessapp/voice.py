@@ -30,6 +30,37 @@ def sentences(text):
     return [p for p in parts if p.strip()]
 
 
+def _sanitize_wav(path):
+    """Clean the synthesis output (2026-11-15): the models clip a few
+    samples at loud onsets (that is the garble at the start of a phrase)
+    and sit slightly off-centre.  Remove the DC, set the level to 89% so
+    nothing hits the rail, and fade the very ends so playback never
+    clicks."""
+    import array
+    w = wave.open(path, "rb")
+    p = w.getparams()
+    data = array.array("h", w.readframes(w.getnframes()))
+    w.close()
+    if not data or p.sampwidth != 2:
+        return
+    off = int(round(sum(data) / len(data)))
+    for i in range(len(data)):
+        data[i] = max(-32768, min(32767, data[i] - off))
+    peak = max(max(data), -min(data)) or 1
+    k = int(32767 * 0.89) / peak
+    for i in range(len(data)):
+        data[i] = int(data[i] * k)
+    n = min(len(data) // 4, int(p.framerate * 0.004))   # 4 ms fades
+    for i in range(n):
+        f = i / max(1, n)
+        data[i] = int(data[i] * f)
+        data[-1 - i] = int(data[-1 - i] * f)
+    w = wave.open(path, "wb")
+    w.setparams(p)
+    w.writeframes(data.tobytes())
+    w.close()
+
+
 def _merge_wavs(paths, out, pause=0.35):
     """Concatenate same-format wavs with silence between them. Refuses to
     blend mismatched formats (that is where the static came from)."""
@@ -79,14 +110,12 @@ def synth_piper_many(items, model=PIPER_MODEL, on_item=None, should_stop=None):
         if should_stop is not None and should_stop():
             return n - 1
         try:
-            parts = []
-            with tempfile.TemporaryDirectory() as td:
-                for i, s in enumerate(sentences(text)):
-                    wav = os.path.join(td, "p%03d.wav" % i)
-                    with wave.open(wav, "wb") as w:
-                        pv.synthesize_wav(s, w)
-                    parts.append(wav)
-                _merge_wavs(parts, out)
+            # ONE utterance per track (2026-11-15): splitting into
+            # sentence fragments and joining them garbled the opening
+            # words - the model speaks the whole line as one breath now
+            with wave.open(out, "wb") as w:
+                pv.synthesize_wav(text, w)
+            _sanitize_wav(out)
         except Exception as e:
             print("voice: %s failed: %s" % (os.path.basename(out), e))
         if on_item is not None:
