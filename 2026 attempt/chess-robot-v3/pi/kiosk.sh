@@ -86,10 +86,29 @@ for r in range(H // 80 + 1):
         if (r + c) % 2 == 0:
             d.rectangle([c * 80, r * 80, c * 80 + 80, r * 80 + 80],
                         fill="#1d1a17")
-# the original splash artwork at 80% screen height, black-framed
+# the original splash artwork at 80% screen height, black-framed.  Its
+# flat slate side margins are trimmed first (2026-11-15): as a scaled-down
+# picture they read as gray borders left and right of the art.
+def trim_flat_sides(im):
+    w, h = im.size
+    px = im.load()
+    def flat(x):
+        col = [px[x, y] for y in range(0, h, 8)]
+        ref = col[0]
+        return all(abs(c[0]-ref[0]) + abs(c[1]-ref[1]) + abs(c[2]-ref[2])
+                   < 24 for c in col)
+    l = 0
+    while l < w // 3 and flat(l):
+        l += 1
+    r = w - 1
+    while r > 2 * w // 3 and flat(r):
+        r -= 1
+    return im.crop((l, 0, r + 1, h))
+
 try:
-    art = Image.open(os.path.join(sys.argv[1], "pi", "bringup",
-                                  "background.png")).convert("RGB")
+    art = trim_flat_sides(Image.open(
+        os.path.join(sys.argv[1], "pi", "bringup",
+                     "background.png")).convert("RGB"))
     h = int(H * 0.8)
     w = max(1, round(art.width * h / art.height))
     if w > W * 0.9:                 # never wider than 90% of the screen
