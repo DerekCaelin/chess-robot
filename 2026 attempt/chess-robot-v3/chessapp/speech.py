@@ -7,6 +7,7 @@
 # system TTS with the same words - never silent, never blocking.
 
 import os
+import shutil
 import threading
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,6 +44,13 @@ def warm(v=None, background=True):
     def run():
         try:
             from chessapp import voice as VO
+            # a voice with no model installed has nothing to cook - and
+            # must not leave an empty folder behind (2026-11-15)
+            if v == "espeak":
+                if not shutil.which("espeak"):
+                    return
+            elif not os.path.exists(VO.PIPER_MODELS.get(v, "")):
+                return
             os.makedirs(os.path.join(DIR, v), exist_ok=True)
             todo = [(PHRASES[k], path(k, v)) for k in sorted(PHRASES)
                     if not os.path.exists(path(k, v))]

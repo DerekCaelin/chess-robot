@@ -57,6 +57,10 @@ def main():
     old_play, old_speak = audio.play_wav, audio.speak
     old_espeak = VO.synth_espeak
     old_many = VO.synth_piper_many
+    old_models = VO.PIPER_MODELS
+    model = os.path.join(tmp, "fake.onnx")
+    open(model, "w").close()
+    VO.PIPER_MODELS = {"alba": model, "glados": model, "alan": model}
     SP.DIR = tmp
     played, spoken, made = [], [], []
     audio.play_wav = lambda p: played.append(p) or True
@@ -106,6 +110,7 @@ def main():
         audio.play_wav, audio.speak = old_play, old_speak
         VO.synth_espeak = old_espeak
         VO.synth_piper_many = old_many
+        VO.PIPER_MODELS = old_models
         shutil.rmtree(tmp, ignore_errors=True)
 
 
