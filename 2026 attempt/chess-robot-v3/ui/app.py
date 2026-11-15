@@ -6628,6 +6628,9 @@ class GameScreen(kit.Screen):
         self._prep = None
         self._cam_lost = None
         self._takeback_req = False
+        self._armed = False
+        self._cleaned = False
+        self._worker_done = threading.Event()
         # the raw monitor stream - terminal output, hidden by default like
         # the app-wide strip (2026-11-08).  The THINKING dots below still
         # read from the same events even when the line is not shown.
@@ -6668,6 +6671,7 @@ class GameScreen(kit.Screen):
         kit.big_button(brow, "Menu", self._menu, bg=kit.CARD_HI, fg=kit.FG,
                        width=8, height=2).pack(side="left", padx=(8, 0))
         threading.Thread(target=self._worker, daemon=True).start()
+        self.bind("<Destroy>", self._on_destroy, add="+")
         self._poll()
 
     def on_show(self):
@@ -6802,16 +6806,12 @@ class GameScreen(kit.Screen):
         except Exception as e:            # was: silent thread death with a
             q.put(("fatal", str(e)))      # frozen game screen (2026-09-18)
         finally:
-            if armed:
-                try:
-                    if not self.stop_req:
-                        RD.park()      # finished game: rise to the park pose
-                    RD.idleall()       # LEAVING the session -> drop torque so
-                    if RD.sp:          # the arm is silent on the Home screen
-                        RD.sp.close()  # (mid-game park()s still hold torque)
-                        RD.sp = None
-                except Exception:
-                    pass
+            # the ARM IS LEFT ALONE here (2026-11-14): at checkmate it
+            # stays exactly where it is - the park/idle used to jerk it
+            # the moment the result landed.  _cleanup poses and releases
+            # it when the player actually LEAVES the screen.
+            self._armed = armed
+            self._worker_done.set()
             try:
                 self.game.shutdown_engine()
             except Exception:
@@ -6894,6 +6894,33 @@ class GameScreen(kit.Screen):
             pass
         if self.winfo_exists():
             self.after(150, self._poll)
+
+    def _on_destroy(self, e):
+        if e.widget is self:
+            self._cleanup()
+
+    def _cleanup(self):
+        """Screen exit: pose the arm and drop torque - AFTER the worker is
+        done with it, so the two never fight over the serial port.  The
+        game itself never moves the arm on ending (2026-11-14)."""
+        if self._cleaned:
+            return
+        self._cleaned = True
+        self.stop_req = True
+
+        def run():
+            try:
+                self._worker_done.wait(timeout=30)
+                if self._armed:
+                    if getattr(RD, "energised", False):
+                        RD.park()
+                    RD.idleall()
+                    if RD.sp:
+                        RD.sp.close()
+                        RD.sp = None
+            except Exception:
+                pass
+        threading.Thread(target=run, daemon=True).start()
 
     def _result_modal(self, headline):
         """Game over: offer Home or Analysis - the finished game is preserved
