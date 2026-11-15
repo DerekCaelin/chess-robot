@@ -7152,12 +7152,14 @@ class GameScreen(kit.Screen):
                 self.app, "Calibration", "Pause the game to calibrate?",
                 lambda: (self.abandon(), self.app.show(CalibrateScreen))),
         }
-        # the approved 2-column treatment (2026-11-08)
+        # the approved 2-column treatment (2026-11-08); Takeback is
+        # disabled until there is a move to take back (2026-11-15)
         kit.choice(self.app, "",
                    [("Home", "home"), ("New game", "new"),
                     ("End game", "end"), ("Takeback", "takeback"),
                     ("Calibration settings", "calib")],
-                   lambda v: handlers[v](), columns=2)
+                   lambda v: handlers[v](), columns=2,
+                   disabled=() if self.game.movelist else ("takeback",))
 
     def _end_modal(self):
         """End game: Cancel / End, with 'See analysis?' beneath the buttons.
@@ -7232,9 +7234,8 @@ class GameScreen(kit.Screen):
                  text="Re-set the board to match this position, then OK.",
                  font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
                  wraplength=420, justify="center").pack(pady=(0, 10))
-        # where to fetch the pieces that come BACK from the graveyard: the
-        # memory remembers where the opponent (the robot) dropped each
-        # capture - and where the player put their own (2026-11-08)
+        # the pieces that come BACK and where they go (2026-11-15: the
+        # message no longer names the graveyard)
         for line in self._grave_notes(prev):
             tk.Label(m.body, text=line, font=kit.F_BODY, bg=kit.CARD,
                      fg=kit.FG_DIM, wraplength=420,
@@ -7264,15 +7265,8 @@ class GameScreen(kit.Screen):
                 if prev[r][c] == "." or cur[r][c] != ".":
                     continue
                 sq = "%s%d" % (chr(97 + c), 8 - r)
-                e = grave.at(sq) if grave is not None else None
-                where = "in the graveyard"
-                if e is not None:
-                    if e.get("slot") is not None:
-                        where = "graveyard: %s" % _slot_desc(e["slot"])
-                    elif e.get("by") == "player":
-                        where = "graveyard: where you placed it"
-                out.append("%s (from %s) - %s"
-                           % (_piece_name(prev[r][c]), sq, where))
+                out.append("%s returns to %s"
+                           % (_piece_name(prev[r][c]), sq))
         return out
 
     def _prev_board(self):
