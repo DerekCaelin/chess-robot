@@ -6618,6 +6618,7 @@ class GameScreen(kit.Screen):
         self.stop_req = False
         self.last = None
         self.game = ChessGame(use_robot=True,
+                              ask_promotion=self._ask_promotion,
                               on_status=lambda s: self.q.put(("toast", s)),
                               on_player_move=lambda mv: self.q.put(
                                   ("plyr", mv)),
@@ -6847,6 +6848,8 @@ class GameScreen(kit.Screen):
                     except Exception as e:
                         print("GameScreen: board draw failed:", e)
                     self.turn_lbl.configure(text=self._robot_move_txt())
+                elif kind == "askpromo":
+                    ev[1]()          # open the promotion prompt (Tk thread)
                 elif kind == "turn":
                     self._close_prep()
                     self._stop_thinking()
@@ -7156,6 +7159,36 @@ class GameScreen(kit.Screen):
                        font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
                        selectcolor=kit.ACCENT, activebackground=kit.CARD,
                        activeforeground=kit.FG).pack(anchor="w", pady=(10, 0))
+
+    def _ask_promotion(self, move):
+        """The vision reports squares, not piece types: ask which piece the
+        player promoted to (one tap, 2026-11-14).  The worker blocks on the
+        event; the modal lives on the Tk thread.  Queen if unanswered."""
+        import threading
+        ev = threading.Event()
+        holder = {"piece": "q"}
+        self.q.put(("askpromo", lambda: self._open_promo(holder, ev)))
+        ev.wait(timeout=120)
+        return holder["piece"]
+
+    def _open_promo(self, holder, ev):
+        m = kit.Modal(self.app, "Promotion")
+        tk.Label(m.body, text="Which piece did you promote to?",
+                 font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
+                 wraplength=420, justify="center").pack(pady=(0, 10))
+        row = tk.Frame(m.body, bg=kit.CARD)
+        row.pack()
+
+        def pick(p):
+            def _():
+                holder["piece"] = p
+                ev.set()
+                m.close()
+            return _
+        for k in ("q", "r", "b", "n"):
+            kit.btn(row, kit.GLYPH[k], pick(k), size="l",
+                    kind="secondary",
+                    width_px=110).pack(side="left", padx=6)
 
     def _takeback(self):
         """Request a takeback: the worker thread does the undo + engine resync

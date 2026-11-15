@@ -24,6 +24,23 @@ from chessapp.graveyard import GraveMemory, captured_on
 import CBstate
 
 
+def resolve_promotion(brdmove, board, ask=None):
+    """A pawn reaching the last rank MUST carry its piece ('e7e8q').  The
+    vision reports squares, not piece types, so the 4-char monitor message
+    lost the promotion (2026-11-14: the move landed as a pawn on the 8th,
+    the check went unannounced and the engine never moved).  ask() is the
+    UI's piece prompt; without one the queen is assumed - the common case."""
+    if len(brdmove) != 4:
+        return brdmove
+    piece = board[8 - int(brdmove[1])][ord(brdmove[0]) - 97]
+    if piece.lower() != "p":
+        return brdmove
+    if brdmove[3] != ("8" if piece.isupper() else "1"):
+        return brdmove
+    p = ask(brdmove) if ask else None
+    return brdmove + (p if p in ("q", "r", "b", "n") else "q")
+
+
 class ChessGame:
     REASONS = (
         "No reason", "Invalid move", "Invalid colour", "Invalid 'from' location",
@@ -31,10 +48,12 @@ class ChessGame:
         "Ambiguous move")
 
     def __init__(self, on_speak=None, on_status=None, on_board=None,
+                 ask_promotion=None,
                  on_player_move=None, on_computer_move=None,
                  use_robot=True):
         self.on_speak = on_speak
         self.on_status = on_status
+        self.ask_promotion = ask_promotion
         self.grave = GraveMemory()
         self.on_board = on_board
         self.on_player_move = on_player_move
@@ -201,6 +220,10 @@ class ChessGame:
         game_over, result_text)."""
         board_before = self.cb.getBoard()
         brdmove = bmessage[1:5].lower()
+        # a promotion carries its piece ('e7e8q') - the 4-char monitor
+        # message cannot (2026-11-14)
+        brdmove = resolve_promotion(brdmove, board_before,
+                                    self.ask_promotion)
         out = {"accepted": False, "error": None, "player_move": brdmove,
                "computer_move": None, "check": False,
                "game_over": False, "result_text": None}
@@ -244,7 +267,7 @@ class ChessGame:
         self._put("go movetime " + str(settings.get("stockfish.movetime_ms",
                                                     CBstate.movetime)))
         text = self._sget()
-        smove = text[9:13]
+        smove = text.split()[1].lower() if len(text.split()) > 1 else ""
         if self.cb.addTextMove(smove) is False:
             out["error"] = "engine produced illegal move " + smove
             out["accepted"] = True          # player's move did land
@@ -290,7 +313,8 @@ class ChessGame:
             self._put("position startpos moves " + self.fmove)
         self._put("go movetime " + str(settings.get("stockfish.movetime_ms",
                                                     CBstate.movetime)))
-        smove = self._sget()[9:13]
+        _line = self._sget().split()
+        smove = _line[1].lower() if len(_line) > 1 else ""
         if self.cb.addTextMove(smove) is False:
             out["error"] = "engine produced illegal move " + smove
             return out
