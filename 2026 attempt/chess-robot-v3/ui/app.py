@@ -5902,9 +5902,17 @@ class AnalysisMoveScreen(kit.Screen):
     # engine line exploration (2026-10-24) ----------------------------------
     def _line_uci(self):
         """The engine's OWN line: the best play from the end of the previous
-        turn - what the player should have moved (2026-11-04)."""
-        return (self.move.get("line_uci")
-                or self.move.get("best_uci") or [])
+        turn - what the player should have moved (2026-11-04).  The FULL
+        line (2026-11-08).  The narrator's move dict used to drop the field
+        (2026-11-15): read it from the raw analysis too, so the complete
+        line is explored even before the next re-analysis lands."""
+        mv = self.move
+        if mv.get("line_uci"):
+            return mv["line_uci"]
+        for e in ((self.gpack.analysis or {}).get("moves") or []):
+            if e.get("ply") == mv.get("ply") and e.get("line_uci"):
+                return e["line_uci"]
+        return mv.get("best_uci") or []
 
     def _explore_toggle(self):
         if self._exploring:

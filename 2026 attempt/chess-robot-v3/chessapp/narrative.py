@@ -1496,6 +1496,7 @@ def per_move(analysis, seed=None):
                     "next_plies": m.get("next_plies", []),
                     "best_uci": m.get("best_uci", []),
                     "best_line": m.get("best_line") or {},
+                    "line_uci": m.get("line_uci") or [],
                     "wdl": m.get("wdl"), "quality": m.get("quality", ""),
                     "best": m.get("best"),
                     "eval_cp": m.get("eval_cp", 0),

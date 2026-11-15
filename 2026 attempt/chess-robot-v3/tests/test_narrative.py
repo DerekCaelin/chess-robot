@@ -233,7 +233,11 @@ def test_verdict_label_and_speech():
     from chessapp.narrative import per_move
     an = _fake_analysis()
     an["phases"] = [{"ply": 3, "to": "middlegame", "report": {}}]
+    an["moves"][0]["line_uci"] = ["e2e4", "e7e5", "g1f3"]
     pm = per_move(an, seed=9)
+    # the narrator carries the FULL engine line through (2026-11-15: it
+    # used to drop the field and the explore stopped at the 6-ply window)
+    assert pm[0]["line_uci"] == ["e2e4", "e7e5", "g1f3"], pm[0].get("line_uci")
     # every move carries the verdict for the label
     assert all("verdict" in m for m in pm)
     assert pm[0]["verdict"], pm[0]
