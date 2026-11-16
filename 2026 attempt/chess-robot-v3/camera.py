@@ -13,6 +13,7 @@
 
 import cv2
 import subprocess
+import time
 import os
 import threading
 
@@ -108,32 +109,62 @@ def _dev():
     return p if isinstance(p, str) else "/dev/video%d" % p
 
 
+def _get_ctrl(dev, name):
+    """Read one v4l2 control value, or None."""
+    try:
+        out = subprocess.run(["v4l2-ctl", "-d", dev, "--get-ctrl=" + name],
+                             capture_output=True, text=True,
+                             timeout=5).stdout
+        for ln in out.splitlines():
+            if ":" in ln:
+                return int(ln.split(":")[1].strip())
+    except Exception:
+        pass
+    return None
+
+
 def lock_camera():
-    """Pin exposure and white balance to fixed values.
+    """Pin exposure and white balance - to values that suit the room.
 
     Auto-exposure and auto white-balance drift between frames, which breaks
     background subtraction and colour models (the empty reference and the
     pieces capture would get different lighting).  Locking them is essential
-    for consistent piece detection.
+    for consistent piece detection.  2026-11-16: the lock used to pin a
+    fixed config value and the board went dark the moment the room's light
+    changed - the checker detector then had nothing to find.  The camera's
+    own auto exposure/white balance runs briefly first and the SETTLED
+    values are what get locked, so the lock matches the light in the room.
     """
     global _locked
     if _locked or not getattr(CBstate, "camera_lock", False):
         return
     dev = _dev()
-    pairs = [
-        ("auto_exposure", 1),  # 1 = manual
-        ("exposure_time_absolute", CBstate.camera_exposure),
-        ("white_balance_automatic", 0),
-        ("white_balance_temperature", CBstate.camera_white_balance),
-    ]
     try:
+        # let the sensor find this room's light
+        for name, val in (("auto_exposure", 0),        # auto
+                          ("white_balance_automatic", 1)):
+            subprocess.call(["v4l2-ctl", "-d", dev,
+                             "--set-ctrl=%s=%d" % (name, val)])
+        time.sleep(2.0)              # AE/AWB settle
+        exp = _get_ctrl(dev, "exposure_time_absolute")
+        wb = _get_ctrl(dev, "white_balance_temperature")
+        if not exp:
+            exp = CBstate.camera_exposure    # fall back to the config value
+        if not wb:
+            wb = CBstate.camera_white_balance
+        pairs = [
+            ("auto_exposure", 1),  # 1 = manual
+            ("exposure_time_absolute", int(exp)),
+            ("white_balance_automatic", 0),
+            ("white_balance_temperature", int(wb)),
+        ]
         for name, val in pairs:
             subprocess.call(["v4l2-ctl", "-d", dev,
                              "--set-ctrl=%s=%d" % (name, val)])
         _locked = True
         print("camera.lock_camera: exposure/wb locked "
-              "(exposure=%d, wb=%dK)" % (CBstate.camera_exposure,
-                                         CBstate.camera_white_balance))
+              "(exposure=%d, wb=%dK - matched to the room)"
+              % (exp, wb))
     except FileNotFoundError:
         print("camera.lock_camera: v4l2-ctl not found; camera controls NOT locked.")
     except Exception as e:

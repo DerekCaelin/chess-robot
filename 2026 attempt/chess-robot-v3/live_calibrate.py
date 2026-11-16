@@ -243,9 +243,12 @@ class CalibrationEngine:
     def detect(self, frame):
         self._shape = frame.shape
         h, w = frame.shape[:2]
-        t0 = time.time()
+        # monotonic clock: the Pi has no RTC and the wall clock jumps at
+        # NTP sync - the timing log once reported 50,000-second detects
+        # (2026-11-16)
+        t0 = time.monotonic()
         res = bd.detect_board(frame)
-        dt = time.time() - t0
+        dt = time.monotonic() - t0
         # timing + stage report (2026-11-05): the empty-board detection was
         # slow and nothing said where the time went
         n = getattr(self, "_log_n", 0)
