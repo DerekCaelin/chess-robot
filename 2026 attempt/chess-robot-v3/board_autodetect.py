@@ -29,6 +29,7 @@
 # possible 180-degree ambiguity (a1<->h8).  That is expected; the calibration
 # flow asks the user for a single A1 click in that case.
 
+import time
 import cv2
 import numpy as np
 
@@ -155,6 +156,9 @@ MIN_WINDOWS = 2        # a lone window cannot resolve even-square slides
 MIN_MERGED = 12        # min distinct lattice corners for a trustworthy fit
 
 
+_WINDOWS_BUDGET_S = 2.5      # s of wall clock for the partial-window search
+
+
 def _prep_variants(grey):
     """Contrast variants for the window search.  Background-division (pixel /
     heavily-blurred pixel) cancels lighting gradients that otherwise break the
@@ -176,6 +180,10 @@ def _detect_windows(img, max_windows=6):
     h, w = grey.shape
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
     windows = {}
+    # wall-clock budget (2026-11-16): on a frame with no board this loop
+    # crawled through 99 detector calls - 22 s on a desktop, 7 MINUTES on
+    # the loaded Pi.  Return whatever was found once the budget is gone.
+    deadline = time.monotonic() + _WINDOWS_BUDGET_S
 
     for prep_name, gg in _prep_variants(grey):
         for scale in (1.0, 0.75, 0.5):
@@ -183,6 +191,9 @@ def _detect_windows(img, max_windows=6):
                 gg, (int(w * scale), int(h * scale)),
                 interpolation=cv2.INTER_AREA)
             for pat in _PATTERNS:
+                if time.monotonic() > deadline:
+                    return sorted(windows.values(),
+                                  key=lambda t: -t[0].shape[0])[:max_windows]
                 if prep_name == "raw" and pat in ((7, 7), (7, 3)):
                     continue          # stage-1 already tried these
                 found, corners = cv2.findChessboardCorners(
@@ -433,20 +444,95 @@ def _resolve_windows(img, windows):
 
 def _lattice(peaks, n_lines=9):
     """Fit the 9 evenly-spaced lattice lines of a chessboard axis to the
-    detected seam positions, tolerating lines the grain ate. Returns the
-    full 9-line list or None."""
-    peaks = sorted(int(p) for p in peaks)
-    if len(peaks) < 4:
+    detected seam positions.  Robust to spurious peaks (the table's grain
+    adds some) AND to missing ones (the grain eats some): every pair of peaks
+    is tried as two of the 9 lines and the lattice most peaks agree with wins
+    (2026-11-16 - the old first-to-last fit failed the moment ONE extra seam
+    peak appeared anywhere in the profile, which is what kept the tone board
+    from ever being detected).  Supported lines then snap onto their actual
+    seam peak and the rest are interpolated, so slightly non-uniform
+    (perspective) spacing still lands on the seams.  Returns the full 9-line
+    list or None."""
+    pk = np.array(sorted(int(p) for p in peaks), dtype=np.float64)
+    if len(pk) < 4:
         return None
-    span = peaks[-1] - peaks[0]
-    n = n_lines - 1
-    pitch = span / float(n)
-    err = 0.0
-    for p in peaks:
-        err += abs(peaks[0] + round((p - peaks[0]) / pitch) * pitch - p)
-    if err > 1.0 * pitch:             # the peaks are not this lattice
+    best = None                       # (key, lines)
+    for i in range(len(pk)):
+        for j in range(i + 1, len(pk)):
+            for d in range(1, n_lines):
+                pitch = (pk[j] - pk[i]) / float(d)
+                if not 12.0 <= pitch <= 320.0:
+                    continue
+                # every comb line around the peak range
+                k0 = int(np.floor((pk[0] - pk[i]) / pitch)) - 1
+                k1 = int(np.ceil((pk[-1] - pk[i]) / pitch)) + 1
+                comb = pk[i] + np.arange(k0, k1 + 1) * pitch
+                if len(comb) < n_lines:
+                    continue
+                tol = 0.25 * pitch
+                dmat = np.abs(pk[:, None] - comb[None, :])
+                near = dmat <= tol     # a peak is near at most one line
+                lin_has = near.any(axis=0)
+                dmin = dmat.min(axis=1)
+                inl = dmin <= tol
+                if int(inl.sum()) < 6:
+                    continue
+                nearest = dmat.argmin(axis=1)
+                lin_err = np.bincount(nearest[inl], weights=dmin[inl],
+                                      minlength=len(comb))
+                csup = np.concatenate(([0], lin_has.astype(np.int32).cumsum()))
+                cerr = np.concatenate(([0], lin_err.cumsum()))
+                win_sup = csup[n_lines:] - csup[:-n_lines]
+                win_err = cerr[n_lines:] - cerr[:-n_lines]
+                smax = int(win_sup.max())
+                if smax < 6:
+                    continue
+                cand = np.flatnonzero(win_sup == smax)
+                st = int(cand[np.argmin(win_err[cand])])
+                outer = int(lin_has[st]) + int(lin_has[st + n_lines - 1])
+                key = (smax, outer, -float(win_err[st]))
+                if best is None or key > best[0]:
+                    best = (key, comb[st:st + n_lines])
+    if best is None:
         return None
-    return [peaks[0] + k * pitch for k in range(n_lines)]
+    lines = best[1]
+    # snap each line to its nearest unused seam peak (within a quarter pitch)
+    pitch = float(lines[1] - lines[0])
+    tol = 0.25 * pitch
+    out = [None] * n_lines
+    used = set()
+    for k, ln in enumerate(lines):
+        bp, bd_ = None, tol
+        for pi, p in enumerate(pk):
+            if pi in used:
+                continue
+            dd = abs(p - ln)
+            if dd <= bd_:
+                bp, bd_ = pi, dd
+        if bp is not None:
+            out[k] = float(pk[bp])
+            used.add(bp)
+    known = [k for k, v in enumerate(out) if v is not None]
+    if len(known) < 2:
+        return None
+    # lines whose seam is missing: interpolate, extrapolating at the ends
+    for k in range(n_lines):
+        if out[k] is not None:
+            continue
+        before = [b for b in known if b < k]
+        after = [a for a in known if a > k]
+        if before and after:
+            b, a = before[-1], after[0]
+            out[k] = out[b] + (out[a] - out[b]) * (k - b) / float(a - b)
+        elif len(before) >= 2:
+            b1, b2 = before[-1], before[-2]
+            out[k] = out[b1] + (out[b1] - out[b2]) * (k - b1) / float(b1 - b2)
+        elif len(after) >= 2:
+            a1, a2 = after[0], after[1]
+            out[k] = out[a1] + (out[a1] - out[a2]) * (k - a1) / float(a1 - a2)
+        else:
+            return None
+    return out
 
 
 def _line_peaks(mask, axis):
@@ -466,11 +552,45 @@ def _line_peaks(mask, axis):
     return out
 
 
-def _seam_parity(grey, pts):
+def _seam_saddles(plane, pts, cell):
+    """How many of the lattice's internal intersections look like real
+    checker corners (0..1).  At a true corner the two diagonal quadrant
+    pairs match each other and differ from the other pair; a lattice whose
+    LINES drift off the seams scores near 0 even when its squares still
+    alternate (2026-11-16: a wrong-pitch lattice over a printed checker
+    kept parity at 1.0 - the cell medians keep alternating while the lines
+    slide off the corners; the saddle score saw it at 0.33 vs 0.88)."""
+    v = pts.reshape(7, 7, 2)
+    r = max(3, int(cell / 6))
+    m = r // 2
+    ok = tot = 0
+    for y in range(7):
+        for x in range(7):
+            cx, cy = int(v[y][x][0]), int(v[y][x][1])
+            x0, x1, y0, y1 = cx - r, cx + r, cy - r, cy + r
+            if x0 < 0 or y0 < 0 or x1 >= plane.shape[1] or y1 >= plane.shape[0]:
+                continue
+            tl = float(plane[y0:cy - m, x0:cx - m].mean())
+            tr = float(plane[y0:cy - m, cx + m:x1].mean())
+            bl = float(plane[cy + m:y1, x0:cx - m].mean())
+            br = float(plane[cy + m:y1, cx + m:x1].mean())
+            sep = abs((tl + br) - (tr + bl)) / 2.0
+            spread = max(abs(tl - br), abs(tr - bl), 1.0)
+            tot += 1
+            if sep > spread:
+                ok += 1
+    return ok / float(tot) if tot else 0.0
+
+
+def _seam_parity(plane, pts):
     """How checkerboard-like the lattice's squares actually are (0..1):
     the share of adjacent square pairs that agree on light/dark parity.
     A seam grid in ordinary wood scores near 0.5; the gold board's tone
-    parity scores ~0.98 even though its brightness contrast is tiny."""
+    parity scores ~0.98 even though its brightness contrast is tiny.
+    `plane` is any single-channel image the families separate in - grey,
+    LAB-a*, ... - and the score is polarity-free (2026-11-16): WHICH family
+    reads higher depends on the board and the light, so both assignments are
+    scored and the better one kept."""
     v = pts.reshape(7, 7, 2)
     cells = []
     for r in range(8):
@@ -487,10 +607,10 @@ def _seam_parity(grey, pts):
             x0, x1 = int(min(xs) + 6), int(max(xs) - 6)
             y0, y1 = int(min(ys) + 6), int(max(ys) - 6)
             if x1 <= x0 or y1 <= y0 or y0 < 0 or x0 < 0 \
-                    or y1 >= grey.shape[0] or x1 >= grey.shape[1]:
+                    or y1 >= plane.shape[0] or x1 >= plane.shape[1]:
                 row.append(None)
                 continue
-            row.append(float(np.median(grey[y0:y1, x0:x1])))
+            row.append(float(np.median(plane[y0:y1, x0:x1])))
         cells.append(row)
     ok = tot = 0
     for r in range(8):
@@ -502,7 +622,10 @@ def _seam_parity(grey, pts):
                     tot += 1
                     if (cells[r][c] > cells[rr][cc]) == ((r + c) % 2 == 0):
                         ok += 1
-    return ok / float(tot) if tot else 0.0
+    if not tot:
+        return 0.0
+    sc = ok / float(tot)
+    return max(sc, 1.0 - sc)
 
 
 def _detect_seam_lattice(img):
@@ -514,7 +637,14 @@ def _detect_seam_lattice(img):
     checkerboard detector - classic or SB - sees only noise.  The SEAMS
     between the squares, however, binarise cleanly.  Extract the seam grid,
     fit the 9x9 lattice through it (tolerating lines the grain ate), and
-    intersect it into the 7x7 internal corners."""
+    intersect it into the 7x7 internal corners.
+
+    2026-11-16: each axis's profile is re-extracted INSIDE the other axis's
+    board extent and refitted - the table's clutter beside the board puts
+    seam-like peaks along the board's own rows/columns and the polluted
+    profile fit the wrong lattice (on the real failing frame the vertical
+    fit was right while the horizontal one locked onto the table and
+    squashed the board by 50 px)."""
     grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     # the seams are thin dark lines: the adaptive threshold sees them (the
     # square tones are too close to split, and that is exactly the point)
@@ -524,6 +654,20 @@ def _detect_seam_lattice(img):
     seams = 255 - th                  # seam pixels are white now
     vert = _lattice(_line_peaks(seams, 0))
     horiz = _lattice(_line_peaks(seams, 1))
+    for _ in range(2):
+        if vert is None or horiz is None:
+            break
+        band = seams.copy()           # columns of the board only
+        x0 = max(0, int(vert[0]) - 12)
+        band[:, :x0] = 0
+        band[:, int(vert[-1]) + 13:] = 0
+        h2 = _lattice(_line_peaks(band, 1))
+        band = seams.copy()           # rows of the board only
+        y0 = max(0, int(horiz[0]) - 12)
+        band[:y0] = 0
+        band[int(horiz[-1]) + 13:] = 0
+        v2 = _lattice(_line_peaks(band, 0))
+        vert, horiz = (v2 or vert), (h2 or horiz)
     if vert is None or horiz is None:
         return None
     # the 7x7 INTERNAL corners: the inner grid lines' intersections
@@ -532,11 +676,31 @@ def _detect_seam_lattice(img):
     cv2.cornerSubPix(grey, pts, (11, 11), (-1, -1),
                      (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
                       30, 0.001))
-    # the lattice must BE a checkerboard, not just a grid: ordinary wood
-    # seams score near 0.5, tone-parity boards score high
-    if _seam_parity(grey, pts) < 0.62:
+    # the lattice must BE a checkerboard, not just a grid, and sit ON it.
+    # Two gates, each scored on every plane the families may separate in -
+    # greyscale AND the LAB chroma planes (2026-11-16: the tone board's
+    # families OVERLAP in greyscale, gap 20.6 vs spread 13.7, but split
+    # cleanly in chroma, a* ratio 2.0 - grey-only parity rejected the very
+    # board this path was built for):
+    #   parity  - ordinary wood seams score near 0.5, tone boards high.
+    #   saddles - the lines must meet at the real corners; a wrong-pitch
+    #             lattice on the plank-grain tables kept parity at 1.0.
+    # Below either gate the classic paths get their turn, exactly as before.
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    planes = (grey, lab[:, :, 1], lab[:, :, 2])
+    if max(_seam_parity(pl, pts) for pl in planes) < 0.70:
         return None
-    return pts
+    cell = ((vert[-1] - vert[0]) + (horiz[-1] - horiz[0])) / 16.0
+    if max(_seam_saddles(pl, pts, cell) for pl in planes) < 0.80:
+        return None
+    # the outer corners are the OUTER SEAM LINES' intersections - directly
+    # observed (2026-11-16).  The homography extrapolation the window path
+    # needs ran ~10 px wide here: it projects the internal grid outward and
+    # the lens distortion beyond the grid bends the real corners back in.
+    corners = np.array([[vert[0], horiz[0]], [vert[-1], horiz[0]],
+                        [vert[-1], horiz[-1]], [vert[0], horiz[-1]]],
+                       dtype=np.float32)
+    return _order_clockwise(corners)
 
 
 _DEBUG_FAILS = [0]
@@ -583,13 +747,7 @@ def detect_corners(img):
     # the calibration take minutes. The parity validation keeps ordinary
     # wood from false-triggering, so the classic paths still get their turn.
     try:
-        pts = _detect_seam_lattice(img)
-        if pts is not None:
-            corners = _outer_from_homography(
-                pts, [float(i) for i in range(1, 8)],
-                [float(i) for i in range(1, 8)])
-        else:
-            corners = None
+        corners = _detect_seam_lattice(img)   # ordered corners or None
     except Exception:
         corners = None
     if corners is not None and _valid(corners, w, h):
