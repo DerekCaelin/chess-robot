@@ -258,15 +258,29 @@ class CalibrationEngine:
                   "| misses=%d" % (dt * 1000, res is not None,
                                    self.stab.committed is not None,
                                    self.stab.misses), flush=True)
+        if res is None and n % 30 == 0:
+            print("calibration.detect: frame mean=%.0f (128=ideal) "
+                  "blown=%.0f%%" % (float(cv2.cvtColor(
+                      frame, cv2.COLOR_BGR2GRAY).mean()),
+                      float((cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) >= 250)
+                            .mean()) * 100.0), flush=True)
         if res is None:
             self._dump_fail(frame)
         if res is not None:
             res = name_by_position(res)
         self.raw_found = res is not None
         self.stab.feed(res, w, h)
+        # frame metrics too (2026-11-16): they tell a BAD IMAGE (too dark
+        # / washed out) apart from the algorithm failing on a good one -
+        # the whole underexposure detour proved how blind the log was
+        grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        mean = float(grey.mean())
+        blown = float((grey >= 250).mean()) * 100.0
         tlog("detect #%d: %.0f ms | found=%s | committed=%s | misses=%d"
+             " | mean=%.0f blown=%.0f%%"
              % (n, dt * 1000, res is not None,
-                self.stab.committed is not None, self.stab.misses))
+                self.stab.committed is not None, self.stab.misses,
+                mean, blown))
         if self.pending_click is not None and self.stab.committed is not None:
             self.stab.reorient(_apply_a1_click(self.stab.committed,
                                                self.pending_click,
