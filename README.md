@@ -76,3 +76,12 @@ earlier versions in this repository. Who wrote what:
 Derived files carry per-file headers saying which parts are whose, and the
 git history (2022–2026) documents the evolution commit by commit.
 
+### Not included in this repository
+
+Runtime state and local models are deliberately kept out of git (see
+`.gitignore`): camera captures (`images/*.jpg`), calibration state,
+game/settings JSON, and the **voice models** (`data/voices`,
+`data/voice_samples`, ~150 MB). The phrase voices are generated on the
+target machine with `tools/harvest_phrases.py` and the speech prewarm
+(see `chessapp/speech.py` and `tests/test_prewarm.py`).
+

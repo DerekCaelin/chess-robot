@@ -1,4 +1,36 @@
+# --- Richard's original entries ---
 version2/test.py
 version2/__pycache*
 version2/.idea*
 notes.txt
+
+# --- virtual environments (never commit these) ---
+.venv/
+**/.venv/
+versiongui/chessbot/
+version2/lib/
+
+# --- bytecode & IDE ---
+__pycache__/
+*.pyc
+.idea/
+
+# --- runtime state, captures and models (local only; regenerate at runtime) ---
+# Voice models are generated on the target machine - see the README note.
+2026 attempt/chess-robot-v3/data/voices/
+2026 attempt/chess-robot-v3/data/voice_samples/
+2026 attempt/chess-robot-v3/data/*.json
+2026 attempt/chess-robot-v3/data/*.log
+2026 attempt/chess-robot-v3/data/*.txt
+2026 attempt/chess-robot-v3/data/analysis/
+2026 attempt/chess-robot-v3/data/analysis*/
+2026 attempt/chess-robot-v3/images/*.jpg
+2026 attempt/chess-robot-v3/images/*.npy
+2026 attempt/chess-robot-v3/images/*.npz
+2026 attempt/chess-robot-v3/images/*.log
+2026 attempt/chess-robot-v3/images/*.wav
+2026 attempt/chess-robot-v3/images/*.bak
+2026 attempt/chess-robot-v3/images/nudge.txt
+2026 attempt/chess-robot-v3/images/filepath
+2026 attempt/chess-robot-v3/fishimages/
+2026 attempt/chess-robot-v3/HANDOFF.md
