@@ -47,15 +47,18 @@ On RPi install fswebcam, aplay
 The 2026 build (`2026 attempt/chess-robot-v3/`) merges and extends the
 earlier versions in this repository. Who wrote what:
 
-- **Richard Day** (chess@gotobiz.co.uk) — the foundational code: robot
-  movement, board reading and kinematics (`robotmove.py`, `main.py`,
-  `inversekinematics.py`, `calibrate_fisheye.py`, most of `CBstate.py`,
-  `CBint.py`, `playermove_rpd.py`, `LEGO_Chess_rpd.py`), evolved from his
-  `version1-old` / `version2` / `versiongui` / `ALD5` versions (with credit
-  to www.chess.fortherapy.co.uk for parts of the original). Distributed
-  with his permission: *"Feel free to distribute the code, as long as it
-  contains my copyright statements and the classification that it or
-  anything developed from it cannot be sold without my agreement."*
+- **Richard Day** (`rpd123` on GitHub, chess@gotobiz.co.uk) — the
+  foundational code: robot movement, board reading and kinematics
+  (`robotmove.py`, `main.py`, `inversekinematics.py`, `calibrate_fisheye.py`,
+  most of `CBstate.py`, `CBint.py`, `playermove_rpd.py`,
+  `LEGO_Chess_rpd.py`), evolved from his `version1-old` / `version2` /
+  `versiongui` / `ALD5` versions (with credit to www.chess.fortherapy.co.uk
+  for parts of the original). Original repository:
+  https://github.com/rpd123/chess-robot (Arduino firmware:
+  https://github.com/rpd123/Arduino-Firmware). Distributed with his
+  permission: *"Feel free to distribute the code, as long as it contains
+  my copyright statements and the classification that it or anything
+  developed from it cannot be sold without my agreement."*
   **This code, and anything developed from it, must not be sold without
   Richard Day's agreement.**
 - **John Eriksson** — `ChessBoard.py`, ChessBoard v2.05, GNU GPL
