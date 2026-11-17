@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 #
 # AL5D robot arm module for the merged chess robot.
-# Original: copyright 2018 Richard Day, chess@gotobiz.co.uk
+# Original by Richard Day:
+#   This module copyright 2018 Richard Day, chess@gotobiz.co.uk
+#   This code must not be resold, or redistributed in any way without express permission
+# The 2026 extensions were written by a coding agent under the direction of
+# Derek Caelin (see README.md, "Credits & provenance").
 #
 # Changes from original:
 #   - calibrate_angle(): interactive Gfudge calibration at startup

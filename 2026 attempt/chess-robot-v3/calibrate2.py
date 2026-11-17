@@ -1,3 +1,5 @@
+# Copyright 2026 Derek Caelin - written by a coding agent under his direction.
+# Licensing and credits: see README.md, "Credits & provenance".
 from __future__ import print_function  # use python 3 syntax but make it compatible with python 2
 import os
 import sys

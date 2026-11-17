@@ -1,7 +1,10 @@
 # Vision / board-reading module
 #
-# Original ALD5 version: copyright 2018 Richard Day, chess@gotobiz.co.uk
-# versiongui upgrades merged in for the AL5D build.
+# Original ALD5 version by Richard Day:
+#   This module copyright 2018 Richard Day, chess@gotobiz.co.uk
+#   This code must not be resold, or distributed in any way without express permission
+# versiongui upgrades merged in for the AL5D build.  The 2026 extensions were
+# written by a coding agent under the direction of Derek Caelin (see README.md).
 #
 # Key improvement over ALD5 original:
 #   Uses *separate* white/black thresholds for pieces sitting on dark squares

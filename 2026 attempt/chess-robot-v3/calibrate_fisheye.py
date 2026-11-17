@@ -1,3 +1,6 @@
+# Richard Day's fisheye-calibration script (light 2026 edits).
+#   This module copyright 2018, 2022 Richard Day, chess@gotobiz.co.uk
+#   This code must not be resold, or redistributed in any way without express permission
 #Calibrate fisheye camera
 import cv2
 print ("cv2 version is " + cv2.__version__)

@@ -1,3 +1,5 @@
+# Copyright 2026 Derek Caelin - written by a coding agent under his direction.
+# Licensing and credits: see README.md, "Credits & provenance".
 # camera.py
 #
 # Shared webcam capture helper.

@@ -1,3 +1,5 @@
+# Copyright 2026 Derek Caelin - written by a coding agent under his direction.
+# Licensing and credits: see README.md, "Credits & provenance".
 # board_state.py
 #
 # Reads images/4.jpg and saves images/board_state.jpg — a labelled view of

@@ -1,3 +1,7 @@
+# Portions derived from Richard Day's CBstate.py (github.com/rpd123/chess-robot).
+#   Portions copyright 2018, 2022 Richard Day, chess@gotobiz.co.uk
+#   This code must not be resold, or redistributed in any way without express permission
+# 2026 additions written by a coding agent under the direction of Derek Caelin.
 import os
 import platform
 import logging

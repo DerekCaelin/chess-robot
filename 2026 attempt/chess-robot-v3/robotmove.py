@@ -2,6 +2,7 @@
 #
 # This module copyright 2018, 2022 Richard Day, chess@gotobiz.co.uk
 # This code must not be resold, or redistributed in any way without express permission
+# Minor 2026 edits by Derek Caelin (see README.md, "Credits & provenance").
 
 
 import CBstate 

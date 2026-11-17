@@ -5,6 +5,11 @@
 # startup calibration prompts, arm init, and the hands-free play loop.
 #
 # Credit to chess.fortherapy.co.uk for much of the original code here.
+#
+# Portions derived from Richard Day's CBint.py (github.com/rpd123/chess-robot):
+#   This module copyright 2018, 2022 Richard Day, chess@gotobiz.co.uk
+#   This code must not be resold, or redistributed in any way without express permission
+# 2026 rewrite by a coding agent under the direction of Derek Caelin.
 
 import os
 import sys

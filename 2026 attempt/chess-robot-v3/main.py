@@ -1,3 +1,6 @@
+# Verbatim module by Richard Day from his chess-robot repo (versiongui).
+#   This module copyright 2018, 2022 Richard Day, chess@gotobiz.co.uk
+#   This code must not be resold, or redistributed in any way without express permission
 import CBstate
 mydir = CBstate.mydir
 

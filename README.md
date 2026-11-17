@@ -40,3 +40,36 @@ pip install pillow
 pip install psutil  
 On RPi install fswebcam, aplay
 
+---
+
+## Credits & provenance (section added in 2026)
+
+The 2026 build (`2026 attempt/chess-robot-v3/`) merges and extends the
+earlier versions in this repository. Who wrote what:
+
+- **Richard Day** (chess@gotobiz.co.uk) — the foundational code: robot
+  movement, board reading and kinematics (`robotmove.py`, `main.py`,
+  `inversekinematics.py`, `calibrate_fisheye.py`, most of `CBstate.py`,
+  `CBint.py`, `playermove_rpd.py`, `LEGO_Chess_rpd.py`), evolved from his
+  `version1-old` / `version2` / `versiongui` / `ALD5` versions (with credit
+  to www.chess.fortherapy.co.uk for parts of the original). Distributed
+  with his permission: *"Feel free to distribute the code, as long as it
+  contains my copyright statements and the classification that it or
+  anything developed from it cannot be sold without my agreement."*
+  **This code, and anything developed from it, must not be sold without
+  Richard Day's agreement.**
+- **John Eriksson** — `ChessBoard.py`, ChessBoard v2.05, GNU GPL
+  (unmodified; its own header applies).
+- **"scharette" (2017)** — `lib_al5_2D_IK.py`, the AL5 2D
+  inverse-kinematics example.
+- **Derek Caelin** — copyright 2026: the camera-calibration and vision
+  pipeline (`board_autodetect.py`, `board_calibrate.py`, `board_state.py`,
+  `calibrate2.py`, `camera.py`, `check_orientation.py`,
+  `live_calibrate.py`, `piece_detect.py`), the touchscreen UI (`ui/`), the
+  application layer (`chessapp/`), tests and tooling. These were written
+  by a coding agent under my direction; I am responsible for their design,
+  review and testing.
+
+Derived files carry per-file headers saying which parts are whose, and the
+git history (2022–2026) documents the evolution commit by commit.
+
