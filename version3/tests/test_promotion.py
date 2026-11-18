@@ -8,7 +8,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from chessapp.game_controller import resolve_promotion   # noqa: E402
+from chessapp.game_controller import (resolve_promotion,   # noqa: E402
+                                      promo_piece)
 
 fails = []
 
@@ -46,6 +47,15 @@ check(resolve_promotion("e7e8q", w) == "e7e8q", "a full UCI was rewritten")
 nonpawn = board_with([("e7", "Q")])
 check(resolve_promotion("e7e8", nonpawn) == "e7e8",
       "a queen move was rewritten")
+
+# the ROBOT's own promotion: promo_piece drives the spoken line and the
+# swap-in-the-piece modal (2026-11-18)
+check(promo_piece("e7e8q") == "q", "promo_piece missed an engine promotion")
+check(promo_piece("e7e8n") == "n", "promo_piece missed an underpromotion")
+check(promo_piece("e7e8Q") == "q", "promo_piece is not case-insensitive")
+check(promo_piece("e7e8") is None, "promo_piece saw a promotion in a quiet move")
+check(promo_piece("e1g1") is None, "promo_piece saw a promotion in castling")
+check(promo_piece("e7e8x") is None, "promo_piece accepted a bogus piece")
 
 print("promotion FAILS:" if fails else
       "PASS: promotions carry their piece (default queen, prompt wins)")

@@ -6890,6 +6890,7 @@ class GameScreen(kit.Screen):
         self.last = None
         self.game = ChessGame(use_robot=True,
                               ask_promotion=self._ask_promotion,
+                              on_promo_swap=self._confirm_swap,
                               on_status=lambda s: self.q.put(("toast", s)),
                               on_player_move=lambda mv: self.q.put(
                                   ("plyr", mv)),
@@ -7121,6 +7122,8 @@ class GameScreen(kit.Screen):
                     self.turn_lbl.configure(text=self._robot_move_txt())
                 elif kind == "askpromo":
                     ev[1]()          # open the promotion prompt (Tk thread)
+                elif kind == "promo_swap":
+                    ev[1]()          # the swap-the-piece prompt (Tk thread)
                 elif kind == "turn":
                     self._close_prep()
                     self._stop_thinking()
@@ -7489,6 +7492,33 @@ class GameScreen(kit.Screen):
             kit.btn(row, kit.GLYPH[k], pick(k), size="l",
                     kind="secondary",
                     width_px=110).pack(side="left", padx=6)
+
+    def _confirm_swap(self, move):
+        """The ROBOT promoted (2026-11-18): the arm only carries the pawn to
+        the last rank, so the player swaps in the promoted piece by hand.
+        The worker blocks here - the monitor stays paused over the swap -
+        until OK; the game goes on quietly after 120 s, like the promotion
+        prompt."""
+        import threading
+        ev = threading.Event()
+        self.q.put(("promo_swap", lambda: self._open_swap(move, ev)))
+        ev.wait(timeout=120)
+
+    def _open_swap(self, move, ev):
+        p = move[4].lower() if len(move) > 4 else "q"
+        names = {"q": "queen", "r": "rook", "b": "bishop", "n": "knight"}
+        m = kit.Modal(self.app, "Promotion")
+        tk.Label(m.body, text=kit.GLYPH.get(p, "Q"), font=kit.F_TITLE,
+                 bg=kit.CARD, fg=kit.ACCENT).pack(pady=(0, 4))
+        tk.Label(m.body,
+                 text="Swap the pawn on %s for a %s. Tap OK when done."
+                      % (move[2:4], names.get(p, "queen")),
+                 font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
+                 wraplength=420, justify="center").pack(pady=(0, 10))
+        row = tk.Frame(m.body, bg=kit.CARD)
+        row.pack()
+        kit.btn(row, "OK", lambda: (ev.set(), m.close()), size="m",
+                kind="confirm").pack(padx=8)
 
     def _takeback(self):
         """Request a takeback: the worker thread does the undo + engine resync

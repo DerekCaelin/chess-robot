@@ -24,6 +24,18 @@ from chessapp.graveyard import GraveMemory, captured_on
 import CBstate
 
 
+PIECE_WORDS = {"q": "queen", "r": "rook", "b": "bishop", "n": "knight"}
+
+
+def promo_piece(smove):
+    """The promotion piece of an engine move in UCI ('e7e8q' -> 'q'), or
+    None for an ordinary move (2026-11-18): the spoken line and the
+    swap-in-the-piece prompt both need it."""
+    if len(smove) == 5 and smove[4].lower() in PIECE_WORDS:
+        return smove[4].lower()
+    return None
+
+
 def resolve_promotion(brdmove, board, ask=None):
     """A pawn reaching the last rank MUST carry its piece ('e7e8q').  The
     vision reports squares, not piece types, so the 4-char monitor message
@@ -48,12 +60,13 @@ class ChessGame:
         "Ambiguous move")
 
     def __init__(self, on_speak=None, on_status=None, on_board=None,
-                 ask_promotion=None,
+                 ask_promotion=None, on_promo_swap=None,
                  on_player_move=None, on_computer_move=None,
                  use_robot=True):
         self.on_speak = on_speak
         self.on_status = on_status
         self.ask_promotion = ask_promotion
+        self.on_promo_swap = on_promo_swap
         self.grave = GraveMemory()
         self.on_board = on_board
         self.on_player_move = on_player_move
@@ -278,7 +291,10 @@ class ChessGame:
         self.movelist.append(smove)
         out.update(accepted=True, computer_move=smove)
         self._status("Robot: " + smove)
-        self._speak("I move " + smove[0:2] + " to " + smove[2:4])
+        pp = promo_piece(smove)
+        self._speak("I move %s to %s%s"
+                    % (smove[0:2], smove[2:4],
+                       " and promote to " + PIECE_WORDS[pp] if pp else ""))
         CBstate.cbstate = self.cb.getLastMoveType()   # feeds castling/en-passant
         if self.on_computer_move:    # show text+board NOW, before the arm
             try:                     # physically plays the move (was after)
@@ -301,6 +317,10 @@ class ChessGame:
         self._checkvarious(out)
         self._persist()
         self._notify_board()
+        if self.on_promo_swap and promo_piece(smove):
+            # the arm carried the PAWN to the last rank (2026-11-18): the
+            # player swaps in the promoted piece by hand - modal + pause
+            self.on_promo_swap(smove)
         return out
 
     def engine_first_move(self):
@@ -344,6 +364,10 @@ class ChessGame:
         self._checkvarious(out)
         self._persist()
         self._notify_board()
+        if self.on_promo_swap and promo_piece(smove):
+            # the arm carried the PAWN to the last rank (2026-11-18): the
+            # player swaps in the promoted piece by hand - modal + pause
+            self.on_promo_swap(smove)
         return out
 
     def _RD_update(self, brdmove, board_before):
