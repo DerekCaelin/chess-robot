@@ -269,6 +269,18 @@ def restore(snap):
 # keys exposed to the "Direct input" screen:
 #   (dotted key, label, min, max, step, plain-language definition)
 EDITABLE = [
+    ("arm.A", "Arm link A (shoulder-elbow in)", 3.0, 12.0, 0.025,
+     "The upper arm length in inches, shoulder joint to elbow joint - "
+     "MEASURE THE PHYSICAL ARM, pivot to pivot. The IK turns every reach "
+     "and height into servo angles with this and B, and they also set the "
+     "arm's maximum reach (A+B). Set these two FIRST: changing either "
+     "invalidates the board, piece and capture-drop calibrations, which "
+     "were all measured through the old model."),
+    ("arm.B", "Arm link B (elbow-wrist in)", 4.0, 16.0, 0.025,
+     "The forearm length in inches, elbow joint to wrist joint, pivot to "
+     "pivot - measure the physical arm. Used with A by the IK and the "
+     "reach limits. Changing it invalidates existing calibrations - see "
+     "A."),
     ("arm.gfudge", "Base angle offset (deg)", -30.0, 30.0, 0.1,
      "Rotates where the arm points around its base, in degrees. Positive "
      "Gfudge (+) swings the gripper toward the a-file; negative Gfudge "
