@@ -15,7 +15,7 @@ exist). Console only.
    straight onto the LAN and every later step is `pi@chesspi` - no IP
    hunting. With the enable-verify write, always tick **verify**.
 1. Copy this repo to the Pi **once** (any way you like, e.g. from the PC):
-   `scp -r chess-robot-v3 pi@chesspi:~/chess/`
+   `scp -r version3 pi@chesspi:~/chess/chess-robot-v3`
 2. `cd ~/chess/chess-robot-v3 && bash pi/install_pi.sh`
 3. raspi-config: 2 Boot Options -> B2 Console autologin.
 4. `sudo reboot` -> kiosk UI should appear on the touch screen (boot.sh loop

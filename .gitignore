@@ -1,14 +1,14 @@
-# --- Richard's original entries ---
-version2/test.py
-version2/__pycache*
-version2/.idea*
+# --- Richard's original entries (paths under previous versions/) ---
+previous versions/version2/test.py
+previous versions/version2/__pycache*
+previous versions/version2/.idea*
 notes.txt
 
 # --- virtual environments (never commit these) ---
 .venv/
 **/.venv/
-versiongui/chessbot/
-version2/lib/
+previous versions/versiongui/chessbot/
+previous versions/version2/lib/
 
 # --- bytecode & IDE ---
 __pycache__/
@@ -19,23 +19,23 @@ __pycache__/
 # The default espeak voice's cooked phrases SHIP with the repo (tiny, and the
 # app must speak out of the box); the piper models and the other voices'
 # phrases/samples are generated on the target machine - see the README note.
-2026 attempt/chess-robot-v3/data/voices/*
-!2026 attempt/chess-robot-v3/data/voices/phrases/
-2026 attempt/chess-robot-v3/data/voices/phrases/*
-!2026 attempt/chess-robot-v3/data/voices/phrases/espeak/
-2026 attempt/chess-robot-v3/data/voice_samples/
-2026 attempt/chess-robot-v3/data/*.json
-2026 attempt/chess-robot-v3/data/*.log
-2026 attempt/chess-robot-v3/data/*.txt
-2026 attempt/chess-robot-v3/data/analysis/
-2026 attempt/chess-robot-v3/data/analysis*/
-2026 attempt/chess-robot-v3/images/*.jpg
-2026 attempt/chess-robot-v3/images/*.npy
-2026 attempt/chess-robot-v3/images/*.npz
-2026 attempt/chess-robot-v3/images/*.log
-2026 attempt/chess-robot-v3/images/*.wav
-2026 attempt/chess-robot-v3/images/*.bak
-2026 attempt/chess-robot-v3/images/nudge.txt
-2026 attempt/chess-robot-v3/images/filepath
-2026 attempt/chess-robot-v3/fishimages/
-2026 attempt/chess-robot-v3/HANDOFF.md
+version3/data/voices/*
+!version3/data/voices/phrases/
+version3/data/voices/phrases/*
+!version3/data/voices/phrases/espeak/
+version3/data/voice_samples/
+version3/data/*.json
+version3/data/*.log
+version3/data/*.txt
+version3/data/analysis/
+version3/data/analysis*/
+version3/images/*.jpg
+version3/images/*.npy
+version3/images/*.npz
+version3/images/*.log
+version3/images/*.wav
+version3/images/*.bak
+version3/images/nudge.txt
+version3/images/filepath
+version3/fishimages/
+version3/HANDOFF.md

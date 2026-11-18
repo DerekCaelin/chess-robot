@@ -4,10 +4,9 @@ A 3D-printed chess robot: a Raspberry Pi (or any Linux/Windows PC) drives
 a camera and a robot arm, shows a touchscreen UI, and plays chess with
 Stockfish.
 
-The current build lives in `2026 attempt/chess-robot-v3/` - run every
-command below from that directory. The repository root also holds earlier
-builds and hardware notes, kept for provenance and reference; you can
-ignore them. Requires Python 3 (tested with 3.12).
+The current build lives in `version3/` - run every command below from that
+directory. Earlier builds live in `previous versions/`, kept for provenance
+and reference; you can ignore them. Requires Python 3 (tested with 3.12).
 
 ## Hardware
 
@@ -86,7 +85,7 @@ packages above.
 
 ## Credits, provenance & licensing
 
-The 2026 build (`2026 attempt/chess-robot-v3/`) merges and extends the
+The 2026 build (`version3/`) merges and extends the
 earlier versions in this repository. Who wrote what:
 
 - **Richard Day** (`rpd123` on GitHub, chess@gotobiz.co.uk) — the
@@ -94,7 +93,7 @@ earlier versions in this repository. Who wrote what:
   (`robotmove.py`, `main.py`, `inversekinematics.py`, `calibrate_fisheye.py`,
   most of `CBstate.py`, `CBint.py`, `playermove_rpd.py`,
   `LEGO_Chess_rpd.py`), evolved from his earlier versions in this
-  repository (`versiongui`, `ALD5`, and others; with credit to
+  repository (`previous versions/` and `ALD5/`; with credit to
   www.chess.fortherapy.co.uk for parts of the original). Original
   repository:
   https://github.com/rpd123/chess-robot (Arduino firmware:

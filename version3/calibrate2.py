@@ -7,7 +7,7 @@ import pygame
 from PIL import Image
 
 filepath = os.path.normpath(
-    "/home/derek/Documents/Projects/chess-robot/2026 attempt/chess-robot-v3/images/1.jpg"
+    "/home/derek/Documents/Projects/chess-robot/version3/images/1.jpg"
 )
 
 pygame.init()

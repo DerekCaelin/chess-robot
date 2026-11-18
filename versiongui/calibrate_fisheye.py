@@ -1,4 +1,4 @@
-    #Calibrate fisheye camera
+#Calibrate fisheye camera
 import cv2
 print ("cv2 version is " + cv2.__version__)
 assert cv2.__version__[0] >= '3', 'The fisheye module requires opencv version >= 3.0.0'
