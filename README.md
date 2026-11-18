@@ -14,7 +14,7 @@ ignore them. Requires Python 3 (tested with 3.12).
 - **Camera** - a UVC webcam mounted above the board with the whole playing
   area in view. Printable board layouts (1"/2" squares) are at the
   repository root: `chessboardprint*.png`.
-- **Arm** - an AL5D servo arm driven through an SSC-32U controller. (The
+- **Arm** - a [Lynxmotion AL5D servo arm](wiki.lynxmotion.com/info/wiki/lynxmotion/view/ses-v1/ses-v1-robots/ses-v1-arms/al5d/) driven through an SSC-32U controller. (The
   original Cartesian-arm module `robotmove.py` is kept as-is.)
 - **Computer** - a Raspberry Pi 3B+ with a 5" touchscreen is the deployed
   target; any Linux or Windows PC works for development.
