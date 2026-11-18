@@ -13,8 +13,9 @@ and reference; you can ignore them. Requires Python 3 (tested with 3.12).
 - **Camera** - a UVC webcam mounted above the board with the whole playing
   area in view. Printable board layouts (1"/2" squares) are at the
   repository root: `chessboardprint*.png`.
-- **Arm** - an AL5D servo arm driven through an SSC-32U controller. (The
-  original Cartesian-arm module `robotmove.py` is kept as-is.)
+- **Arm** - a [Lynxmotion AL5D servo arm](https://wiki.lynxmotion.com/info/wiki/lynxmotion/view/ses-v1/ses-v1-robots/ses-v1-arms/al5d/)
+  driven through an SSC-32U controller. (The original Cartesian-arm module
+  `robotmove.py` is kept as-is.)
 - **Computer** - a Raspberry Pi 3B+ with a 5" touchscreen is the deployed
   target; any Linux or Windows PC works for development.
 
@@ -53,16 +54,28 @@ packages above.
 
 ## First-time setup
 
-1. **Camera calibration** - Calibrate -> Camera -> Start. The board is
-   detected automatically (including boards whose squares differ in wood
-   tone rather than light/dark); when the outline locks on - usually within
-   a few seconds - save. If the UI asks, tap the A1 corner on the video
-   first.
-2. **Arm geometry** - `config/defaults.json` holds the baked arm
-   parameters; after changing the mechanics, re-bake with
-   `python3 tests/arm_probe.py --bake`.
-3. **Speech** (optional) - voice models are generated locally; see "Not
-   included in this repository" below.
+1. **Camera calibration** - Automatic Calibration: Calibrate -> Camera ->
+   Start. The board is detected automatically (including boards whose
+   squares differ in wood tone rather than light/dark) and should find the
+   corners in a few seconds. Manual mode is optional: tap each corner.
+2. **Board calibration** - Calibrate -> Board. Place pawns at the
+   instructed locations and move the gripper so that it picks up the
+   piece. This maps out the board's dimensions in the arm's motion space -
+   no ruler measurement required.
+3. **Board & Pieces** - Calibration settings -> Board & Pieces. Every
+   chess piece has a different ideal pickup height and grip level. Enter
+   in the grip height and how tight the grip should be for each piece.
+   Board height is a little superfluous now that pieces are dropped
+   directly in the piece box for my setup, but people wanting a graveyard
+   next to the board will find it handy.
+4. **Arm sag** - Calibration settings -> Arm sag - The gripper will move
+   to what it thinks is the right location but is impacted by gravity (as
+   are we all, alas). Use arm sag to map the amount the arm dips depending
+   on its reach, which will counter the drop during gameplay.
+5. **Speech** (optional) - The Pi locally generates a voice for gameplay
+   and the analysis tool. espeak is included by default, but other voices
+   can be used (I used piper). See "Not included in this repository"
+   below.
 
 ## Configuration
 
