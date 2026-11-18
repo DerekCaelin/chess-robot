@@ -283,14 +283,21 @@ def main():
 
     # ---- Board & Pieces (2026-11-06) ------------------------------------
     # grip heights (left) and per-piece jaw adjusts (right) on the same
-    # rows; info button on the board height and on each piece's jaws, none
-    # on the piece heights
+    # rows; ONE help button on the title bar (2026-11-18, the old per-row
+    # info buttons were collapsed there) and every row names both settings
+    # with their units
     scr._cleanup()
     app.show(A.PieceHeightScreen)
     bp = app.current
     settle(root)
     if bp.title_text != "Board & Pieces":
         fails.append("Board & Pieces: title is %r" % bp.title_text)
+    if bp._row_label("board") != "Board height (in)":
+        fails.append("Board & Pieces: board label %r" % bp._row_label("board"))
+    if bp._row_label("r") != "Rook height (in) / grip (degree)":
+        fails.append("Board & Pieces: rook label %r" % bp._row_label("r"))
+    if not callable(getattr(bp, "_all_info", None)):
+        fails.append("Board & Pieces: no title-level help")
     if sorted(bp.rows) != ["b", "board", "k", "n", "p", "q", "r"]:
         fails.append("Board & Pieces: height rows %s" % sorted(bp.rows))
     if sorted(bp.jaws) != ["b", "k", "n", "p", "q", "r"]:

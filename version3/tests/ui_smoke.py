@@ -93,7 +93,7 @@ def main():
         (A.CalibrateScreen, {}, ["Camera", "Board",
                                  "Calibration settings", "Reset all to defaults"]),
         (A.DirectScreen, {}, ["Board & Pieces", "Manual corners",
-                              "Calibration test", "Arm sag"]),
+                              "Calibration test", "Arm sag", "Capture drop"]),
         (A.BoardSizeScreen, {}, []),
         (A.CalibrationTestScreen, {}, ["Go"]),
         (A.PieceHeightScreen, {}, []),

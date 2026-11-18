@@ -567,13 +567,6 @@ class CalibrateScreen(kit.Screen):
                                         height=2)
         self.calib_btn.pack(pady=self.SP)
 
-        # Capture drop (2026-11-18): the box hanging off the bottom of the
-        # board where the arm drops captured pieces.
-        kit.big_button(col, "Capture drop",
-                       lambda: app.show(CaptureDropScreen),
-                       bg=kit.CARD_HI, fg=kit.FG, width=26,
-                       height=2).pack(pady=self.SP)
-
         self.warn_lbl = tk.Label(col, font=kit.F_SMALL, bg=kit.BG,
                                  fg=kit.ACCENT, wraplength=300)
         self.warn_lbl.pack(pady=self.SP)
@@ -4754,30 +4747,29 @@ class PieceHeightScreen(kit.Screen):
     board height (LEFT column), and a per-piece jaw adjust (RIGHT column),
     each piece on one row.  The grip height is the grab point's height above
     the piece's own sitting surface - the value you jog to and read; the
-    model adds the board height and the arm sag compensation.  Rows follow
-    the Calibration-settings template: name (unit), info button where it
-    helps, tappable value -> the standard slider.  No info buttons on the
-    piece heights (self-explanatory); the board height and each piece's jaw
-    adjust carry one."""
+    model adds the board height and the arm sag compensation.  Rows name
+    both settings with their units ('Rook height (in) / grip (degree)',
+    2026-11-18) and the ONE help button lives on the title bar - the old
+    per-row info buttons were collapsed there.  Raising the grip value
+    closes the jaws further (the servo angle rises toward GRIP_CLOSED), so
+    a bigger grip value means a TIGHTER grip."""
 
     ROWS = (
-        # key,   name,           lo,   hi,   step, height info (or None)
-        ("board", "Board (in)", 0.0, 2.0, 0.1,
-         "Height of the surface of the board off the table. This value "
-         "sets the height adjust when moving pieces to the graveyard."),
-        ("p", "Pawn (in)", 0.2, 3.5, 0.05, None),
-        ("r", "Rook (in)", 0.2, 3.5, 0.05, None),
-        ("n", "Knight (in)", 0.2, 3.5, 0.05, None),
-        ("b", "Bishop (in)", 0.2, 3.5, 0.05, None),
-        ("q", "Queen (in)", 0.2, 3.5, 0.05, None),
-        ("k", "King (in)", 0.2, 3.5, 0.05, None),
+        # key,   lo,   hi,   step
+        ("board", 0.0, 2.0, 0.1),
+        ("p", 0.2, 3.5, 0.05),
+        ("r", 0.2, 3.5, 0.05),
+        ("n", 0.2, 3.5, 0.05),
+        ("b", 0.2, 3.5, 0.05),
+        ("q", 0.2, 3.5, 0.05),
+        ("k", 0.2, 3.5, 0.05),
     )
     NAMES = {"p": "Pawn", "r": "Rook", "n": "Knight", "b": "Bishop",
              "q": "Queen", "k": "King"}
     JAW_LO, JAW_HI, JAW_STEP = -20.0, 60.0, 1.0
 
     def __init__(self, app):
-        super().__init__(app=app, title="Board & Pieces")
+        super().__init__(app=app, title="Board & Pieces", info=self._all_info)
         self.app = app
         self.rows = {}
         self.jaws = {}
@@ -4789,20 +4781,16 @@ class PieceHeightScreen(kit.Screen):
         grid.columnconfigure(2, weight=3)
         for r in range(len(self.ROWS)):
             grid.rowconfigure(r, weight=1)
-        for r, (key, label, lo, hi, step, definition) in enumerate(self.ROWS):
+        for r, (key, lo, hi, step) in enumerate(self.ROWS):
             name_cell = tk.Frame(grid, bg=kit.BG)
             name_cell.grid(row=r, column=0, sticky="nsew", pady=1)
-            tk.Label(name_cell, text=label, font=("Atkinson Hyperlegible", 11),
+            tk.Label(name_cell, text=self._row_label(key),
+                     font=("Atkinson Hyperlegible", 11),
                      bg=kit.BG, fg=kit.FG, anchor="w").pack(side="left")
-            if definition:          # the board's info button
-                kit.info_button(
-                    name_cell,
-                    lambda t=label, d=definition: self._info(t, d),
-                    small=True, bg=kit.BG).pack(side="left", padx=(4, 0))
             hbtn = kit.big_button(
                 grid, "",
-                lambda k=key, l=label, lo=lo, hi=hi, st=step:
-                self._edit_height(k, l, lo, hi, st),
+                lambda k=key, lo=lo, hi=hi, st=step:
+                self._edit_height(k, lo, hi, st),
                 bg=kit.CARD_HI, fg=kit.ACCENT, width=4, height=1,
                 font=("Atkinson Hyperlegible", 12))
             hbtn.grid(row=r, column=1, sticky="nsew", padx=(4, 0), pady=1)
@@ -4816,20 +4804,26 @@ class PieceHeightScreen(kit.Screen):
                 bg=kit.CARD_HI, fg=kit.ACCENT, width=4, height=1,
                 font=("Atkinson Hyperlegible", 12))
             jbtn.pack(side="left", fill="both", expand=True)
-            kit.info_button(cell, self._jaw_info_cb(key), small=True,
-                            bg=kit.BG).pack(side="left", padx=(4, 0))
             self.jaws[key] = jbtn
         self.refresh_labels()
 
-    def _jaw_info_cb(self, key):
-        name = self.NAMES.get(key, key).lower()
-        text = ("Controls the jaw width when gripping the %s (servo "
-                "degrees). Lower values grip the %s tighter, higher values "
-                "looser. Increase if the jaws fail to grip the %s; decrease "
-                "if they pinch the sides or knock it over."
-                % (name, name, name))
-        return lambda t=self.NAMES.get(key, key) + " jaws", d=text: \
-            self._info(t, d)
+    def _row_label(self, key):
+        """Setting names with their units (2026-11-18): the row carries both
+        of the piece's values, 'Rook height (in) / grip (degree)'."""
+        if key == "board":
+            return "Board height (in)"
+        return "%s height (in) / grip (degree)" % self.NAMES.get(key, key)
+
+    def _all_info(self):
+        """The ONE help button (2026-11-18): the old per-row info buttons
+        collapsed onto the title bar."""
+        self._info("Board and pieces",
+                   "Board: Height of the surface of the board off the "
+                   "table. This value sets the height adjust when moving "
+                   "pieces to the graveyard.\n"
+                   "Grip height and jaws: Set the height at which the "
+                   "gripper should grab the piece. Increasing grip value "
+                   "increases the tightness of the jaws.")
 
     def refresh_labels(self):
         ph = settings.get("arm.piece_grips") or RD.piecegrips
@@ -4856,7 +4850,8 @@ class PieceHeightScreen(kit.Screen):
             def change(v):
                 settings.set("arm.board_height", round(v, 2))
                 self.refresh_labels()
-            kit.slider(self.app, label + "\narm.board_height", lo, hi, step,
+            kit.slider(self.app, "Board height (in)\narm.board_height",
+                       lo, hi, step,
                        float(settings.get("arm.board_height", 0.5)), change,
                        confirm_msg="are you sure?")
             return
@@ -4867,8 +4862,9 @@ class PieceHeightScreen(kit.Screen):
             settings.set("arm.piece_grips", pg)
             self.refresh_labels()
         cur = dict(settings.get("arm.piece_grips") or RD.piecegrips)
-        kit.slider(self.app, label + "\narm.piece_grips." + key, lo, hi,
-                   step, float(cur.get(key, 0.0)), change,
+        kit.slider(self.app,
+                   "%s height (in)\narm.piece_grips." % self.NAMES.get(key, key)
+                   + key, lo, hi, step, float(cur.get(key, 0.0)), change,
                    confirm_msg="are you sure?")
 
     def _edit_jaw(self, key):
@@ -4879,8 +4875,8 @@ class PieceHeightScreen(kit.Screen):
             self.refresh_labels()
         cur = dict(settings.get("arm.piece_jaws") or RD.piecejaws)
         kit.slider(self.app,
-                   self.NAMES.get(key, key) + " jaws\narm.piece_jaws." + key,
-                   self.JAW_LO, self.JAW_HI, self.JAW_STEP,
+                   "%s grip (degree)\narm.piece_jaws." % self.NAMES.get(key, key)
+                   + key, self.JAW_LO, self.JAW_HI, self.JAW_STEP,
                    float(cur.get(key, 0.0)), change,
                    confirm_msg="are you sure?")
 
@@ -6655,7 +6651,8 @@ class DirectScreen(kit.Screen):
         for label, tgt in (("Board & Pieces", PieceHeightScreen),
                            ("Manual corners", ManualCalibScreen),
                            ("Calibration test", CalibrationTestScreen),
-                           ("Arm sag", ArmSagScreen)):
+                           ("Arm sag", ArmSagScreen),
+                           ("Capture drop", CaptureDropScreen)):
             kit.big_button(bottom, label, lambda t=tgt: app.show(t),
                            bg=kit.CARD, fg=kit.FG, width=8, height=4,
                            font=kit.F_BODY, wraplength=150).pack(
