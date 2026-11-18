@@ -21,7 +21,8 @@ exist). Console only.
 4. `sudo reboot` -> kiosk UI should appear on the touch screen (boot.sh loop
    via .bash_profile).
 5. Camera check: `v4l2-ctl --list-devices` (expect /dev/video0) and run the
-   vision regression on the Pi itself: `python3 tests/run_tests.py` -> 12/12.
+   vision regression on the Pi itself: `python3 tests/run_tests.py` ->
+   expect 11 PASS (`setup_center_2` and `setup_far` are known failures).
 6. First-time calibration: PLAY is fine, but do **Calibrate -> Camera** on
    the real board (Pi's images/points.txt is device-local, created on demand).
 

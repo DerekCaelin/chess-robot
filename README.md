@@ -1,44 +1,74 @@
-# chess-robot  
-  
-For the Android/GUI version see the instructions in the versiongui directory.
-    
-3D printed chess robot, Python code for Raspberry Pi, other Linux or Windows PC. New users should use version 2.
+# chess-robot
 
-Install Stockfish engine, Python 3, python-pip, espeak
+A 3D-printed chess robot: a Raspberry Pi (or any Linux/Windows PC) drives
+a camera and a robot arm, shows a touchscreen UI, and plays chess with
+Stockfish.
 
-pip install pyserial  
-pip install psutil  
-pip install numpy  
-pip install opencv-python  
-pip install stockfish  
-pip install pyttsx3  
+The current build lives in `2026 attempt/chess-robot-v3/` - run every
+command below from that directory.
 
-Run CBint.py from Thonny or elsewhere.
+## Hardware
 
-The camera should be positioned directly over the centre of the chess board and lined up pretty well. Then camera calibration asks you to click on the four corners of the playing area of the chessboard (on the image), and you are shown the result. Click them in the order requested. (The robot arm should not be in the way, and all the pieces must be in their correct starting positions). By "playing area" we mean the chessboard squares, NOT including any external margin).
+- **Camera** - a UVC webcam mounted above the board with the whole playing
+  area in view. Printable board layouts (1"/2" squares) are at the
+  repository root: `chessboardprint*.png`.
+- **Arm** - an AL5D servo arm driven through an SSC-32U controller. (The
+  original Cartesian-arm module `robotmove.py` is kept as-is.)
+- **Computer** - a Raspberry Pi 3B+ with a 5" touchscreen is the deployed
+  target; any Linux or Windows PC works for development.
 
-The calibration is remembered even if all systems are shut down, so if the robot, board and camera have not been moved, recalibration can optionally be avoided when a new game is started
+## Install (Linux)
 
-The camera should be at least 56 cm above the board. Square size 3.4 cm. Tallest piece: 5.5 cm. The image of a piece should not fall across an adjacent square.
+```
+sudo apt-get install python3 python3-tk python3-numpy python3-opencv \
+    python3-pil python3-pil.imagetk python3-serial espeak alsa-utils \
+    v4l-utils stockfish
+python3 -m pip install --user chess pyttsx3
+```
 
-Calibrating the Cartesian robot arm: The lower strut must be vertical and the upper strut horizontal and coming out straight over the board.
+On a Raspberry Pi use `pi/install_pi.sh` instead - it adds the X server,
+kiosk and GPIO pieces (`pi/README-pi.md` has the full bring-up). On
+Windows: install Python, `pip install opencv-python numpy pillow pyserial
+chess pyttsx3`, and Stockfish (`CBstate.py` already carries the usual
+Windows engine path).
 
-Code configuration: You will need to check squaresize, axistorow8, etc. in robotmove.py. Check the declarations in CBstate.py.
+## Run
 
-Axistorow8 is the distance in mm horizontally along the y coordinate, between the robot’s vertical axis and the centre of row 8. 
+```
+python3 ui/app.py              # windowed, for development
+python3 ui/app.py --fullscreen # 800x480 kiosk (what the Pi runs)
+```
 
+The console front-end remains available for headless debugging:
+`python3 CBint.py`.
 
-The RPi or PC is connected to the Arduino by a USB A/B cable (printer cable). Or alternatively via Bluetooth (not BLE), using an HC-05 Bluetooth module.
+## First-time setup
 
-Both USB and IP cameras are supported. Calibration for fish-eye distortion is provided, and is more likely to be needed for IP cameras. USB cameras are often OK without it.
+1. **Camera calibration** - Calibrate -> Camera -> Start. The board is
+   detected automatically (including boards whose squares differ in wood
+   tone rather than light/dark); if the UI asks, tap the A1 corner on the
+   video. Save.
+2. **Arm geometry** - `config/defaults.json` holds the baked arm
+   parameters; after changing the mechanics, re-bake with
+   `python3 tests/arm_probe.py --bake`.
+3. **Speech** (optional) - voice models are generated locally; see "Not
+   included in this repository" below.
 
-Arduino code is at https://github.com/rpd123/Arduino-Firmware 
-  
-===  
-Version1-old only:  
-pip install pillow
-pip install psutil  
-On RPi install fswebcam, aplay
+## Configuration
+
+- `config/defaults.json` - arm geometry (square size, reach, gripper).
+- `CBstate.py` - camera (resolution, exposure lock), engine path and
+  thinking time.
+- The in-app **Settings** screen, persisted to `data/settings.json`.
+
+## Development
+
+- Push code to the Pi: `bash pi/deploy.sh pi@chesspi`, then
+  `ssh pi@chesspi '~/chess/chess-robot-v3/pi/appctl restart'`.
+- Board-detector regression: `python3 tests/run_tests.py` (13 labelled
+  camera frames; 11 pass, `setup_center_2` and `setup_far` are known
+  failures).
+- Test suites: `tests/test_*.py` and `tests/ui_smoke.py`.
 
 ---
 

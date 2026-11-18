@@ -25,8 +25,8 @@ sudo apt-get install -y --no-install-recommends \
 sudo apt-get install -y --no-install-recommends raspberrypi-utils \
     || echo "(raspberrypi-utils unavailable; display_gpio.sh will use gpioset)"
 
-# pyttsx3 (not packaged)
-python3 -m pip install --user --break-system-packages pyttsx3 || true
+# pyttsx3 (not packaged) and chess (python-chess - core game logic)
+python3 -m pip install --user --break-system-packages pyttsx3 chess || true
 
 # serial + gpio access for this user
 sudo usermod -aG dialout,video,gpio "$USER" || true
