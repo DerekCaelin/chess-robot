@@ -26,6 +26,13 @@ CACHE = os.path.join(ROOT, "data", "analysis")
 # the selectable voices (2026-11-14): 'piper' was renamed to the MODEL it
 # speaks with (alba) and GLaDOS joined it - both are Piper voices
 VOICES = ("none", "espeak", "alba", "glados")
+
+# The voice used until the player picks one (2026-11-18): espeak is the
+# default - its cooked phrases ship with the repo (tiny) so a fresh install
+# speaks out of the box, as the original espeak build did.  The player picks
+# their own voice from the others (alba / GLaDOS need their own models).
+# "None (fastest)" is an explicit choice, never the default.
+DEFAULT_VOICE = "espeak"
 PIPER_VOICES = ("alba", "glados")
 VOICE_LABELS = {"none": "None (fastest)", "espeak": "espeak (fast)",
                 "alba": "alba (slow)", "glados": "GLaDOS (slower)"}

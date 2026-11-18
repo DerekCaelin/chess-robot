@@ -5523,7 +5523,7 @@ class AnalysisHomeScreen(kit.Screen):
         vrow.pack(anchor="w")
         tk.Label(vrow, text="Voice", font=("Atkinson Hyperlegible", 18), bg=kit.BG,
                  fg=kit.FG).pack(side="left", padx=(0, 8))
-        cur = AP.norm_voice(settings.get("analysis.voice", "none"))
+        cur = AP.norm_voice(settings.get("analysis.voice", AP.DEFAULT_VOICE))
         if cur not in self.VOICE_KEYS:
             cur = "none"
         self.voice_var = tk.StringVar(value=AP.VOICE_LABELS[cur])
@@ -5811,7 +5811,7 @@ class AnalysisMoveScreen(kit.Screen):
         if not pack.moves:
             pack.moves = pack.review_moves()
         self.idx = max(0, min(idx, len(pack.moves) - 1))
-        self.voice = AP.norm_voice(settings.get("analysis.voice", "none"))
+        self.voice = AP.norm_voice(settings.get("analysis.voice", AP.DEFAULT_VOICE))
         self.adv = bool(settings.get("analysis.auto_advance", True))
         self.stop = False
         self._playing = False
@@ -6765,10 +6765,10 @@ class SettingsScreen(kit.Screen):
 
     def _voice_txt(self):
         return "Voice: " + AP.VOICE_LABELS[AP.norm_voice(
-            settings.get("analysis.voice", "none"))]
+            settings.get("analysis.voice", AP.DEFAULT_VOICE))]
 
     def _voice(self):
-        cur = AP.norm_voice(settings.get("analysis.voice", "none"))
+        cur = AP.norm_voice(settings.get("analysis.voice", AP.DEFAULT_VOICE))
 
         def pick(v):
             settings.set("analysis.voice", v)

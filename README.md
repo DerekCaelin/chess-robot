@@ -121,8 +121,11 @@ git history (2022–2026) documents the evolution commit by commit.
 
 Runtime state and local models are deliberately kept out of git (see
 `.gitignore`): camera captures (`images/*.jpg`), calibration state,
-game/settings JSON, and the **voice models** (`data/voices`,
-`data/voice_samples`, ~150 MB). The phrase voices are generated on the
-target machine with `tools/harvest_phrases.py` and the speech prewarm
-(see `chessapp/speech.py` and `tests/test_prewarm.py`).
+game/settings JSON, and the **voice models** (`data/voices/*.onnx`,
+`data/voice_samples`, ~150 MB). The default **espeak** voice ships with
+the repo - its cooked phrases are tiny - so a fresh install speaks out of
+the box, as the original espeak build did. The other voices (alba,
+GLaDOS, ...) are the player's own choice: they are picked in the app and
+generated on the target machine with `tools/harvest_phrases.py` and the
+speech prewarm (see `chessapp/speech.py` and `tests/test_prewarm.py`).
 

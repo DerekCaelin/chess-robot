@@ -26,7 +26,7 @@ def voice():
     """The selected voice ('none' | 'espeak' | 'alba' | 'glados')."""
     from chessapp import settings
     from chessapp import analysispack as AP
-    return AP.norm_voice(settings.get("analysis.voice", "none"))
+    return AP.norm_voice(settings.get("analysis.voice", AP.DEFAULT_VOICE))
 
 
 def path(key, v=None):

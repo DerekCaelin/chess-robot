@@ -16,8 +16,13 @@ __pycache__/
 .idea/
 
 # --- runtime state, captures and models (local only; regenerate at runtime) ---
-# Voice models are generated on the target machine - see the README note.
-2026 attempt/chess-robot-v3/data/voices/
+# The default espeak voice's cooked phrases SHIP with the repo (tiny, and the
+# app must speak out of the box); the piper models and the other voices'
+# phrases/samples are generated on the target machine - see the README note.
+2026 attempt/chess-robot-v3/data/voices/*
+!2026 attempt/chess-robot-v3/data/voices/phrases/
+2026 attempt/chess-robot-v3/data/voices/phrases/*
+!2026 attempt/chess-robot-v3/data/voices/phrases/espeak/
 2026 attempt/chess-robot-v3/data/voice_samples/
 2026 attempt/chess-robot-v3/data/*.json
 2026 attempt/chess-robot-v3/data/*.log
