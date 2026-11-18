@@ -569,6 +569,32 @@ def next_grave_pose():
     return grave_slot(n)
 
 
+# the capture box drop point (2026-11-18): a box hanging off the bottom of
+# the board replaces the graveyard grid.  {"reach": in, "turn": deg,
+# "height": in} as stored by the Capture drop screen, or None to use the
+# grid as before.  Pushed here by chessapp.settings.apply().
+capture_drop = None
+
+
+def _capture_drop_pose():
+    """(reach, height, base-angle) of the configured capture box drop point,
+    or None to use the graveyard grid.  A stored pose that has fallen out of
+    the workspace (after a recalibration) is rejected: dropping on the old
+    grid is recoverable, throwing the piece at nothing is not."""
+    d = capture_drop
+    if not isinstance(d, dict):
+        return None
+    try:
+        X, Y, Z = float(d["reach"]), float(d["height"]), float(d["turn"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not pose_ok(X, Y, Z):
+        print("[capture_drop] stored drop pose is out of workspace - "
+              "falling back to the graveyard")
+        return None
+    return X, Y, Z
+
+
 # ── Motor control ─────────────────────────────────────────────────────────────
 
 def movemotors(slow=False, speeds=None, pick_lean=False, compensate=True):
@@ -812,6 +838,7 @@ def droppiece(piecetype, armlen, surface=None):
 
 
 def takepiece(X, Z, targetpiece, source_square=None):
+    global _last_grave_slot
     # NB: movepiece has already energised for this turn, and the arm stays awake
     # (torque on) through the capture, so we deliberately do NOT energise() or
     # park_hold() here - that pair of slow hold_ready side-swings made the arm
@@ -820,12 +847,23 @@ def takepiece(X, Z, targetpiece, source_square=None):
     movearm(X, Z, edge_square=(source_square if source_square
                                and is_afile_square(source_square) else None))
     pickuppiece(targetpiece, X)
+    drop = _capture_drop_pose()
+    if drop is not None:
+        # the capture box (2026-11-18): move above the box and OPEN the
+        # gripper - the piece falls straight in, no descent into the box
+        Xd, Yd, Zd = drop
+        _last_grave_slot = None          # the box has no numbered slots
+        movearm(Xd, Zd)
+        moveXY(Yd)
+        time.sleep(0.5)                  # settle above the box before release
+        set_gripper(grip_open_width())
+        time.sleep(0.3)
+        return
     Xgraveyard, Zgraveyard = next_grave_pose()
     if not (pose_ok(Xgraveyard, cruise_for_reach(Xgraveyard), Zgraveyard)
             and pose_ok(Xgraveyard, 2.5, Zgraveyard)):
         # that graveyard slot sits outside the workspace - use the classic
         # spot (not a slot: the memory must not claim one for it)
-        global _last_grave_slot
         _last_grave_slot = None
         Xgraveyard = armlength("h9") + 0.5
         Zgraveyard = armangle("h9")

@@ -542,7 +542,9 @@ def tool_session(app, title, script, args=(), on_success=None):
 
 
 class CalibrateScreen(kit.Screen):
-    SP = 5   # uniform vertical gap between every element
+    SP = 2   # uniform vertical gap between every element (6 buttons + the
+             # warning line must fit the 480px screen: at SP=5 the body
+             # needed 423 of its 392 px, 2026-11-18)
 
     def __init__(self, app):
         super().__init__(app=app, title="Calibrate")
@@ -564,6 +566,13 @@ class CalibrateScreen(kit.Screen):
                                         bg=kit.CARD_HI, fg=kit.FG, width=26,
                                         height=2)
         self.calib_btn.pack(pady=self.SP)
+
+        # Capture drop (2026-11-18): the box hanging off the bottom of the
+        # board where the arm drops captured pieces.
+        kit.big_button(col, "Capture drop",
+                       lambda: app.show(CaptureDropScreen),
+                       bg=kit.CARD_HI, fg=kit.FG, width=26,
+                       height=2).pack(pady=self.SP)
 
         self.warn_lbl = tk.Label(col, font=kit.F_SMALL, bg=kit.BG,
                                  fg=kit.ACCENT, wraplength=300)
@@ -3417,6 +3426,260 @@ class RadscaleScreen(kit.Screen):
 
     def request_back(self):
         self._finish()
+
+
+class CaptureDropScreen(kit.Screen):
+    """Where the arm drops CAPTURED pieces (2026-11-18): a box hanging off
+    the bottom of the board replaces the graveyard grid. The player jogs the
+    arm above the box with the board calibration's reach / turn / height
+    controls and taps OK to store the spot; after a capture the arm picks the
+    piece up, moves here and opens the gripper (LEGO_Chess_rpd.takepiece)."""
+
+    X_LO, X_HI = 4.5, 14.66
+    Z_LO, Z_HI = 20.0, 160.0
+    Y_LO, Y_HI = 1.6, 7.5
+    STEP_REACH = 1.8
+    STEP_BASE = 9.0
+    STEP_Y = 0.5
+    PREC_LEVELS = (1.0, 5.0, 10.0, 20.0)
+
+    def __init__(self, app):
+        super().__init__(app=app, title="Capture drop")
+        self.app = app
+        self.q = queue.Queue()
+        self.busy = False
+        self.stop = False
+        self._prec = 2            # default precision 3, as on Board calibration
+        saved = settings.get("arm.capture_drop")
+        X = Y = Z = None
+        if isinstance(saved, dict):
+            try:
+                X, Y, Z = (float(saved["reach"]), float(saved["height"]),
+                           float(saved["turn"]))
+            except (KeyError, TypeError, ValueError):
+                X = Y = Z = None
+        if X is None:
+            # no saved spot yet: start over the middle of the far edge (the
+            # box hangs off the bottom of the board) at grip height
+            X, Z = RD.armlength("d1"), RD.armangle("d1")
+            Y = RD.grip_y("p", X)
+        self.cur = [self._cx(X, Y), self._cy(Y), self._cz(Z)]
+
+        # same layout as the board calibration: the jog on the left, the
+        # readout and actions on the right, the instruction box full width
+        # at the bottom
+        main = tk.Frame(self.body, bg=kit.BG)
+        main.pack(fill="both", expand=True)
+        pad = tk.Frame(main, bg=kit.BG)
+        pad.pack(side="left", anchor="n")
+        self._build_jog(pad)
+        side = tk.Frame(main, bg=kit.BG)
+        side.pack(side="right", fill="y", expand=True)
+        self.val_lbl = tk.Label(side, text="", bg=kit.BG, fg=kit.ACCENT,
+                                font=("JetBrains Mono", 11), justify="center",
+                                wraplength=170)
+        self.val_lbl.pack(pady=(0, 6))
+        kit.big_button(side, "OK", self._ok, bg=kit.GREEN, fg="#1b1e24",
+                       height=2, width=12).pack(pady=4)
+
+        self.instr_lbl = tk.Label(
+            self.body, bg=kit.BG, fg=kit.FG,
+            font=("Atkinson Hyperlegible", 13), wraplength=560,
+            justify="center",
+            text="position the arm directly above the box where captured "
+                 "pieces should be stored")
+        self.instr_lbl.pack(fill="x", pady=(8, 0))
+        self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
+        self._refresh()
+        self._poll()
+        self._enter()
+
+    # ---- clamps: the board calibration's working envelope ----
+    def _cx(self, X, Y):
+        cap = RD.reach_at_height(Y) - 0.1
+        return max(self.X_LO, min(min(self.X_HI, cap), X))
+
+    def _cy(self, Y):
+        return max(self.Y_LO, min(self.Y_HI, Y))
+
+    def _cz(self, Z):
+        return max(self.Z_LO, min(self.Z_HI, Z))
+
+    def _build_jog(self, pad):
+        # the board calibration's controls: reach / turn arrows, the height
+        # arrows and the precision divider
+        g = tk.Frame(pad, bg=kit.BG)
+        g.pack()
+        kw = dict(bg=kit.CARD_HI, fg=kit.FG, width=8, height=2, font=kit.F_BTN)
+        kit.big_button(g, "\u25B2", lambda: self._jog("in"), **kw).grid(
+            row=0, column=1, padx=4, pady=1)
+        kit.big_button(g, "\u25C0", lambda: self._jog("cw"), **kw).grid(
+            row=1, column=0, padx=4, pady=1)
+        kit.big_button(g, "\u25BC", lambda: self._jog("out"), **kw).grid(
+            row=2, column=1, padx=4, pady=1)
+        kit.big_button(g, "\u25B6", lambda: self._jog("ccw"), **kw).grid(
+            row=1, column=2, padx=4, pady=1)
+        bottom = tk.Frame(pad, bg=kit.BG)
+        bottom.pack(pady=(8, 0))
+        h = tk.Frame(bottom, bg=kit.BG)
+        h.pack(side="left")
+        kit.big_button(h, "\u25B2", lambda: self._h_jog(1), bg=kit.CARD_HI,
+                       fg=kit.FG, width=5, height=2, font=kit.F_BTN).pack(
+            side="left", padx=4)
+        tk.Label(h, text="height", bg=kit.BG, fg=kit.FG_DIM,
+                 font=kit.F_SMALL).pack(side="left", padx=(0, 4))
+        kit.big_button(h, "\u25BC", lambda: self._h_jog(-1), bg=kit.CARD_HI,
+                       fg=kit.FG, width=5, height=2, font=kit.F_BTN).pack(
+            side="left", padx=4)
+        zbar = tk.Frame(bottom, bg=kit.BG)
+        zbar.pack(side="left", padx=(12, 0))
+        self.prec_out_btn = kit.big_button(zbar, "\u2212", self._prec_out,
+                                           bg=kit.CARD, fg=kit.FG_DIM,
+                                           width=5, height=2, font=kit.F_BTN,
+                                           disabled=True)
+        self.prec_out_btn.pack(side="left", padx=(0, 4))
+        self.prec_lbl = tk.Label(zbar, text="Precision 1", bg=kit.BG,
+                                 fg=kit.FG_DIM, font=kit.F_SMALL)
+        self.prec_lbl.pack(side="left", padx=(0, 4))
+        self.prec_in_btn = kit.big_button(zbar, "+", self._prec_in,
+                                          bg=kit.CARD_HI, fg=kit.FG,
+                                          width=5, height=2, font=kit.F_BTN)
+        self.prec_in_btn.pack(side="left")
+        self._set_prec()
+
+    def _prec_in(self):
+        if self._prec < len(self.PREC_LEVELS) - 1:
+            self._prec += 1
+            self._set_prec()
+
+    def _prec_out(self):
+        if self._prec > 0:
+            self._prec -= 1
+            self._set_prec()
+
+    def _set_prec(self):
+        try:
+            self.prec_lbl.configure(text="Precision %d" % (self._prec + 1))
+            self.prec_in_btn.configure(
+                state="normal" if self._prec < len(self.PREC_LEVELS) - 1
+                else "disabled",
+                bg=kit.CARD_HI if self._prec < len(self.PREC_LEVELS) - 1
+                else kit.CARD, fg=kit.FG)
+            self.prec_out_btn.configure(
+                state="normal" if self._prec > 0 else "disabled",
+                bg=kit.CARD_HI if self._prec > 0 else kit.CARD,
+                fg=kit.FG if self._prec > 0 else kit.FG_DIM)
+        except tk.TclError:
+            pass
+
+    def _jog(self, direction):
+        if self.busy:
+            return
+        lvl = self.PREC_LEVELS[self._prec]
+        X, Y, Z = self.cur
+        if direction == "in":
+            X -= self.STEP_REACH / lvl
+        elif direction == "out":
+            X += self.STEP_REACH / lvl
+        elif direction == "cw":
+            Z += self.STEP_BASE / lvl
+        elif direction == "ccw":
+            Z -= self.STEP_BASE / lvl
+        self.cur = [self._cx(X, Y), Y, self._cz(Z)]
+        self._refresh()
+        self._move()
+
+    def _h_jog(self, direction):
+        if self.busy:
+            return
+        lvl = self.PREC_LEVELS[self._prec]
+        X, Y, Z = self.cur
+        Y = self._cy(Y + direction * self.STEP_Y / lvl)
+        self.cur = [self._cx(X, Y), Y, self._cz(Z)]
+        self._refresh()
+        self._move()
+
+    def _refresh(self):
+        X, Y, Z = self.cur
+        self.val_lbl.configure(
+            text="reach %.2f\nturn %.1f\nheight %.2f" % (X, Z, Y))
+
+    def _enter(self):
+        if self.busy:
+            return
+        self.busy = True
+
+        def run():
+            try:
+                RD.energise()
+                X, Y, Z = self.cur
+                RD.movearm(X, Z)
+                RD.moveXY(Y)
+            except Exception:
+                pass
+            self.q.put(("done",))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _move(self):
+        if self.busy:
+            return
+        self.busy = True
+        X, Y, Z = self.cur
+
+        def run():
+            try:
+                RD.targetXYZGWAWR = (X, Y, Z, RD.targetXYZGWAWR[3], -90,
+                                     RD.targetXYZGWAWR[5])
+                RD.movemotors(pick_lean=True)
+            except Exception:
+                pass
+            self.q.put(("done",))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _ok(self):
+        """Store the spot (2026-11-18): when the player has moved the arm to
+        the right point, they tap OK to store that place."""
+        X, Y, Z = self.cur
+        settings.set("arm.capture_drop", {"reach": round(X, 2),
+                                          "turn": round(Z, 1),
+                                          "height": round(Y, 2)})
+        self.app.toast("Capture drop saved")
+        self._leave()
+
+    def _leave(self):
+        """Park and pop back - shared by OK and the back arrow."""
+        if not self.begin_close():
+            return
+        self.stop = True
+        if RD.sp is None:
+            self.app.back()
+            return
+
+        def run():
+            try:
+                RD.park()
+            except Exception:
+                pass
+            self.app.root.after(0, self.app.back)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _poll(self):
+        try:
+            while True:
+                ev = self.q.get_nowait()
+                if ev[0] == "done":
+                    self.busy = False
+        except queue.Empty:
+            pass
+        if self.winfo_exists():
+            self.after(120, self._poll)
+
+    def _cleanup(self):
+        self.stop = True
+
+    def request_back(self):
+        """Back arrow leaves WITHOUT saving - only OK stores the spot."""
+        self._leave()
 
 
 class CornerCalibScreen(kit.Screen):

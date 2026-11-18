@@ -173,6 +173,10 @@ def apply():
         ph = get("arm.piece_heights")
         if isinstance(ph, dict) and ph:
             lego.pieceheights = {k: float(v) for k, v in ph.items()}
+        # the capture box drop point (2026-11-18): {"reach","turn","height"}
+        # or None = drop captures on the graveyard grid as before
+        cd = get("arm.capture_drop")
+        lego.capture_drop = cd if isinstance(cd, dict) else None
         pg = get("arm.piece_grips")
         if isinstance(pg, dict) and pg:
             lego.piecegrips = {k: float(v) for k, v in pg.items()}

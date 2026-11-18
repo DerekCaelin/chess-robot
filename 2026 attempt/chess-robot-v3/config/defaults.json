@@ -18,6 +18,7 @@
     "park_height": 0.4,
     "cruise_margin": 0.15,
     "grave_gap": 1.0,
+    "capture_drop": null,
     "calib_mode": "A",
     "frame_px": 4.0,
     "frame_py": -2.75,
