@@ -72,7 +72,11 @@ packages above.
    to what it thinks is the right location but is impacted by gravity (as
    are we all, alas). Use arm sag to map the amount the arm dips depending
    on its reach, which will counter the drop during gameplay.
-5. **Speech** (optional) - The Pi locally generates a voice for gameplay
+5. **Capture drop** - Calibrate -> Capture drop. If captured pieces go
+   into a box or tray instead of a graveyard grid, jog the gripper until
+   it hangs over the box and tap OK - the arm drops captured pieces
+   straight into it.
+6. **Speech** (optional) - The Pi locally generates a voice for gameplay
    and the analysis tool. espeak is included by default, but other voices
    can be used (I used piper). See "Not included in this repository"
    below.
