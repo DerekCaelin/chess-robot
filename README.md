@@ -5,7 +5,9 @@ a camera and a robot arm, shows a touchscreen UI, and plays chess with
 Stockfish.
 
 The current build lives in `2026 attempt/chess-robot-v3/` - run every
-command below from that directory.
+command below from that directory. The repository root also holds earlier
+builds and hardware notes, kept for provenance and reference; you can
+ignore them. Requires Python 3 (tested with 3.12).
 
 ## Hardware
 
@@ -18,6 +20,9 @@ command below from that directory.
   target; any Linux or Windows PC works for development.
 
 ## Install (Linux)
+
+Debian, Ubuntu and Raspberry Pi OS (on other distributions, install the
+same list through your package manager):
 
 ```
 sudo apt-get install python3 python3-tk python3-numpy python3-opencv \
@@ -39,15 +44,21 @@ python3 ui/app.py              # windowed, for development
 python3 ui/app.py --fullscreen # 800x480 kiosk (what the Pi runs)
 ```
 
-The console front-end remains available for headless debugging:
-`python3 CBint.py`.
+The app opens on the home screen: **PLAY** starts a game against
+Stockfish, **Calibrate** holds the camera and arm calibration. The console
+front-end remains available for headless debugging: `python3 CBint.py`.
+
+Nothing is required to try it on a desktop: the UI opens without the
+robot, and the board detector and test suites run on any machine with the
+packages above.
 
 ## First-time setup
 
 1. **Camera calibration** - Calibrate -> Camera -> Start. The board is
    detected automatically (including boards whose squares differ in wood
-   tone rather than light/dark); if the UI asks, tap the A1 corner on the
-   video. Save.
+   tone rather than light/dark); when the outline locks on - usually within
+   a few seconds - save. If the UI asks, tap the A1 corner on the video
+   first.
 2. **Arm geometry** - `config/defaults.json` holds the baked arm
    parameters; after changing the mechanics, re-bake with
    `python3 tests/arm_probe.py --bake`.
@@ -58,7 +69,8 @@ The console front-end remains available for headless debugging:
 
 - `config/defaults.json` - arm geometry (square size, reach, gripper).
 - `CBstate.py` - camera (resolution, exposure lock), engine path and
-  thinking time.
+  thinking time (`/usr/games/stockfish` on Debian-family systems; adjust
+  if your Stockfish lives elsewhere).
 - The in-app **Settings** screen, persisted to `data/settings.json`.
 
 ## Development
@@ -72,7 +84,7 @@ The console front-end remains available for headless debugging:
 
 ---
 
-## Credits & provenance (section added in 2026)
+## Credits, provenance & licensing
 
 The 2026 build (`2026 attempt/chess-robot-v3/`) merges and extends the
 earlier versions in this repository. Who wrote what:
@@ -81,14 +93,13 @@ earlier versions in this repository. Who wrote what:
   foundational code: robot movement, board reading and kinematics
   (`robotmove.py`, `main.py`, `inversekinematics.py`, `calibrate_fisheye.py`,
   most of `CBstate.py`, `CBint.py`, `playermove_rpd.py`,
-  `LEGO_Chess_rpd.py`), evolved from his `version1-old` / `version2` /
-  `versiongui` / `ALD5` versions (with credit to www.chess.fortherapy.co.uk
-  for parts of the original). Original repository:
+  `LEGO_Chess_rpd.py`), evolved from his earlier versions in this
+  repository (`versiongui`, `ALD5`, and others; with credit to
+  www.chess.fortherapy.co.uk for parts of the original). Original
+  repository:
   https://github.com/rpd123/chess-robot (Arduino firmware:
   https://github.com/rpd123/Arduino-Firmware). Distributed with his
-  permission: *"Feel free to distribute the code, as long as it contains
-  my copyright statements and the classification that it or anything
-  developed from it cannot be sold without my agreement."*
+  permission.
   **This code, and anything developed from it, must not be sold without
   Richard Day's agreement.**
 - **John Eriksson** — `ChessBoard.py`, ChessBoard v2.05, GNU GPL
