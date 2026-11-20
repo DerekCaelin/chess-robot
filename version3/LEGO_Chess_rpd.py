@@ -165,8 +165,8 @@ speed_SEWBZWrG = (CST_SPEED_BASE,      # #0 base rotation
 SPEED_TRAVEL = tuple(int(s * 1.5) for s in speed_SEWBZWrG)
 # Pick descent: load joints a bit faster than SLOW (70) but well short of a
 # snap - onto a piece, shoulder/elbow/wrist at CST_SPEED_PICK.
-SPEED_ROTATE = (CST_SPEED_BASE,) + tuple(CST_SPEED_SLOW
-                                         for _ in speed_SEWBZWrG[1:])
+SPEED_ROTATE = (CST_SPEED_SLOW * 2,) + tuple(CST_SPEED_SLOW
+                                             for _ in speed_SEWBZWrG[1:])
 SPEED_PICK = (CST_SPEED_BASE, CST_SPEED_PICK, CST_SPEED_PICK, CST_SPEED_PICK,
               CST_SPEED_DEFAULT, CST_SPEED_DEFAULT)
 

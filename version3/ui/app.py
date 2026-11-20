@@ -4843,7 +4843,7 @@ class PieceHeightScreen(kit.Screen):
         kit.big_button(m.body, "Back", m.close, bg=kit.CARD_HI, fg=kit.FG,
                        width=12, height=2).pack(pady=(10, 0))
 
-    def _edit_height(self, key, label, lo, hi, step):
+    def _edit_height(self, key, lo, hi, step):
         """The standard set-value experience: the slider modal."""
         if key == "board":
             def change(v):

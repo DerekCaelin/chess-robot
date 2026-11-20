@@ -323,6 +323,25 @@ def main():
     if str(bp.jaws["n"].cget("text")) != "-14":
         fails.append("Board & Pieces: jaw adjust did not save")
     _set_jaw(-9)
+    # tapping a value must open its editor (2026-11-20: the relabel rework
+    # dropped a parameter from _edit_height's signature and Tk swallowed the
+    # TypeError - the taps did nothing)
+    opened = []
+    real_slider = A.kit.slider
+    A.kit.slider = (lambda app, label, lo, hi, step, cur, change, **kw:
+                    opened.append(str(label)))
+    try:
+        bp._edit_height("p", 0.2, 3.5, 0.05)
+        bp._edit_height("board", 0.0, 2.0, 0.1)
+        bp._edit_jaw("p")
+    except TypeError as e:
+        fails.append("Board & Pieces: value tap is broken: %s" % e)
+    finally:
+        A.kit.slider = real_slider
+    if len(opened) != 3:
+        fails.append("Board & Pieces: editors opened %r" % opened)
+    elif not opened[0].startswith("Pawn height (in)"):
+        fails.append("Board & Pieces: height editor title %r" % opened[0])
     # pick height adjust is gone from the settings list
     if any(e[0] == "arm.pickheightadj" for e in A.settings.EDITABLE):
         fails.append("pick height adjust still listed in the settings")
