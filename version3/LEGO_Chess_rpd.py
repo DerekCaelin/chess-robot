@@ -20,7 +20,8 @@ from math import sqrt, atan, atan2
 from subprocess import call
 
 import serial
-from lib_al5_2D_IK import al5_2D_IK, al5_moveMotors
+from lib_al5_2D_IK import al5_2D_IK, al5_moveMotors, \
+    invalidate_pulses
 
 _tts = None
 if not CBstate.androidos:
@@ -164,6 +165,8 @@ speed_SEWBZWrG = (CST_SPEED_BASE,      # #0 base rotation
 SPEED_TRAVEL = tuple(int(s * 1.5) for s in speed_SEWBZWrG)
 # Pick descent: load joints a bit faster than SLOW (70) but well short of a
 # snap - onto a piece, shoulder/elbow/wrist at CST_SPEED_PICK.
+SPEED_ROTATE = (CST_SPEED_BASE,) + tuple(CST_SPEED_SLOW
+                                         for _ in speed_SEWBZWrG[1:])
 SPEED_PICK = (CST_SPEED_BASE, CST_SPEED_PICK, CST_SPEED_PICK, CST_SPEED_PICK,
               CST_SPEED_DEFAULT, CST_SPEED_DEFAULT)
 
@@ -222,6 +225,7 @@ def idleall():
     global energised
     print("< Idling motors... >")
     energised = False
+    invalidate_pulses()   # the servos droop now - positions are unknown
     if sp is None:
         return
     for i in range(6):
@@ -751,9 +755,10 @@ def movearm(X, Z, edge_square=None):
     """
     Safe travel to (X, Z) in three separate steps, each its own movemotors()
     call so no two large motors move simultaneously:
-      1. Rise to a height safe at the CURRENT reach (cruise, or lower at a far
-         edge reach so the straight-up move never leaves the work annulus)
-      2. Rotate base to Z       — base only, arm already at a safe height
+      1. Rise to cruise AND retract to the compact travel reach (2026-11-20:
+         the return from the graveyard used to sweep the EXTENDED arm across
+         the board - 'return to cruise first, then rotate base')
+      2. Rotate base to Z       — base only, the arm already compact and high
       3. Extend reach to X      — lower to the height that reach allows at cruise
     On a 1" board the safe height is CRUISE_HEIGHT everywhere, so this is the
     old rise/rotate/extend unchanged; on a 1.5" board the far corners (a1/h1)
@@ -771,17 +776,19 @@ def movearm(X, Z, edge_square=None):
         if eo is not None:
             movearm(eo[0], eo[1])            # come to the outward edge pose first
 
-    cur = cruise_for_reach(targetXYZGWAWR[0])
-    # Step 1: rise to the height safe for the current reach, base angle unchanged
-    targetXYZGWAWR = (targetXYZGWAWR[0], cur,
+    # Step 1: rise to cruise and retract to the compact travel reach - the
+    # base sweep must never carry the extended arm over the board
+    reach = min(float(targetXYZGWAWR[0]), READY_REACH)
+    cur = cruise_for_reach(reach)
+    targetXYZGWAWR = (reach, cur,
                       targetXYZGWAWR[2], targetXYZGWAWR[3],
                       -90, targetXYZGWAWR[5])
     movemotors(speeds=SPEED_TRAVEL)
 
-    # Step 2: rotate base to Z, reach unchanged (radius unchanged -> stays safe)
-    targetXYZGWAWR = (targetXYZGWAWR[0], cur, float(Z),
+    # Step 2: rotate base to Z, reach unchanged (compact and high -> safe)
+    targetXYZGWAWR = (reach, cur, float(Z),
                       targetXYZGWAWR[3], -90, targetXYZGWAWR[5])
-    movemotors(speeds=SPEED_TRAVEL)
+    movemotors(speeds=SPEED_ROTATE)
 
     # Step 3: extend reach to X at the height this reach can hold at cruise
     targetXYZGWAWR = (float(X), cruise_for_reach(float(X)), float(Z),

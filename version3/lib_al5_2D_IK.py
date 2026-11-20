@@ -15,6 +15,10 @@ B = CBstate.AL5D_B  # elbow -> wrist (in)
 # Constants
 rtod = 57.295779  # Radians to degrees constant
 SETTLE_S = 0.15   # wobble-decay dwell after every move group (2026-11-20)
+PULSE_UNKNOWN = 400   # assumed travel (us) for a joint whose position is
+                      # unknown - the servos droop when idleall() cuts torque,
+                      # so a stale _last_pulses entry must never shorten T
+                      # (the wake used to whip to its pose, 2026-11-20)
 CST_ANGLE_MIN = 0
 CST_ANGLE_MAX = 180
 CST_RC_MIN = 500
@@ -126,6 +130,13 @@ def _wait_for_servo(current_pulse, target_pulse, speed):
 
 # Track last known pulse positions so we can calculate travel time.
 # Initialised to the collapsed idle pulses sent by LEGO_Chess_rpd.init().
+def invalidate_pulses():
+    """Forget where the servos are - after idleall() cuts their torque they
+    droop, and the next move must be paced from PULSE_UNKNOWN instead of a
+    stale estimate (2026-11-20: the wake-from-droop used to whip)."""
+    _last_pulses.clear()
+
+
 _last_pulses = {
     0: 611,  # base
     1: 1755,  # shoulder (init sends #1 P1755)
@@ -213,18 +224,28 @@ def al5_moveMotors(motors_SEWBZWrG, speed_SEWBZWrG, serial,
         stopped) - that end-stretch mismatch was the arm's shake on
         descents and lifts."""
         longest = 0.0
-        moving = []
+        moved = False
+        block = []
         for channel, pulse, speed in items:
-            delta = abs(pulse - _last_pulses[channel])
-            if delta > 0:
-                moving.append((channel, pulse))
-                if speed > 0:
-                    longest = max(longest, delta / speed)
+            prev = _last_pulses.get(channel)
+            if prev is None:
+                delta = PULSE_UNKNOWN    # drooped: pace it conservatively
+                moved = True
+            else:
+                delta = abs(pulse - prev)
+                moved = moved or delta > 0
+            block.append((channel, pulse))
+            if speed > 0:
+                longest = max(longest, delta / speed)
             _last_pulses[channel] = pulse
-        if not moving:
+        if not moved:
             return
+        # every joint is commanded every group (2026-11-20): skipping the
+        # ones _last_pulses called 'already there' trusted a stale entry and
+        # let the group finish early - the base swept over the board while
+        # the arm was still travelling.
         t_ms = max(1, int(longest * 1000))
-        cmd = ("".join("#%d P%d " % (c, p) for c, p in moving)
+        cmd = ("".join("#%d P%d " % (c, p) for c, p in block)
                + "T%d\r" % t_ms)
         serial.write(cmd.encode())
         print("SSC-32U: %s%s" % (cmd.strip(), note))

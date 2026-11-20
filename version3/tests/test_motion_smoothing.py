@@ -106,6 +106,55 @@ finally:
     RD.movemotors = orig_move
     RD.targetXYZGWAWR = orig_t
 
+# C) unknown positions (droop) pace conservatively; no stale skip -----------
+sleeps = []
+orig = (dict(IK._last_pulses), IK.time)
+try:
+    IK.time = types.SimpleNamespace(sleep=lambda s: sleeps.append(s),
+                                    time=lambda: 0.0)
+    IK._last_pulses.clear()          # idleall() cut the torque - droop
+    ser = FakeSerial()
+    IK.al5_moveMotors((60.0, 120.0, 75.0, 100.0, 90.0, 30.0),
+                      (300, 150, 150, 250, 250, 250), ser)
+    arm = ser.writes[0] if ser.writes else ""
+    t = int(arm.split("T", 1)[1].split()[0]) if "T" in arm else -1
+    check(t == int(IK.PULSE_UNKNOWN / 150.0 * 1000),
+          "unknown position not paced conservatively: T=%d" % t)
+    # a joint already at its target is still commanded (no stale skip)
+    IK._last_pulses = dict((ch, IK.getPulseFromAngle(40)) for ch in range(6))
+    IK._last_pulses[2] = IK.getPulseFromAngle(120)   # elbow already home
+    ser = FakeSerial()
+    IK.al5_moveMotors((60.0, 60.0, 75.0, 40.0, 40.0, 40.0),
+                      (300, 150, 150, 250, 250, 250), ser)
+    check("#2 P" in (ser.writes[0] if ser.writes else ""),
+          "zero-delta joint was skipped in the block: %r" % ser.writes)
+finally:
+    IK._last_pulses = orig[0]
+    IK.time = orig[1]
+
+# D) movearm: compact before the base sweep ---------------------------------
+calls = []
+orig_move = RD.movemotors
+orig_t = RD.targetXYZGWAWR
+try:
+    RD.movemotors = lambda **kw: calls.append(
+        (RD.targetXYZGWAWR[0], RD.targetXYZGWAWR[2], kw.get("speeds")))
+    RD.targetXYZGWAWR = (11.0, 8.0, 30.0, 85, -90, 90)
+    RD.movearm(12.0, 100.0)
+    check(len(calls) == 3, "movearm is not three steps: %r" % calls)
+    if len(calls) == 3:
+        check(calls[0][0] <= RD.READY_REACH,
+              "step 1 did not retract before the base sweep: %r" % calls)
+        check(calls[1][1] == 100.0 and abs(calls[1][0] - calls[0][0]) < 0.01,
+              "step 2 is not a pure base rotation: %r" % calls)
+        check(abs(calls[2][0] - 12.0) < 0.01,
+              "step 3 did not extend to the target: %r" % calls)
+        check(calls[1][2] == RD.SPEED_ROTATE,
+              "the base sweep is not on the gentler pace: %r" % calls)
+finally:
+    RD.movemotors = orig_move
+    RD.targetXYZGWAWR = orig_t
+
 print("motion FAILS:" if fails else
       "PASS: motion smoothing (shared T duration, settle, two-stage descent)")
 for f in fails:
