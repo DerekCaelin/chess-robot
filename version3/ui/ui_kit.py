@@ -356,6 +356,9 @@ class Modal:
                 padx=20, pady=(14, 6))
         self.body = tk.Frame(inner, bg=CARD)
         self.body.pack(padx=20, pady=(0, 14))
+        # content that grows after the modal opens (live labels) re-fits the
+        # card; _fit's size guard keeps this from ever looping
+        self.body.bind("<Configure>", lambda _e: self._fit())
         self.card = card
         self._inner = inner
         self._box = box or self.BOX
@@ -373,6 +376,13 @@ class Modal:
         content when it needs more.  Idempotent - only re-configures on an
         actual size change."""
         try:
+            # flush geometry FIRST (2026-11-20): Tk caches requested sizes
+            # until geometry processing runs, so a wraplength label measures
+            # as a single line without this - the card came out at the box
+            # size and clipped its content top and bottom (the 'Game in
+            # progress' modal after PLAY).  The modal is still unmapped at
+            # the first fit, so the flush paints nothing.
+            self._inner.update_idletasks()
             w = max(self._box[0], self._inner.winfo_reqwidth() + 16)
             h = max(self._box[1], self._inner.winfo_reqheight() + 16)
             if (self.card.winfo_width(), self.card.winfo_height()) != (w, h):
