@@ -880,7 +880,6 @@ def takepiece(X, Z, targetpiece, source_square=None):
         moveXY(Yd)
         time.sleep(0.5)                  # settle above the box before release
         set_gripper(grip_open_width())
-        time.sleep(0.3)
         return
     Xgraveyard, Zgraveyard = next_grave_pose()
     if not (pose_ok(Xgraveyard, cruise_for_reach(Xgraveyard), Zgraveyard)

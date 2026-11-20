@@ -14,7 +14,11 @@ B = CBstate.AL5D_B  # elbow -> wrist (in)
 
 # Constants
 rtod = 57.295779  # Radians to degrees constant
-SETTLE_S = 0.15   # wobble-decay dwell after every move group (2026-11-20)
+BASE_SWEEP_US = 150     # pulse travel above this is a BIG base swing (about
+                        # 60+ degrees of command, e.g. park -> a far square)
+BASE_SWEEP_SPEED = 160  # ...which is paced on this gentler rate: a fixed
+                        # rate made the long sustained swing read as fast
+                        # while ordinary turns felt right (2026-11-20)
 PULSE_UNKNOWN = 400   # assumed travel (us) for a joint whose position is
                       # unknown - the servos droop when idleall() cuts torque,
                       # so a stale _last_pulses entry must never shorten T
@@ -212,8 +216,10 @@ def al5_moveMotors(motors_SEWBZWrG, speed_SEWBZWrG, serial,
 
     def run_group(items, note=""):
         """Send every command of the group as ONE SSC-32U block with a shared
-        move duration T, then wait for it - and a short settle - to finish
-        (skip entirely if nothing in this group actually moves).
+        move duration T, then wait for it to finish - no extra pause between
+        movements (2026-11-20: the settle dwell is gone again, the player
+        wants the sequence to flow).  Skip entirely if nothing in this group
+        actually moves.
 
         T (2026-11-20) makes every servo finish TOGETHER at a rate
         proportional to its own pulse delta, so the IK's straight line stays
@@ -235,8 +241,11 @@ def al5_moveMotors(motors_SEWBZWrG, speed_SEWBZWrG, serial,
                 delta = abs(pulse - prev)
                 moved = moved or delta > 0
             block.append((channel, pulse))
-            if speed > 0:
-                longest = max(longest, delta / speed)
+            rate = speed
+            if channel == 0 and delta > BASE_SWEEP_US:
+                rate = min(speed, BASE_SWEEP_SPEED)   # gentle on big swings
+            if rate > 0:
+                longest = max(longest, delta / rate)
             _last_pulses[channel] = pulse
         if not moved:
             return
@@ -251,7 +260,6 @@ def al5_moveMotors(motors_SEWBZWrG, speed_SEWBZWrG, serial,
         print("SSC-32U: %s%s" % (cmd.strip(), note))
         if longest > 0.001:
             time.sleep(longest + 0.08)      # was +0.4 -> big dead pauses
-        time.sleep(SETTLE_S)   # let the arm's wobble decay before the next
 
     arm = [(2, pulseElbow, speedElbow),
            (3, pulseWrist, speedWrist),

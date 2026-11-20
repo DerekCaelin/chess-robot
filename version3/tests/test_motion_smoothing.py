@@ -66,8 +66,11 @@ try:
         worst = max(worst, abs(p - base) / sp)
     check("T%d" % int(worst * 1000) in arm,
           "T is %r, want %d" % (arm, int(worst * 1000)))
-    check(sleeps and max(sleeps) >= IK.SETTLE_S,
-          "no settle dwell after the move: %r" % sleeps)
+    # no pause may be added between movements (2026-11-20): the only sleeps
+    # are the groups' own move times
+    t_ms_all = [int(w.split("T", 1)[1].split()[0]) for w in ser.writes]
+    check(sleeps and max(sleeps) <= max(t_ms_all) / 1000.0 + 0.1,
+          "a pause was added after a move: %r" % sleeps)
 finally:
     IK._last_pulses = orig[0]
     IK.time = orig[1]
