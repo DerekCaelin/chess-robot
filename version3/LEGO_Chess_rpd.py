@@ -165,8 +165,12 @@ speed_SEWBZWrG = (CST_SPEED_BASE,      # #0 base rotation
 SPEED_TRAVEL = tuple(int(s * 1.5) for s in speed_SEWBZWrG)
 # Pick descent: load joints a bit faster than SLOW (70) but well short of a
 # snap - onto a piece, shoulder/elbow/wrist at CST_SPEED_PICK.
-SPEED_ROTATE = (CST_SPEED_SLOW * 2,) + tuple(CST_SPEED_SLOW
-                                             for _ in speed_SEWBZWrG[1:])
+# Bench-calibrated (2026-11-20): the base turns ~2.8us of pulse per degree
+# of command, so 300 us/s = <1s for a 90-degree sweep (the player: "much too
+# rapid") and 140 us/s = ~1.8s ("too slow").  220 lands a big sweep at about
+# 1.2s while small turns stay quick.
+SPEED_ROTATE = (220,) + tuple(CST_SPEED_SLOW
+                              for _ in speed_SEWBZWrG[1:])
 SPEED_PICK = (CST_SPEED_BASE, CST_SPEED_PICK, CST_SPEED_PICK, CST_SPEED_PICK,
               CST_SPEED_DEFAULT, CST_SPEED_DEFAULT)
 
