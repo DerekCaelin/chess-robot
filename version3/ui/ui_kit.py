@@ -344,12 +344,10 @@ class Modal:
     def __init__(self, app, title, box=None):
         self.app = app
         self.overlay = tk.Canvas(app.root, bg=BG, highlightthickness=0)
-        self.overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
         self.overlay.bind("<Configure>",
                           lambda _e: draw_checker(self.overlay))
         card = tk.Frame(self.overlay, bg=CARD, bd=0,
                         highlightbackground=ACCENT, highlightthickness=2)
-        card.place(relx=0.5, rely=0.5, anchor="center")
         # the content sits centred in the card's box
         inner = tk.Frame(card, bg=CARD)
         inner.place(relx=0.5, rely=0.5, anchor="center")
@@ -361,16 +359,26 @@ class Modal:
         self.card = card
         self._inner = inner
         self._box = box or self.BOX
-        self._fit()
+        # NOTHING is mapped until _fit (2026-11-20): the old flow painted
+        # the empty card at the box size, then the content still clipped at
+        # the box size, then the grown card - three states in one open,
+        # which the player saw as a 'jittering' modal ('the buttons move
+        # very rapidly', 'an empty modal and then it fills').  The caller
+        # adds its content synchronously, so the one after-idle fit maps
+        # the modal in one piece at its final size.
         app.root.after_idle(self._fit)
 
     def _fit(self):
-        """The standard box, grown to the content when it needs more."""
+        """Map the modal and size the card: the standard box, grown to the
+        content when it needs more.  Idempotent - only re-configures on an
+        actual size change."""
         try:
-            self._inner.update_idletasks()
             w = max(self._box[0], self._inner.winfo_reqwidth() + 16)
             h = max(self._box[1], self._inner.winfo_reqheight() + 16)
-            self.card.configure(width=w, height=h)
+            if (self.card.winfo_width(), self.card.winfo_height()) != (w, h):
+                self.card.configure(width=w, height=h)
+            self.card.place(relx=0.5, rely=0.5, anchor="center")
+            self.overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
         except tk.TclError:
             pass
 
