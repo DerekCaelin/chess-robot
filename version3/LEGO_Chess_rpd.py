@@ -724,11 +724,23 @@ def moveXYZGWA(X, Y, Z, G, WA, speeds=None):
     movemotors(speeds=speeds)
 
 
+CRAWL_IN = 0.5   # in: the last stretch of a descent, crawled slowly
+
+
 def moveXY(toheight, speeds=SPEED_PICK):
     """Vertical move to a height. The pick/drop DESCENT runs at SPEED_PICK
     (calm onto a piece); a lift-to-cruise passes SPEED_TRAVEL - a lift is
-    cruise, not a pick (2026-10-22)."""
+    cruise, not a pick (2026-10-22).  A descent of more than CRAWL_IN inches
+    is two-stage (2026-11-20): the bulk of the drop at the move's speed,
+    then the last stretch at CST_SPEED_SLOW - the soft landing removes the
+    end-of-travel impact that showed as a shake onto pieces and into park."""
     global targetXYZGWAWR
+    if targetXYZGWAWR[1] - toheight > CRAWL_IN + 0.1:
+        targetXYZGWAWR = (targetXYZGWAWR[0], float(toheight) + CRAWL_IN,
+                          targetXYZGWAWR[2], targetXYZGWAWR[3],
+                          -90, targetXYZGWAWR[5])
+        movemotors(slow=True, speeds=speeds, pick_lean=True)
+        speeds = tuple(CST_SPEED_SLOW for _ in speed_SEWBZWrG)
     targetXYZGWAWR = (targetXYZGWAWR[0], float(toheight),
                       targetXYZGWAWR[2], targetXYZGWAWR[3],
                       -90, targetXYZGWAWR[5])

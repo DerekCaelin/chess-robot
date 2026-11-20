@@ -14,6 +14,7 @@ B = CBstate.AL5D_B  # elbow -> wrist (in)
 
 # Constants
 rtod = 57.295779  # Radians to degrees constant
+SETTLE_S = 0.15   # wobble-decay dwell after every move group (2026-11-20)
 CST_ANGLE_MIN = 0
 CST_ANGLE_MAX = 180
 CST_RC_MIN = 500
@@ -199,19 +200,37 @@ def al5_moveMotors(motors_SEWBZWrG, speed_SEWBZWrG, serial,
     speedWrist = max(speedWrist, 2 * max(speedShoulder, speedElbow))
 
     def run_group(items, note=""):
-        """Send every command of the group, then wait only for the slowest
-        MOVER (skip entirely if nothing in this group actually moves)."""
+        """Send every command of the group as ONE SSC-32U block with a shared
+        move duration T, then wait for it - and a short settle - to finish
+        (skip entirely if nothing in this group actually moves).
+
+        T (2026-11-20) makes every servo finish TOGETHER at a rate
+        proportional to its own pulse delta, so the IK's straight line stays
+        straight and the perpendicular wrist tracks the shoulder through the
+        whole move instead of arriving early and holding its final angle
+        mid-move.  The old per-servo S rates finished at staggered times (on
+        a park lift the shoulder ground on for 1.1 s after the wrist had
+        stopped) - that end-stretch mismatch was the arm's shake on
+        descents and lifts."""
         longest = 0.0
+        moving = []
         for channel, pulse, speed in items:
-            cmd = "#%d P%d S%d\r" % (channel, pulse, speed)
-            serial.write(cmd.encode())
-            print("SSC-32U: %s%s" % (cmd.strip(), note))
-            if speed > 0:
-                longest = max(longest,
-                              abs(pulse - _last_pulses[channel]) / speed)
+            delta = abs(pulse - _last_pulses[channel])
+            if delta > 0:
+                moving.append((channel, pulse))
+                if speed > 0:
+                    longest = max(longest, delta / speed)
             _last_pulses[channel] = pulse
+        if not moving:
+            return
+        t_ms = max(1, int(longest * 1000))
+        cmd = ("".join("#%d P%d " % (c, p) for c, p in moving)
+               + "T%d\r" % t_ms)
+        serial.write(cmd.encode())
+        print("SSC-32U: %s%s" % (cmd.strip(), note))
         if longest > 0.001:
             time.sleep(longest + 0.08)      # was +0.4 -> big dead pauses
+        time.sleep(SETTLE_S)   # let the arm's wobble decay before the next
 
     arm = [(2, pulseElbow, speedElbow),
            (3, pulseWrist, speedWrist),
