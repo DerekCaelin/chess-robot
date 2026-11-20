@@ -37,8 +37,7 @@ from PIL import Image, ImageTk                   # noqa: E402
 import CBstate                                   # noqa: E402
 import camera                                    # noqa: E402
 from chessapp import game_state, audio, verify_log, speech as SP
-from chessapp.graveyard import piece_name as _piece_name, \
-    slot_desc as _slot_desc
+from chessapp.graveyard import slot_desc as _slot_desc
 from chessapp import levels as LV  # noqa: E402
 from chessapp import analysispack as AP  # noqa: E402
 from chessapp import analysis as AN  # noqa: E402  (the what-if engine:
@@ -7521,7 +7520,9 @@ class GameScreen(kit.Screen):
         """Request a takeback: the worker thread does the undo + engine resync
         (engine is idle while it waits for the player's move).  Since
         2026-11-08 a modal first shows the PREVIOUS state and asks the
-        player to re-set the board to it: OK proceeds, Cancel aborts."""
+        player to re-set the board to it: OK proceeds, Cancel aborts.
+        The board preview alone is sufficient (2026-11-20): the old list of
+        pieces to relocate is gone."""
         m = kit.Modal(self.app, "Takeback")
         prev = self._prev_board()
         if prev is not None:
@@ -7532,12 +7533,6 @@ class GameScreen(kit.Screen):
                  text="Re-set the board to match this position, then OK.",
                  font=kit.F_BODY, bg=kit.CARD, fg=kit.FG,
                  wraplength=420, justify="center").pack(pady=(0, 10))
-        # the pieces that come BACK and where they go (2026-11-15: the
-        # message no longer names the graveyard)
-        for line in self._grave_notes(prev):
-            tk.Label(m.body, text=line, font=kit.F_BODY, bg=kit.CARD,
-                     fg=kit.FG_DIM, wraplength=420,
-                     justify="center").pack()
         row = tk.Frame(m.body, bg=kit.CARD)
         row.pack()
 
@@ -7548,24 +7543,6 @@ class GameScreen(kit.Screen):
                 kind="secondary").pack(side="left", padx=8)
         kit.btn(row, "OK", ok, size="m", kind="confirm").pack(side="left",
                                                               padx=8)
-
-    def _grave_notes(self, prev):
-        """Lines naming the pieces a takeback brings back from the graveyard
-        and where each one sits in it."""
-        out = []
-        try:
-            cur = self.game.board()
-            grave = getattr(self.game, "grave", None)
-        except Exception:
-            return out
-        for r in range(8):
-            for c in range(8):
-                if prev[r][c] == "." or cur[r][c] != ".":
-                    continue
-                sq = "%s%d" % (chr(97 + c), 8 - r)
-                out.append("%s returns to %s"
-                           % (_piece_name(prev[r][c]), sq))
-        return out
 
     def _prev_board(self):
         """The board as it will be AFTER the takeback - the position the
