@@ -5805,8 +5805,10 @@ class AnalysisMoveScreen(kit.Screen):
     """One move of the analysis: the board as of the move (origin and
     destination highlighted), the move text, transport controls and the
     playback progress. Auto advance = the sound + 2 s, or - with no voice -
-    scaled to the text (5-10 s). Back returns to the analysis home; the last
-    move offers Finish (the app home)."""
+    scaled to the text (5-10 s). The commentary plays on VIEW whenever a
+    voice is enabled (2026-11-21), independent of auto-advance. Back
+    returns to the analysis home; the last move offers Finish (the app
+    home)."""
 
     def __init__(self, app, pack, idx, autoplay=False, show_engine=True):
         super().__init__(app=app, title="Analysis")
@@ -5962,8 +5964,11 @@ class AnalysisMoveScreen(kit.Screen):
         top.bind("<Configure>", self._fit_board)
         self.bind("<Destroy>", lambda *_: self._cleanup(), add="+")
         self._show()
-        if autoplay:
-            # Begin loads the first move already playing (2026-10-22)
+        # Begin loads the first move already playing (2026-10-22); and
+        # simply VIEWING a move speaks it whenever a voice is enabled -
+        # the speech must not depend on the auto-advance setting
+        # (2026-11-21)
+        if autoplay or self.voice != "none":
             self._play()
         elif self.adv:
             self._start_timer()
@@ -6461,7 +6466,8 @@ class AnalysisMoveScreen(kit.Screen):
         self._playing = True
         self._paused = False
         self._set_play_glyph(True)
-        self._start_timer()
+        if self.adv:      # auto-advance only when it is on (2026-11-21)
+            self._start_timer()
         if (self._engine_visible and self.voice != "none"
                 and self._sound_ready()):
             audio.play_wav(self.gpack.wav_path(self.move["ply"], self.voice))
@@ -6531,7 +6537,8 @@ class AnalysisMoveScreen(kit.Screen):
             return
         self.idx = nxt
         self._show()
-        if self._playing:
+        # viewing the move SPEAKS it when a voice is enabled (2026-11-21)
+        if self.voice != "none" or self._playing:
             self._play()
         elif self.adv and not self._paused:
             self._start_timer()
@@ -6546,7 +6553,8 @@ class AnalysisMoveScreen(kit.Screen):
             return
         self.idx -= 1
         self._show()
-        if self._playing:
+        # viewing the move SPEAKS it when a voice is enabled (2026-11-21)
+        if self.voice != "none" or self._playing:
             self._play()
         elif self.adv and not self._paused:
             self._start_timer()

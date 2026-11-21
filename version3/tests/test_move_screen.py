@@ -281,6 +281,33 @@ def main():
 
     scr._cleanup()
 
+    # ---- speech plays on VIEW, independent of auto-advance (2026-11-21) --
+    settings.set("analysis.voice", "espeak")
+    settings.set("analysis.auto_advance", False)
+    pk = _fake_pack()
+    pk.ready = lambda ply, v: True
+    pk.wav_path = lambda ply, v: "/tmp/fake_%d.wav" % ply
+    pk.sound_len = lambda ply, v: 2.0
+    played = []
+    _real_play_wav = A.audio.play_wav
+    A.audio.play_wav = lambda path: played.append(path)
+    app.show(A.AnalysisMoveScreen, pack=pk, idx=0, autoplay=False)
+    scr2 = app.current
+    settle(root)
+    if not played:
+        fails.append("view: no commentary played with a voice enabled")
+    if scr2._timer is not None:
+        fails.append("view: auto-advance armed with auto-advance off")
+    scr2._next()
+    settle(root)
+    if len(played) < 2:
+        fails.append("view: stepping to the next move did not speak: %r"
+                     % played)
+    A.audio.play_wav = _real_play_wav
+    settings.set("analysis.voice", "none")
+    settings.set("analysis.auto_advance", True)
+    scr2._cleanup()
+
     # ---- Board & Pieces (2026-11-06) ------------------------------------
     # grip heights (left) and per-piece jaw adjusts (right) on the same
     # rows; ONE help button on the title bar (2026-11-18, the old per-row
