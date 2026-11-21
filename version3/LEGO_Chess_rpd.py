@@ -167,9 +167,11 @@ SPEED_TRAVEL = tuple(int(s * 1.5) for s in speed_SEWBZWrG)
 # snap - onto a piece, shoulder/elbow/wrist at CST_SPEED_PICK.
 # Bench-calibrated (2026-11-20): the base turns ~2.8us of pulse per degree
 # of command, so 300 us/s = <1s for a 90-degree sweep (the player: "much too
-# rapid") and 140 us/s = ~1.8s ("too slow").  220 lands a big sweep at about
-# 1.2s while small turns stay quick.
-SPEED_ROTATE = (220,) + tuple(CST_SPEED_SLOW
+# rapid") and 140 us/s = ~1.8s ("too slow").  220 was the settled pace;
+# 330 (2026-11-21, +50% at the player's request) quickens the ordinary
+# cruise rotation - the big from-park sweeps keep their gentle
+# BASE_SWEEP_SPEED glide.
+SPEED_ROTATE = (330,) + tuple(CST_SPEED_SLOW
                               for _ in speed_SEWBZWrG[1:])
 SPEED_PICK = (CST_SPEED_BASE, CST_SPEED_PICK, CST_SPEED_PICK, CST_SPEED_PICK,
               CST_SPEED_DEFAULT, CST_SPEED_DEFAULT)
