@@ -367,6 +367,19 @@ def main():
     got = str(home.prog_lbl.cget("text"))
     if not got.startswith("Building analysis (0/2)"):
         fails.append("home: text stage line wrong (got %r)" % got)
+    # the poll must SURVIVE whatever the chart/state code throws
+    # (2026-11-21): an exception at a stage boundary (voices done -> the
+    # next stage) used to kill the loop silently and the progress bar froze
+    # until the player left and returned
+    _real_chart = home.chart.update_moves
+    home.chart.update_moves = (lambda *a, **k: (_ for _ in ()).throw(
+        ValueError("chart exploded")))
+    try:
+        home._poll()
+        home._poll()
+    except Exception as e:
+        fails.append("analysis home: poll died on a chart error: %s" % e)
+    home.chart.update_moves = _real_chart
     # the text stage keeps its name; the #/# and dots update as it goes
     state.update(done=1, total=2)
     home._poll()

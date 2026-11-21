@@ -5666,6 +5666,19 @@ class AnalysisHomeScreen(kit.Screen):
         self._update_begin()
 
     def _poll(self):
+        # the loop must SURVIVE anything the state/chart code throws
+        # (2026-11-21): an exception at a stage boundary (espeak voices
+        # finished -> the next stage) used to kill it silently and the
+        # progress bar froze at the old stage until the player left and
+        # returned.  The reschedule is outside the try so it always runs.
+        try:
+            self._tick()
+        except Exception as e:
+            print("AnalysisHomeScreen poll:", e)
+        if self.winfo_exists() and not self.stop:
+            self.after(150, self._poll)
+
+    def _tick(self):
         voice = self._voice_key()
         st = AP.generation_state(self.gpack, voice) if self.gpack else None
         alive = bool(st and st.get("alive"))
@@ -5746,8 +5759,6 @@ class AnalysisHomeScreen(kit.Screen):
                 mv, stars=self.gpack.game.get("stars") or [],
                 turning=(AP.top_turning(mv, player=player) if done else []),
                 total=self.gpack.move_count(), player=player)
-        if self.winfo_exists() and not self.stop:
-            self.after(150, self._poll)
 
     def _begin(self):
         if not self.gpack or not self.gpack.moves:
