@@ -80,7 +80,18 @@ def _code_digest():
 
 
 def game_hash(game):
-    return hashlib.sha1(json.dumps(game, sort_keys=True).encode()
+    """The ANALYSIS identity of a game: its moves and the player's side
+    (2026-11-21).  The old hash covered the WHOLE saved dict - including
+    the bookkeeping that legitimately changes (result filled at game end,
+    stars, graveyard, level, 'started') - and the end-game flow even wrote
+    last_game.json in two shapes (with and without 'graveyard'), so the
+    SAME game kept acquiring new identities: generation runs scattered
+    across cache dirs - each one _absorb-ing and deleting the last - while
+    the analysis screen tracked a dead identity and sat at 0/42 for hours
+    with the engine working under another name."""
+    key = {"moves": list(game.get("moves") or []),
+           "player_color": game.get("player_color")}
+    return hashlib.sha1(json.dumps(key, sort_keys=True).encode()
                         ).hexdigest()[:12]
 
 
