@@ -249,15 +249,15 @@ BLUNDER_SWING = [
      "{eval_after}.", "{best} would have {impact}."),
 ]
 
-# the same stories told in winning chances (engine WDL) when available
+# the same stories told as winning-chances SWINGS (engine WDL) when
+# available - said as a narrative, never as percentages (2026-11-21)
 BLUNDER_SWING_WDL = [
     ("A serious error.", "{Color} could have played {best}, which would have "
-     "{impact}.", "{Color}'s winning chances fall from {wp_before}% to "
-     "{wp_after}%."),
-    ("A costly mistake.", "{Color}'s winning chances fall from {wp_before}% "
-     "to {wp_after}%.", "With {best}, that would have {impact}."),
-    ("This is where it slips away.", "The winning chances fall from "
-     "{wp_before}% to {wp_after}%.", "{best} would have {impact}."),
+     "{impact}.", "{swing_story}"),
+    ("A costly mistake.", "{swing_story}", "With {best}, that would have "
+     "{impact}."),
+    ("This is where it slips away.", "{swing_story}", "{best} would have "
+     "{impact}."),
 ]
 
 TURNING_GOOD = [
@@ -600,6 +600,79 @@ def wdl_pct(wdl):
     return int(round(100.0 * w / tot))
 
 
+# The swing of a move said WITHOUT numbers (2026-11-21): the engine's
+# percentages read like a weather report ("winning chances fall from 100%
+# to 6%") - what the player needs is the STORY of the transition, so the
+# winning-chances STATES speak instead.  The banks say what happened in
+# the position; a win that stays a win is not news and says nothing.
+_WDL_STATES = ("won", "better", "balanced", "worse", "lost")
+
+_DECLINE_STORY = {
+    ("won", "lost"): ("{Color}'s winning position collapses.",
+                      "{Color} turns a win into a loss."),
+    ("won", "worse"): ("{Color}'s winning position crumbles.",
+                       "The win slips from {Color}'s hands."),
+    ("won", "balanced"): ("{Color}'s advantage evaporates - the game is "
+                          "level again.",),
+    ("won", "better"): ("{Color}'s winning edge shrinks to an advantage.",),
+    ("better", "lost"): ("The game turns completely against {Color}.",
+                         "{Color}'s advantage ends in a lost position."),
+    ("better", "worse"): ("{Color}'s edge turns into a disadvantage.",),
+    ("better", "balanced"): ("{Color}'s advantage is gone - the game is "
+                             "balanced again.",),
+    ("balanced", "lost"): ("{Color} falls into a lost position.",),
+    ("balanced", "worse"): ("The balance tips against {Color}.",),
+    ("worse", "lost"): ("{Color}'s position falls apart.",),
+}
+
+_RISE_STORY = {
+    ("lost", "won"): ("A remarkable turnaround - {Color} is winning!",),
+    ("lost", "better"): ("{Color} comes back from the dead: the position is "
+                         "playable again.",),
+    ("lost", "balanced"): ("{Color} escapes the loss - the game is level.",),
+    ("lost", "worse"): ("{Color}'s position shows signs of life.",),
+    ("worse", "won"): ("The game flips - {Color} is winning.",),
+    ("worse", "better"): ("{Color} turns the position around.",),
+    ("worse", "balanced"): ("{Color} is back in the game.",),
+    ("balanced", "won"): ("{Color} seizes a winning position.",),
+    ("balanced", "better"): ("{Color} takes control.",),
+    ("better", "won"): ("{Color}'s advantage becomes a winning position.",),
+}
+
+
+def _wdl_state(wdl, color):
+    """The position's state for one side (won / better / balanced / worse /
+    lost) from the engine's WDL.  `color` is accepted capitalised (the
+    sentence slots) or not - _wp matches it lowercase."""
+    wp = _wp(wdl, str(color).lower())
+    if wp >= 75:
+        return "won"
+    if wp >= 55:
+        return "better"
+    if wp > 45:
+        return "balanced"
+    if wp > 25:
+        return "worse"
+    return "lost"
+
+
+def wdl_swing(wdl_before, wdl_after, color, opponent, rng=None):
+    """The move's winning-chances swing as a STORY: 'White's winning
+    position collapses.'  '' when the position's state did not change - a
+    win that stays a win is not news."""
+    b = _wdl_state(wdl_before, color)
+    a = _wdl_state(wdl_after, color)
+    if a == b:
+        return ""
+    rising = _WDL_STATES.index(a) < _WDL_STATES.index(b)
+    bank = (_RISE_STORY if rising else _DECLINE_STORY).get((b, a))
+    if bank is None:
+        bank = (("{Color}'s position improves." if rising
+                 else "{Color}'s position worsens."),)
+    line = rng.choice(bank) if rng is not None else bank[0]
+    return line.format(Color=color, opponent=opponent)
+
+
 def _wp(wdl, color):
     """Winning probability in % for the given color (engine WDL, white POV)."""
     try:
@@ -822,6 +895,9 @@ def _closing_notes(analysis, teller, s):
                    wp_before=_wp(m.get("wdl_before"), m["color"]),
                    wp_after=_wp(m.get("wdl"), m["color"]),
                    impact="won material")
+        out["swing_story"] = wdl_swing(
+            m.get("wdl_before"), m.get("wdl"), out["Color"], out["opponent"],
+            teller.rng)
         bi = m.get("best_impact") or {}
         if bi.get("kind") == "wins":
             out["impact"] = ("finished the game"
@@ -937,17 +1013,15 @@ def _concept_note(teller, e, s):
 
 
 def _swing_pair(teller, e, s):
-    """What the engine says changed: winning chances when it reported a real
-    swing. (Plain evaluation words read badly in a sentence like 'the
-    position goes from a completely winning position to a winning
-    advantage' - say nothing instead.)"""
-    if (e.get("wdl") and e.get("wdl_before")
-            and abs(s["wp_before"] - s["wp_after"]) >= 12):
-        t = ("{Color}'s winning chances fall from {wp_before}% to "
-             "{wp_after}%." if s["wp_after"] < s["wp_before"] else
-             "{Color}'s winning chances rise from {wp_before}% to "
-             "{wp_after}%.")
-        return (t.format(**s), t.format(**s), {})
+    """What the engine says changed: the winning-chances swing said as a
+    STORY (2026-11-21 - 'winning chances fall from 100% to 6%' read like a
+    weather report; the narrative says what happened instead).  Nothing
+    when the position's state did not change."""
+    if e.get("wdl") and e.get("wdl_before"):
+        story = wdl_swing(e.get("wdl_before"), e.get("wdl"),
+                          s["Color"], s["opponent"], teller.rng)
+        if story:
+            return (story, story, {})
     return None
 
 

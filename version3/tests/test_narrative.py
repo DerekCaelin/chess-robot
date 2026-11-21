@@ -227,6 +227,24 @@ def test_pack_picks_up_cached_text():
         AP.CACHE = old
 
 
+def test_wdl_swing_story():
+    """The winning-chances swing is a STORY, not percentages (2026-11-21):
+    meaningful words, no numbers anywhere in the banks, and silence when
+    the position's state did not change."""
+    from chessapp import narrative as NR
+    story = NR.wdl_swing([900, 80, 20], [60, 40, 900], "White", "Black")
+    assert "collapse" in story.lower(), story
+    story = NR.wdl_swing([60, 40, 900], [900, 80, 20], "White", "Black")
+    assert story and "White" in story, story
+    assert NR.wdl_swing([800, 150, 50], [850, 120, 30], "White", "Black") == ""
+    # the no-numbers promise holds for every line of every bank
+    banks = list(NR._DECLINE_STORY.items()) + list(NR._RISE_STORY.items())
+    for (_b, _a), lines in banks:
+        for ln in lines:
+            t = ln.format(Color="White", opponent="Black")
+            assert not any(ch.isdigit() for ch in t) and "%" not in t, t
+
+
 def test_verdict_label_and_speech():
     """The quality verdict is a LABEL (not screen text); the speech says it
     except in the opening phase, and checkmate is spoken (2026-10-23)."""
@@ -367,6 +385,7 @@ def main():
     test_concept_notes()
     test_pack_stale_sounds()
     test_pack_picks_up_cached_text()
+    test_wdl_swing_story()
     test_verdict_label_and_speech()
     test_no_it_and_verifiable_claims()
     test_shared_text_state()
