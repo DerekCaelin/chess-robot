@@ -110,11 +110,22 @@ def synth_piper_many(items, model=PIPER_MODEL, on_item=None, should_stop=None):
         if should_stop is not None and should_stop():
             return n - 1
         try:
-            # ONE utterance per track (2026-11-15): splitting into
-            # sentence fragments and joining them garbled the opening
-            # words - the model speaks the whole line as one breath now
-            with wave.open(out, "wb") as w:
-                pv.synthesize_wav(text, w)
+            # ONE synthesis pass per track (2026-11-21): the piper library
+            # phonemizes the text into SENTENCES and writes the audio chunks
+            # back to back - a one-word sentence ('Hello.') rendered as its
+            # own chunk with its own onset and garbled the opening words
+            # (the 2026-11-15 fix stopped OUR splitting; the library kept
+            # splitting).  Merge the phoneme blocks first so the model
+            # speaks the whole line in one breath.
+            blocks = [b for b in pv.phonemize(text) if b]
+            merged = [t for blk in blocks for t in blk]   # ONE token stream
+            real_phonemize = pv.phonemize
+            pv.phonemize = lambda _t, _m=merged: [_m]
+            try:
+                with wave.open(out, "wb") as w:
+                    pv.synthesize_wav(text, w)
+            finally:
+                pv.phonemize = real_phonemize
             _sanitize_wav(out)
         except Exception as e:
             print("voice: %s failed: %s" % (os.path.basename(out), e))
