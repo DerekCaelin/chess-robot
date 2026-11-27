@@ -8,6 +8,9 @@ The current build lives in `version3/` - run every command below from that
 directory. Earlier builds live in `previous versions/`, kept for provenance
 and reference; you can ignore them. Requires Python 3 (tested with 3.12).
 
+[![Watch video overview video](https://youtu.be/0IZmdPA8zkA.jpg)](https://www.youtube.com/watch?v=https://youtu.be/0IZmdPA8zkA)
+
+
 ## Hardware
 
 - **Camera** - a UVC webcam mounted above the board with the whole playing
